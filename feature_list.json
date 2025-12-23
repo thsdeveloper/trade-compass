@@ -1,0 +1,105 @@
+{
+  "project_name": "trade-compass",
+  "description": "Plataforma de analise tecnica para o mercado financeiro brasileiro (B3). Oferece monitoramento de ativos via watchlist personalizada, analise de contexto de mercado (tendencia, volume, volatilidade), zonas de decisao (Favoravel/Neutra/Risco) e deteccao de setups tecnicos (Rompimento, Pullback SMA20, Breakdown, Mystic Pulse). Inclui autenticacao de usuarios, persistencia de dados no Supabase e visualizacao de graficos de candlestick com indicadores.",
+  "tech_stack": [
+    "Next.js 16 (App Router)",
+    "React 19",
+    "TypeScript 5",
+    "Tailwind CSS 4",
+    "Fastify 5",
+    "Supabase (PostgreSQL + Auth)",
+    "Radix UI (Shadcn/ui)",
+    "Lucide React",
+    "react-financial-charts",
+    "yahoo-finance2",
+    "PNPM (Monorepo)",
+    "Vitest",
+    "ESLint"
+  ],
+  "init_script": {
+    "command": "pnpm dev",
+    "port": 3000,
+    "install_command": "pnpm install"
+  },
+  "features": [
+    {
+      "id": "R001",
+      "title": "Refactor authentication flow to integrate Supabase across backend and frontend",
+      "type": "refactoring",
+      "description": "Complete end-to-end authentication flow (user registration, login, password recovery) needs to be fully functional with Supabase as the database. Currently the integration between backend (back/src/api) and frontend (front/src) may be incomplete or inconsistent. Refactor authentication logic to ensure proper communication between frontend, backend API layer, and Supabase, following established patterns in both codebases.",
+      "acceptance_criteria": [
+        "User registration flow works end-to-end: frontend form → backend API → Supabase user creation",
+        "Login flow authenticates users correctly through backend with Supabase session management",
+        "Password recovery flow sends reset emails via Supabase and updates credentials successfully",
+        "All authentication endpoints in backend properly integrated with Supabase client",
+        "Frontend authentication context properly manages user state with backend API calls"
+      ],
+      "test_criteria": {
+        "scenarios": [
+          "User completes registration form and account is created in Supabase",
+          "User logs in with valid credentials and receives authenticated session",
+          "User requests password reset, receives email, and successfully updates password",
+          "User with invalid credentials receives appropriate error messages",
+          "Authenticated user session persists across page refreshes"
+        ],
+        "selectors": [
+          "input[name='email']",
+          "input[name='password']",
+          "button[type='submit']",
+          "[data-testid='auth-form']",
+          "[data-testid='error-message']"
+        ],
+        "assertions": [
+          "Registration creates new user record in Supabase",
+          "Login returns valid session token from backend",
+          "Password reset email is sent and link works",
+          "Invalid login attempts show error without creating session",
+          "User state in frontend context reflects Supabase authentication status"
+        ]
+      },
+      "passes": true
+    },
+    {
+      "id": "F001",
+      "title": "Implement complete user authentication flow with Supabase integration",
+      "type": "feature",
+      "description": "Implement end-to-end user authentication system including registration, login, password recovery, and session management. The system must integrate Supabase as the database backend with proper API endpoints in the backend (back/) and React components in the frontend (front/). All authentication flows should follow security best practices and maintain consistent state across frontend and backend.",
+      "acceptance_criteria": [
+        "User registration creates account in Supabase and returns authentication token",
+        "Login flow validates credentials against Supabase and establishes session",
+        "Password recovery sends reset email via Supabase and allows password update",
+        "Session persistence maintains user state across page refreshes",
+        "All authentication endpoints include proper error handling and validation",
+        "Frontend components integrate with backend API for all auth operations",
+        "Authentication state is managed consistently between frontend contexts and backend"
+      ],
+      "test_criteria": {
+        "scenarios": [
+          "New user completes registration form and receives confirmation",
+          "Registered user logs in with valid credentials and accesses protected content",
+          "User requests password reset, receives email, and successfully updates password",
+          "Authenticated user refreshes page and remains logged in",
+          "User logs out and session is properly terminated",
+          "Invalid credentials display appropriate error messages"
+        ],
+        "selectors": [
+          "input[name='email']",
+          "input[name='password']",
+          "button[type='submit']",
+          "[data-testid='auth-form']",
+          "[data-testid='error-message']",
+          "[data-testid='success-message']"
+        ],
+        "assertions": [
+          "Registration creates user in Supabase database",
+          "Login sets authentication token in session storage",
+          "Password reset email is sent successfully",
+          "Protected routes redirect unauthenticated users to login",
+          "Session persists after page reload",
+          "Logout clears all authentication data"
+        ]
+      },
+      "passes": true
+    }
+  ]
+}

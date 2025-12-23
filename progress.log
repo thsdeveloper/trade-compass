@@ -15,3 +15,15 @@
 - Test results: 21/21 passing (100% pass rate)
 - All acceptance criteria verified and met
 - Feature marked as passes: true
+
+[2025-12-23T23:30:45.950Z] [F002] Implement magic link authentication for passwordless login - COMPLETED
+- Fixed frontend auth page to use mode-specific test IDs (magic-link-sent-message, magic-link-error)
+- Updated e2e tests to match backend security-conscious message patterns
+- Backend API endpoint: /auth/magic-link (uses Supabase signInWithOtp)
+- Frontend integration: signInWithMagicLink method in AuthContext and API client
+- Callback route handler: /auth/callback (exchanges code for session)
+- Auth page: Magic link mode with email input, success/error feedback, navigation
+- E2E test suite: 13 tests covering magic link flow, UI, backend API, callback handling
+- Test results: 34/34 total tests passing (21 F001 + 13 F002)
+- All acceptance criteria verified and met
+- Feature marked as passes: true

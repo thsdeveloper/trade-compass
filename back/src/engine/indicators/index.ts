@@ -3,3 +3,5 @@ export { ema, emaSeries } from './ema.js';
 export { atr, atrPercent, trueRange } from './atr.js';
 export { avgVolume, volumeRatio } from './volume.js';
 export { rsi } from './rsi.js';
+export { mysticPulse, mysticPulseSeries } from './mystic-pulse.js';
+export type { MysticPulseResult } from './mystic-pulse.js';

@@ -1,9 +1,12 @@
 import Fastify, { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
 import { assetsRoutes } from './routes/assets.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { candlesRoutes } from './routes/candles.js';
+import { mysticPulseRoutes } from './routes/mystic-pulse.js';
+import { watchlistRoutes } from './routes/watchlist.js';
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -25,14 +28,17 @@ export async function buildServer() {
   // CORS
   await app.register(cors, {
     origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-    methods: ['GET'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   // Routes
   await app.register(healthRoutes);
+  await app.register(authRoutes);
   await app.register(assetsRoutes);
   await app.register(analysisRoutes);
   await app.register(candlesRoutes);
+  await app.register(mysticPulseRoutes);
+  await app.register(watchlistRoutes);
 
   // Error handler
   app.setErrorHandler((error: FastifyError, request, reply) => {

@@ -12,5 +12,9 @@
     "lint": "pnpm -r lint",
     "test": "pnpm --filter back test",
     "generate-data": "pnpm --filter back generate-data"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "playwright": "^1.57.0"
   }
 }

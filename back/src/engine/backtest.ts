@@ -4,6 +4,7 @@ import { atr } from './indicators/atr.js';
 import { wasBreakoutActive } from './setups/breakout.js';
 import { wasPullbackActive } from './setups/pullback-sma20.js';
 import { wasBreakdownActive } from './setups/breakdown.js';
+import { wasMysticPulseActive } from './setups/mystic-pulse.js';
 import { calculateTrend } from './context.js';
 
 interface BacktestResult {
@@ -87,13 +88,12 @@ export function runBacktest(
   let totalOccurrences = 0;
   let successCount = 0;
 
-  const isLongSetup = setupType !== 'breakdown';
-
   // Comeca apos ter dados suficientes para indicadores
   const startIndex = 60; // SMA50 + margem
 
   for (let i = startIndex; i < candles.length - BACKTEST_FORWARD_CANDLES; i++) {
     let wasActive = false;
+    let isLongSetup = setupType !== 'breakdown';
 
     switch (setupType) {
       case 'breakout':
@@ -109,6 +109,15 @@ export function runBacktest(
       case 'breakdown':
         wasActive = wasBreakdownActive(candles, i);
         break;
+      case 'mystic-pulse': {
+        // Mystic Pulse - pode ser long ou short dependendo da tendencia
+        const slicedCandles = candles.slice(0, i + 1);
+        const trend = calculateTrend(slicedCandles);
+        wasActive = wasMysticPulseActive(candles, i, trend);
+        // Para mystic-pulse, determinamos direcao pelo trend
+        isLongSetup = trend !== 'Baixa';
+        break;
+      }
     }
 
     if (wasActive) {

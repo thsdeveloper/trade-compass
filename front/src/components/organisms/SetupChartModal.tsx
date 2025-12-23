@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { SetupChart } from '@/components/molecules/SetupChart';
 import { api } from '@/lib/api';
-import type { Setup, CandlesResponse } from '@/types/market';
+import type { Setup, CandlesResponse, MysticPulseDataPoint } from '@/types/market';
 import { Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface SetupChartModalProps {
@@ -27,32 +27,48 @@ export function SetupChartModal({
   onOpenChange,
 }: SetupChartModalProps) {
   const [candlesData, setCandlesData] = useState<CandlesResponse | null>(null);
+  const [mysticPulseData, setMysticPulseData] = useState<MysticPulseDataPoint[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isMysticPulseSetup = setup.id.startsWith('mystic-pulse');
 
   useEffect(() => {
     if (open && !candlesData) {
       setLoading(true);
       setError(null);
-      api
-        .getCandles(ticker)
-        .then((data) => {
+
+      const promises: Promise<void>[] = [
+        api.getCandles(ticker).then((data) => {
           setCandlesData(data);
-        })
+        }),
+      ];
+
+      // Buscar dados do Mystic Pulse se for o setup correspondente
+      if (isMysticPulseSetup) {
+        promises.push(
+          api.getMysticPulseSeries(ticker).then((data) => {
+            setMysticPulseData(data.data);
+          })
+        );
+      }
+
+      Promise.all(promises)
         .catch((err) => {
-          console.error('Failed to load candles:', err);
+          console.error('Failed to load chart data:', err);
           setError('Falha ao carregar dados do grafico');
         })
         .finally(() => {
           setLoading(false);
         });
     }
-  }, [open, ticker, candlesData]);
+  }, [open, ticker, candlesData, isMysticPulseSetup]);
 
   // Reset data when modal closes
   useEffect(() => {
     if (!open) {
       setCandlesData(null);
+      setMysticPulseData(null);
       setError(null);
     }
   }, [open]);
@@ -114,6 +130,7 @@ export function SetupChartModal({
                 candles={candlesData.candles}
                 indicators={candlesData.indicators}
                 setup={setup}
+                mysticPulseData={mysticPulseData}
               />
             )}
           </div>
@@ -151,6 +168,18 @@ export function SetupChartModal({
                   Stop: R$ {setup.meta.stopLevel.toFixed(2)}
                 </span>
               </div>
+            )}
+            {isMysticPulseSetup && (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-3 bg-green-500 rounded-sm"></div>
+                  <span className="text-muted-foreground">Momentum Alta</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-3 bg-red-500 rounded-sm"></div>
+                  <span className="text-muted-foreground">Momentum Baixa</span>
+                </div>
+              </>
             )}
           </div>
 

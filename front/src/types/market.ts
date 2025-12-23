@@ -103,3 +103,21 @@ export interface HistoryEvent {
   date: Date;
   outcomeNote?: string;
 }
+
+// Ponto de dados do Mystic Pulse
+export interface MysticPulseDataPoint {
+  time: string;
+  positiveCount: number;
+  negativeCount: number;
+  trendScore: number;
+  intensity: number;
+  diPlus: number;
+  diMinus: number;
+  isBullish: boolean;
+}
+
+// Resposta do endpoint de serie do Mystic Pulse
+export interface MysticPulseSeriesResponse {
+  ticker: string;
+  data: MysticPulseDataPoint[];
+}

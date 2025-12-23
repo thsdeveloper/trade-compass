@@ -7,6 +7,7 @@ import { calculateDecisionZone } from '../../engine/decision-zone.js';
 import { detectBreakout } from '../../engine/setups/breakout.js';
 import { detectPullbackSma20 } from '../../engine/setups/pullback-sma20.js';
 import { detectBreakdown } from '../../engine/setups/breakdown.js';
+import { detectMysticPulse } from '../../engine/setups/mystic-pulse.js';
 import { getSuccessRate } from '../../engine/backtest.js';
 
 // Minimo de 55 candles (suficiente para SMA50 + margem)
@@ -85,6 +86,19 @@ export async function analysisRoutes(app: FastifyInstance) {
     );
     if (breakdownSetup) {
       setups.push(breakdownSetup);
+    }
+
+    // Mystic Pulse
+    const mysticPulseRate = getSuccessRate(normalizedTicker, candles, 'mystic-pulse');
+    const mysticPulseSetup = detectMysticPulse(
+      normalizedTicker,
+      candles,
+      context.trend,
+      context.volatility,
+      mysticPulseRate
+    );
+    if (mysticPulseSetup) {
+      setups.push(mysticPulseSetup);
     }
 
     // Calcular zona de decisao

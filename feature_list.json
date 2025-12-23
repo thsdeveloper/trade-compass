@@ -100,6 +100,42 @@
         ]
       },
       "passes": true
+    },
+    {
+      "id": "F002",
+      "title": "Implement magic link authentication for passwordless login",
+      "type": "feature",
+      "description": "Add passwordless authentication using magic links sent via email. Users enter their email, receive a secure one-time link, and are authenticated automatically when clicking it. This integrates with existing Supabase authentication (F001) using Supabase's signInWithOtp method. The feature includes email input UI, link generation on backend, email delivery, and automatic session creation upon link click.",
+      "acceptance_criteria": [
+        "User can request magic link by entering email on login page",
+        "Email with unique authentication link is sent to user's inbox",
+        "Clicking magic link authenticates user and creates valid session",
+        "Magic link expires after 1 hour or single use",
+        "Error handling for invalid/expired links with clear user feedback",
+        "E2E test verifies complete magic link flow from request to authentication"
+      ],
+      "test_criteria": {
+        "scenarios": [
+          "User enters email and requests magic link",
+          "User receives email and clicks magic link to authenticate",
+          "User attempts to use expired or invalid magic link and sees error",
+          "Authenticated user is redirected to dashboard after successful login"
+        ],
+        "selectors": [
+          "input[type='email'][name='email']",
+          "button[type='submit']",
+          "[data-testid='magic-link-sent-message']",
+          "[data-testid='magic-link-error']",
+          "[data-testid='dashboard']"
+        ],
+        "assertions": [
+          "Success message displays after requesting magic link",
+          "User session is created after clicking valid magic link",
+          "Error message displays for invalid or expired links",
+          "Authenticated user can access protected routes"
+        ]
+      },
+      "passes": true
     }
   ]
 }

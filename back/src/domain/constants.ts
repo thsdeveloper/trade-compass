@@ -82,6 +82,14 @@ export const BREAKDOWN_LOOKBACK = 20;
 export const BREAKDOWN_PROXIMITY = 1.005; // 0.5% proximity for EM_FORMACAO
 export const BREAKDOWN_VOLUME_MULTIPLIER = 1.2;
 
+// ==================== MYSTIC PULSE ====================
+
+export const MYSTIC_PULSE_ADX_LENGTH = 9;
+export const MYSTIC_PULSE_COLLECT_LENGTH = 100;
+export const MYSTIC_PULSE_GAMMA = 0.7;
+export const MYSTIC_PULSE_STRONG_THRESHOLD = 3; // Score >= 3 para sinal forte
+export const MYSTIC_PULSE_INTENSITY_THRESHOLD = 0.5; // Intensidade minima para ativacao
+
 // ==================== BACKTEST ====================
 
 export const BACKTEST_FORWARD_CANDLES = 10;

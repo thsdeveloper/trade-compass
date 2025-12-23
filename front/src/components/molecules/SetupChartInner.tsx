@@ -26,6 +26,10 @@ interface ChartDataPoint {
   volume: number;
   sma20: number | null;
   sma50: number | null;
+  // Mystic Pulse data
+  mysticPulseTrendScore?: number;
+  mysticPulseIntensity?: number;
+  mysticPulseIsBullish?: boolean;
 }
 
 interface SetupChartInnerProps {
@@ -34,6 +38,7 @@ interface SetupChartInnerProps {
   height: number;
   setup: Setup;
   ticker: string;
+  showMysticPulse?: boolean;
 }
 
 const priceFormat = format('.2f');
@@ -45,6 +50,7 @@ export function SetupChartInner({
   width,
   height,
   setup,
+  showMysticPulse = false,
 }: SetupChartInnerProps) {
   const margin = { left: 0, right: 70, top: 20, bottom: 30 };
   const ratio = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
@@ -155,25 +161,55 @@ export function SetupChartInner({
         )}
       </Chart>
 
-      {/* Volume Chart */}
-      <Chart
-        id={2}
-        height={volumeChartHeight}
-        origin={(w: number, h: number) => [0, h - volumeChartHeight - margin.bottom]}
-        yExtents={(d: ChartDataPoint) => d.volume}
-      >
-        <XAxis strokeStyle="#666" tickStrokeStyle="#666" />
-        <YAxis strokeStyle="#666" tickStrokeStyle="#666" tickFormat={volumeFormat} ticks={3} />
+      {/* Bottom Chart - Mystic Pulse ou Volume */}
+      {showMysticPulse ? (
+        <Chart
+          id={2}
+          height={volumeChartHeight}
+          origin={(w: number, h: number) => [0, h - volumeChartHeight - margin.bottom]}
+          yExtents={(d: ChartDataPoint) => {
+            const score = d.mysticPulseTrendScore ?? 0;
+            return Math.abs(score);
+          }}
+        >
+          <XAxis strokeStyle="#666" tickStrokeStyle="#666" />
+          <YAxis strokeStyle="#666" tickStrokeStyle="#666" ticks={3} />
 
-        <MouseCoordinateX displayFormat={dateFormat} />
+          <MouseCoordinateX displayFormat={dateFormat} />
 
-        <BarSeries
-          yAccessor={(d: ChartDataPoint) => d.volume}
-          fillStyle={(d: ChartDataPoint) =>
-            d.close > d.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-          }
-        />
-      </Chart>
+          <BarSeries
+            yAccessor={(d: ChartDataPoint) => Math.abs(d.mysticPulseTrendScore ?? 0)}
+            fillStyle={(d: ChartDataPoint) => {
+              const isBullish = d.mysticPulseIsBullish ?? true;
+              const intensity = d.mysticPulseIntensity ?? 0.5;
+              // Ajustar opacidade baseada na intensidade (min 0.3, max 0.9)
+              const alpha = 0.3 + intensity * 0.6;
+              return isBullish
+                ? `rgba(34, 197, 94, ${alpha})`
+                : `rgba(239, 68, 68, ${alpha})`;
+            }}
+          />
+        </Chart>
+      ) : (
+        <Chart
+          id={2}
+          height={volumeChartHeight}
+          origin={(w: number, h: number) => [0, h - volumeChartHeight - margin.bottom]}
+          yExtents={(d: ChartDataPoint) => d.volume}
+        >
+          <XAxis strokeStyle="#666" tickStrokeStyle="#666" />
+          <YAxis strokeStyle="#666" tickStrokeStyle="#666" tickFormat={volumeFormat} ticks={3} />
+
+          <MouseCoordinateX displayFormat={dateFormat} />
+
+          <BarSeries
+            yAccessor={(d: ChartDataPoint) => d.volume}
+            fillStyle={(d: ChartDataPoint) =>
+              d.close > d.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+            }
+          />
+        </Chart>
+      )}
 
       <CrossHairCursor strokeStyle="#999" />
     </ChartCanvas>

@@ -58,7 +58,25 @@ export interface SetupResult {
   meta: Record<string, number>;
 }
 
-export type SetupType = 'breakout' | 'pullback-sma20' | 'breakdown';
+export type SetupType = 'breakout' | 'pullback-sma20' | 'breakdown' | 'mystic-pulse';
+
+// ==================== MYSTIC PULSE SERIES ====================
+
+export interface MysticPulseDataPoint {
+  time: string;
+  positiveCount: number;
+  negativeCount: number;
+  trendScore: number;
+  intensity: number;
+  diPlus: number;
+  diMinus: number;
+  isBullish: boolean;
+}
+
+export interface MysticPulseSeriesResponse {
+  ticker: string;
+  data: MysticPulseDataPoint[];
+}
 
 // ==================== API RESPONSES ====================
 
@@ -89,4 +107,33 @@ export interface ApiError {
   error: string;
   message: string;
   statusCode: number;
+}
+
+// ==================== WATCHLIST ====================
+
+export interface WatchlistItem {
+  id: string;
+  user_id: string;
+  ticker: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWatchlistItemDTO {
+  ticker: string;
+  notes?: string;
+}
+
+export interface UpdateWatchlistItemDTO {
+  notes?: string;
+}
+
+export interface WatchlistItemResponse {
+  id: string;
+  ticker: string;
+  name: string;
+  notes: string | null;
+  zone: DecisionZoneType;
+  created_at: string;
 }

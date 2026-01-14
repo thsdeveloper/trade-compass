@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Compass, Eye, Bell, Home, BarChart3 } from 'lucide-react';
+import { Compass, Eye, Bell, Home, BarChart3, CandlestickChart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserNav } from '@/components/molecules';
@@ -10,6 +10,7 @@ import { UserNav } from '@/components/molecules';
 const navItems = [
   { href: '/', label: 'Inicio', icon: Home },
   { href: '/watchlist', label: 'Watchlist', icon: Eye, requiresAuth: true },
+  { href: '/daytrade', label: 'Day Trade', icon: CandlestickChart, requiresAuth: true },
   { href: '/backtest', label: 'Backtest', icon: BarChart3 },
   { href: '/alerts', label: 'Alertas', icon: Bell },
 ];

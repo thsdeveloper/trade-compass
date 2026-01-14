@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
   // Exchange code for session
   if (code) {
-    const supabase = createClient();
+    const supabase = await createClient();
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (exchangeError) {
@@ -55,15 +55,19 @@ export async function GET(request: NextRequest) {
 
   // Handle token_hash (alternative auth method)
   if (token_hash) {
-    const supabase = createClient();
+    const supabase = await createClient();
 
-    // The session should already be set by Supabase client-side
-    // Just verify and redirect
-    const { data: { session } } = await supabase.auth.getSession();
+    // Verify token_hash with Supabase
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash,
+      type: 'magiclink',
+    });
 
-    if (session) {
+    if (!verifyError) {
       return NextResponse.redirect(new URL('/watchlist', request.url));
     }
+
+    console.error('Error verifying token_hash:', verifyError);
   }
 
   // No code or token_hash provided - invalid callback

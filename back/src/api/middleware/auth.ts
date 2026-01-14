@@ -18,11 +18,12 @@ export async function authMiddleware(
   const authHeader = request.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return reply.status(401).send({
+    reply.status(401).send({
       error: 'Unauthorized',
       message: 'Token de autenticacao ausente ou invalido',
       statusCode: 401,
     });
+    return;
   }
 
   const token = authHeader.substring(7);
@@ -34,11 +35,12 @@ export async function authMiddleware(
     } = await supabaseAdmin.auth.getUser(token);
 
     if (error || !user) {
-      return reply.status(401).send({
+      reply.status(401).send({
         error: 'Unauthorized',
         message: 'Token invalido ou expirado',
         statusCode: 401,
       });
+      return;
     }
 
     // Attach user info to request
@@ -48,11 +50,12 @@ export async function authMiddleware(
     };
     (request as AuthenticatedRequest).accessToken = token;
   } catch (err) {
-    return reply.status(401).send({
+    reply.status(401).send({
       error: 'Unauthorized',
       message: 'Falha na validacao do token',
       statusCode: 401,
     });
+    return;
   }
 }
 

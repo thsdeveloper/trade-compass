@@ -58,7 +58,7 @@ export interface SetupResult {
   meta: Record<string, number>;
 }
 
-export type SetupType = 'breakout' | 'pullback-sma20' | 'breakdown' | 'mystic-pulse';
+export type SetupType = '123-compra' | '123-venda';
 
 // ==================== MYSTIC PULSE SERIES ====================
 

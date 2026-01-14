@@ -7,6 +7,8 @@ import { analysisRoutes } from './routes/analysis.js';
 import { candlesRoutes } from './routes/candles.js';
 import { mysticPulseRoutes } from './routes/mystic-pulse.js';
 import { watchlistRoutes } from './routes/watchlist.js';
+import { signalsRoutes } from './routes/signals.js';
+import { backtestRoutes } from './routes/backtest.js';
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -39,6 +41,8 @@ export async function buildServer() {
   await app.register(candlesRoutes);
   await app.register(mysticPulseRoutes);
   await app.register(watchlistRoutes);
+  await app.register(signalsRoutes);
+  await app.register(backtestRoutes);
 
   // Error handler
   app.setErrorHandler((error: FastifyError, request, reply) => {

@@ -2,20 +2,21 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Compass, Eye, Bell, Home, LogIn, LogOut } from 'lucide-react';
+import { Compass, Eye, Bell, Home, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
+import { UserNav } from '@/components/molecules';
 
 const navItems = [
   { href: '/', label: 'Inicio', icon: Home },
   { href: '/watchlist', label: 'Watchlist', icon: Eye, requiresAuth: true },
+  { href: '/backtest', label: 'Backtest', icon: BarChart3 },
   { href: '/alerts', label: 'Alertas', icon: Bell },
 ];
 
 export function TopNav() {
   const pathname = usePathname();
-  const { user, signOut, loading } = useAuth();
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -58,29 +59,9 @@ export function TopNav() {
             );
           })}
 
-          {/* Auth buttons */}
-          {!loading && (
-            <>
-              {user ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => signOut()}
-                  className="ml-2"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Sair</span>
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" asChild className="ml-2">
-                  <Link href="/auth">
-                    <LogIn className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Entrar</span>
-                  </Link>
-                </Button>
-              )}
-            </>
-          )}
+          <div className="ml-4 flex items-center">
+            <UserNav />
+          </div>
         </nav>
       </div>
     </header>

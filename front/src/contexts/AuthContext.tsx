@@ -37,6 +37,8 @@ interface AuthContextType {
   resetPassword: (token: string, newPassword: string) => Promise<{ error: Error | null; message?: string }>;
   /** Request magic link for passwordless authentication */
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null; message?: string }>;
+  /** Set session from tokens (for magic link hash fragment) */
+  setSessionFromTokens: (accessToken: string, refreshToken: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -280,6 +282,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  /**
+   * Set session from tokens (for magic link hash fragment)
+   *
+   * Used when the magic link redirects with tokens in the URL hash.
+   * Uses the same Supabase client instance to ensure onAuthStateChange is triggered.
+   */
+  const setSessionFromTokens = useCallback(
+    async (accessToken: string, refreshToken: string) => {
+      try {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) {
+          return { error };
+        }
+
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? err : new Error('Erro ao estabelecer sessão') };
+      }
+    },
+    [supabase]
+  );
+
   const value = useMemo(
     () => ({
       user,
@@ -290,9 +318,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       recoverPassword,
       resetPassword,
-      signInWithMagicLink
+      signInWithMagicLink,
+      setSessionFromTokens
     }),
-    [user, session, loading, signIn, signUp, signOut, recoverPassword, resetPassword, signInWithMagicLink]
+    [user, session, loading, signIn, signUp, signOut, recoverPassword, resetPassword, signInWithMagicLink, setSessionFromTokens]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

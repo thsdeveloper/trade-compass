@@ -5,7 +5,6 @@ import type {
   UpdateWatchlistItemDTO,
 } from '../domain/types.js';
 
-const SCHEMA = 'trade_compass';
 const TABLE = 'watchlist_items';
 
 export async function getWatchlistByUser(
@@ -15,7 +14,6 @@ export async function getWatchlistByUser(
   const client = createUserClient(accessToken);
 
   const { data, error } = await client
-    .schema(SCHEMA)
     .from(TABLE)
     .select('*')
     .eq('user_id', userId)
@@ -36,7 +34,6 @@ export async function addToWatchlist(
   const client = createUserClient(accessToken);
 
   const { data, error } = await client
-    .schema(SCHEMA)
     .from(TABLE)
     .insert({
       user_id: userId,
@@ -65,7 +62,6 @@ export async function updateWatchlistItem(
   const client = createUserClient(accessToken);
 
   const { data, error } = await client
-    .schema(SCHEMA)
     .from(TABLE)
     .update({ notes: updates.notes })
     .eq('id', itemId)
@@ -92,7 +88,6 @@ export async function removeFromWatchlist(
   const client = createUserClient(accessToken);
 
   const { error } = await client
-    .schema(SCHEMA)
     .from(TABLE)
     .delete()
     .eq('id', itemId)

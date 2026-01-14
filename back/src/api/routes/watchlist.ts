@@ -6,7 +6,7 @@ import type {
   WatchlistItemResponse,
   DecisionZoneType,
 } from '../../domain/types.js';
-import { authPlugin, type AuthenticatedRequest } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 import {
   getWatchlistByUser,
   addToWatchlist,
@@ -20,7 +20,10 @@ import { calculateDecisionZone } from '../../engine/decision-zone.js';
 
 export async function watchlistRoutes(app: FastifyInstance) {
   // Apply auth middleware to all routes in this plugin
-  await app.register(authPlugin);
+  app.addHook('preHandler', async (request, reply) => {
+    const { authMiddleware } = await import('../middleware/auth.js');
+    await authMiddleware(request, reply);
+  });
 
   // GET /watchlist - Get user's watchlist with enriched data
   app.get<{

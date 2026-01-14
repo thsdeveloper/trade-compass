@@ -4,6 +4,10 @@ import type {
   CandlesResponse,
   MysticPulseSeriesResponse,
   DecisionZone,
+  SignalsResponse,
+  SignalStats,
+  BacktestResponse,
+  BacktestSummary,
 } from '@/types/market';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -44,6 +48,7 @@ export interface WatchlistItemResponse {
   id: string;
   ticker: string;
   name: string;
+  name_pt?: string; // Optional name override
   notes: string | null;
   zone: DecisionZone;
   created_at: string;
@@ -107,16 +112,60 @@ class ApiClient {
     return this.fetch(`/assets/${ticker}/summary`);
   }
 
-  async getAssetAnalysis(ticker: string): Promise<AnalysisResponse> {
-    return this.fetch(`/assets/${ticker}/analysis`);
+  async getAssetAnalysis(ticker: string, timeframe: string = '1d'): Promise<AnalysisResponse> {
+    return this.fetch(`/assets/${ticker}/analysis?timeframe=${timeframe}`);
   }
 
-  async getCandles(ticker: string, limit: number = 120): Promise<CandlesResponse> {
-    return this.fetch(`/assets/${ticker}/candles?limit=${limit}`);
+  async getCandles(ticker: string, limit: number = 100, timeframe: string = '1d'): Promise<CandlesResponse> {
+    return this.fetch(`/assets/${ticker}/candles?limit=${limit}&timeframe=${timeframe}`);
   }
 
   async getMysticPulseSeries(ticker: string): Promise<MysticPulseSeriesResponse> {
     return this.fetch(`/assets/${ticker}/mystic-pulse/series`);
+  }
+
+  async getSignals(ticker: string, limit: number = 100, timeframe: string = '1d'): Promise<SignalsResponse> {
+    return this.fetch(`/assets/${ticker}/signals?limit=${limit}&timeframe=${timeframe}`);
+  }
+
+  async getSignalStats(ticker: string): Promise<{ ticker: string; stats: SignalStats }> {
+    return this.fetch(`/assets/${ticker}/signals/stats`);
+  }
+
+  async getBacktest(options?: { limit?: number; ticker?: string; setupType?: string }): Promise<BacktestResponse> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.ticker) params.append('ticker', options.ticker);
+    if (options?.setupType) params.append('setupType', options.setupType);
+    const query = params.toString();
+    return this.fetch(`/backtest${query ? `?${query}` : ''}`);
+  }
+
+  async getBacktestSummary(options?: { ticker?: string; setupType?: string }): Promise<{ summary: BacktestSummary }> {
+    const params = new URLSearchParams();
+    if (options?.ticker) params.append('ticker', options.ticker);
+    if (options?.setupType) params.append('setupType', options.setupType);
+    const query = params.toString();
+    return this.fetch(`/backtest/summary${query ? `?${query}` : ''}`);
+  }
+
+  async generateBacktest(ticker: string): Promise<{
+    ticker: string;
+    success: boolean;
+    signalsGenerated: number;
+    stats: {
+      total: number;
+      success: number;
+      failure: number;
+      pending: number;
+      expired: number;
+      successRate: number;
+    };
+  }> {
+    return this.fetch(`/backtest/generate/${ticker}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
   }
 
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
@@ -167,9 +216,10 @@ class ApiClient {
   }
 
   async logout(accessToken: string): Promise<{ message: string }> {
-    return this.authFetch('/auth/logout', accessToken, {
+    return this.authFetch<{ message: string }>('/auth/logout', accessToken, {
       method: 'POST',
-    });
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => ({ message: 'Logged out' })); // Ignore errors
   }
 
   async signInWithMagicLink(email: string): Promise<{ message: string }> {

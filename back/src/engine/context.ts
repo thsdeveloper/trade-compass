@@ -1,7 +1,7 @@
 import type { Candle, Context, Trend, VolumeLevel, VolatilityLevel } from '../domain/types.js';
 import {
-  SMA_SHORT_PERIOD,
-  SMA_LONG_PERIOD,
+  EMA_SHORT_PERIOD,
+  EMA_LONG_PERIOD,
   ATR_PERIOD,
   VOLUME_PERIOD,
   VOLATILITY_LOW_THRESHOLD,
@@ -9,32 +9,34 @@ import {
   VOLUME_LOW_THRESHOLD,
   VOLUME_HIGH_THRESHOLD,
 } from '../domain/constants.js';
-import { sma } from './indicators/sma.js';
+import { ema } from './indicators/ema.js';
 import { atrPercent } from './indicators/atr.js';
 import { volumeRatio } from './indicators/volume.js';
 
 /**
- * Calcula a tendencia baseada em SMAs
- * - Alta: close > sma50 AND sma20 > sma50
- * - Baixa: close < sma50 AND sma20 < sma50
- * - Lateral: caso contrario
+ * Calcula a tendencia baseada em EMAs (8 e 80)
+ * - Alta: EMA8 > EMA80
+ * - Baixa: EMA8 < EMA80
+ * - Lateral: Dificil determinar com EMAs cruzadas, 
+ *   mas vamos considerar estado de transicao se close estiver entre elas?
+ *   Simplificacao solicitada: 8 > 80 = Alta, 8 < 80 = Baixa.
  */
 export function calculateTrend(candles: Candle[]): Trend {
   const closes = candles.map((c) => c.close);
   const currentClose = closes[closes.length - 1];
 
-  const sma20 = sma(SMA_SHORT_PERIOD, closes);
-  const sma50 = sma(SMA_LONG_PERIOD, closes);
+  const ema8 = ema(EMA_SHORT_PERIOD, closes);
+  const ema80 = ema(EMA_LONG_PERIOD, closes);
 
-  if (sma20 === null || sma50 === null) {
+  if (ema8 === null || ema80 === null) {
     return 'Lateral';
   }
 
-  if (currentClose > sma50 && sma20 > sma50) {
+  if (ema8 > ema80) {
     return 'Alta';
   }
 
-  if (currentClose < sma50 && sma20 < sma50) {
+  if (ema8 < ema80) {
     return 'Baixa';
   }
 
@@ -107,14 +109,14 @@ export function calculateContext(candles: Candle[]): Context {
 export function getContextMeta(candles: Candle[]): Record<string, number> {
   const closes = candles.map((c) => c.close);
 
-  const sma20Value = sma(SMA_SHORT_PERIOD, closes);
-  const sma50Value = sma(SMA_LONG_PERIOD, closes);
+  const ema8Value = ema(EMA_SHORT_PERIOD, closes);
+  const ema80Value = ema(EMA_LONG_PERIOD, closes);
   const atrPctValue = atrPercent(ATR_PERIOD, candles);
   const volRatioValue = volumeRatio(VOLUME_PERIOD, candles);
 
   return {
-    sma20: sma20Value ?? 0,
-    sma50: sma50Value ?? 0,
+    ema8: ema8Value ?? 0,
+    ema80: ema80Value ?? 0,
     atrPercent: atrPctValue ?? 0,
     volumeRatio: volRatioValue ?? 0,
     currentClose: closes[closes.length - 1] ?? 0,

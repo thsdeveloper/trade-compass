@@ -38,8 +38,11 @@ export function SetupChartModal({
       setLoading(true);
       setError(null);
 
+      // Force daily timeframe explicitly for Setup 123
+      const timeframe = '1d';
+
       const promises: Promise<void>[] = [
-        api.getCandles(ticker).then((data) => {
+        api.getCandles(ticker, 1200, timeframe).then((data) => {
           setCandlesData(data);
         }),
       ];
@@ -99,6 +102,8 @@ export function SetupChartModal({
     }
   };
 
+  const { p2, p3, entry } = setup.meta;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-none !w-screen !h-screen !max-h-screen !rounded-none !top-0 !left-0 !translate-x-0 !translate-y-0 flex flex-col p-4 sm:p-6">
@@ -139,13 +144,39 @@ export function SetupChartModal({
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-4 h-0.5 bg-blue-500"></div>
-              <span className="text-muted-foreground">EMA20</span>
+              <span className="text-muted-foreground">EMA8</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-4 h-0.5 bg-orange-500"></div>
-              <span className="text-muted-foreground">EMA50</span>
+              <span className="text-muted-foreground">EMA80</span>
             </div>
-            {setup.meta.resistance && (
+
+            {p2 && (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-0.5 bg-red-500 border-dashed border-b-2 border-red-500"></div>
+                <span className="text-muted-foreground">
+                  P2 (Ref/Stop): {p2.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {p3 && (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-0.5 bg-yellow-500 border-dashed border-b-2 border-yellow-500"></div>
+                <span className="text-muted-foreground">
+                  P3 (Conf): {p3.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {entry && (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-0.5 bg-green-500"></div>
+                <span className="text-muted-foreground">
+                  Entrada (Pivot): {entry.toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            {setup.meta.resistance && !entry && (
               <div className="flex items-center gap-2">
                 <div className="w-4 h-0.5 bg-red-600 border-dashed border-b-2 border-red-600"></div>
                 <span className="text-muted-foreground">
@@ -153,7 +184,7 @@ export function SetupChartModal({
                 </span>
               </div>
             )}
-            {setup.meta.support && (
+            {setup.meta.support && !p2 && (
               <div className="flex items-center gap-2">
                 <div className="w-4 h-0.5 bg-red-600 border-dashed border-b-2 border-red-600"></div>
                 <span className="text-muted-foreground">
@@ -161,14 +192,7 @@ export function SetupChartModal({
                 </span>
               </div>
             )}
-            {setup.meta.stopLevel && (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-0.5 bg-red-500"></div>
-                <span className="text-muted-foreground">
-                  Stop: R$ {setup.meta.stopLevel.toFixed(2)}
-                </span>
-              </div>
-            )}
+
             {isMysticPulseSetup && (
               <>
                 <div className="flex items-center gap-2">

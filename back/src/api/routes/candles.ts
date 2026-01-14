@@ -3,14 +3,16 @@ import type { Candle, ApiError } from '../../domain/types.js';
 import { getAsset } from '../../data/asset-repository.js';
 import { getCandlesAsync } from '../../data/candle-repository.js';
 import { emaSeries } from '../../engine/indicators/ema.js';
-import { SMA_SHORT_PERIOD, SMA_LONG_PERIOD } from '../../domain/constants.js';
+import { macdSeries, type MACDResult } from '../../engine/indicators/macd.js';
+import { EMA_SHORT_PERIOD, EMA_LONG_PERIOD } from '../../domain/constants.js';
 
 interface CandlesResponse {
   ticker: string;
   candles: Candle[];
   indicators: {
-    sma20: (number | null)[];
-    sma50: (number | null)[];
+    ema8: (number | null)[];
+    ema80: (number | null)[];
+    macd: MACDResult[];
   };
 }
 
@@ -18,11 +20,12 @@ export async function candlesRoutes(app: FastifyInstance) {
   // GET /assets/:ticker/candles - Retorna candles para grafico
   app.get<{
     Params: { ticker: string };
-    Querystring: { limit?: string };
+    Querystring: { limit?: string; timeframe?: string };
     Reply: CandlesResponse | ApiError;
   }>('/assets/:ticker/candles', async (request, reply) => {
     const { ticker } = request.params;
-    const limit = request.query.limit ? parseInt(request.query.limit) : 60;
+    const limit = request.query.limit ? parseInt(request.query.limit) : 100; // Aumentar default limit
+    const timeframe = request.query.timeframe || '1d'; // Default para diario
     const normalizedTicker = ticker.toUpperCase().trim();
 
     // Validar ticker
@@ -35,14 +38,15 @@ export async function candlesRoutes(app: FastifyInstance) {
       });
     }
 
-    // Obter candles (precisamos de mais candles para calcular SMA50)
-    const extraCandles = Math.max(SMA_LONG_PERIOD, 50);
-    const candles = await getCandlesAsync(normalizedTicker, limit + extraCandles);
+    // Obter candles (precisamos de mais candles para calcular EMA80)
+    // Se for 120m, getCandlesAsync ja faz resampling
+    const extraCandles = Math.max(EMA_LONG_PERIOD, 80);
+    const candles = await getCandlesAsync(normalizedTicker, limit + extraCandles, timeframe);
 
-    if (!candles || candles.length < SMA_LONG_PERIOD) {
+    if (!candles || candles.length < EMA_LONG_PERIOD) {
       return reply.status(422).send({
         error: 'Unprocessable Entity',
-        message: `Dados insuficientes para o ativo ${normalizedTicker}. Minimo necessario: ${SMA_LONG_PERIOD} candles.`,
+        message: `Dados insuficientes para o ativo ${normalizedTicker}. Minimo necessario: ${EMA_LONG_PERIOD} candles.`,
         statusCode: 422,
       });
     }
@@ -50,22 +54,25 @@ export async function candlesRoutes(app: FastifyInstance) {
     // Extrair closes para calcular indicadores
     const closes = candles.map(c => c.close);
 
-    // Calcular indicadores para todos os candles (EMA)
-    const ema20Full = emaSeries(SMA_SHORT_PERIOD, closes);
-    const ema50Full = emaSeries(SMA_LONG_PERIOD, closes);
+    // Calcular indicadores para todos os candles (EMA e MACD)
+    const ema8Full = emaSeries(EMA_SHORT_PERIOD, closes);
+    const ema80Full = emaSeries(EMA_LONG_PERIOD, closes);
+    const macdFull = macdSeries(closes, 12, 26, 9);
 
     // Pegar apenas os ultimos N candles (conforme limit)
     const startIndex = Math.max(0, candles.length - limit);
     const candlesSlice = candles.slice(startIndex);
-    const ema20Slice = ema20Full.slice(startIndex);
-    const ema50Slice = ema50Full.slice(startIndex);
+    const ema8Slice = ema8Full.slice(startIndex);
+    const ema80Slice = ema80Full.slice(startIndex);
+    const macdSlice = macdFull.slice(startIndex);
 
     return {
       ticker: normalizedTicker,
       candles: candlesSlice,
       indicators: {
-        sma20: ema20Slice,
-        sma50: ema50Slice,
+        ema8: ema8Slice,
+        ema80: ema80Slice,
+        macd: macdSlice,
       },
     };
   });

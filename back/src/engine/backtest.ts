@@ -1,173 +1,143 @@
-import type { Candle, SetupType, Trend } from '../domain/types.js';
-import { BACKTEST_FORWARD_CANDLES, BACKTEST_R_MULTIPLIER, ATR_PERIOD } from '../domain/constants.js';
-import { atr } from './indicators/atr.js';
-import { wasBreakoutActive } from './setups/breakout.js';
-import { wasPullbackActive } from './setups/pullback-sma20.js';
-import { wasBreakdownActive } from './setups/breakdown.js';
-import { wasMysticPulseActive } from './setups/mystic-pulse.js';
-import { calculateTrend } from './context.js';
+import type { Candle, SetupType } from '../domain/types.js';
+import { getSignalStatsByType, type SignalStats } from '../data/signal-repository.js';
+import type { SetupType as SignalSetupType } from './setups/setup-123-history.js';
 
-interface BacktestResult {
+export interface BacktestResult {
   totalOccurrences: number;
   successCount: number;
+  failureCount: number;
+  pendingCount: number;
+  expiredCount: number;
   successRate: number;
 }
 
+// Cache de estatisticas em memoria
+const statsCache: Map<string, { stats: BacktestResult; timestamp: number }> = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
 /**
- * Avalia se um trade foi bem sucedido
- * Para setups de alta (breakout, pullback): sucesso = +1R antes de -1R
- * Para setups de baixa (breakdown): sucesso = -1R antes de +1R
+ * Converte SetupType para SignalSetupType
  */
-function evaluateTrade(
-  candles: Candle[],
-  entryIndex: number,
-  isLongSetup: boolean
-): boolean {
-  const entryCandle = candles[entryIndex];
-  const entryPrice = entryCandle.close;
-
-  // Calcular ATR no momento da entrada
-  const candlesForAtr = candles.slice(0, entryIndex + 1);
-  const atrValue = atr(ATR_PERIOD, candlesForAtr);
-
-  if (atrValue === null) {
-    return false;
+function toSignalSetupType(setupType: SetupType): SignalSetupType {
+  if (setupType === '123-compra' || setupType === '123-venda') {
+    return setupType;
   }
-
-  const rValue = atrValue * BACKTEST_R_MULTIPLIER;
-
-  // Definir alvos
-  let targetPrice: number;
-  let stopPrice: number;
-
-  if (isLongSetup) {
-    targetPrice = entryPrice + rValue;
-    stopPrice = entryPrice - rValue;
-  } else {
-    // Breakdown - lucro na queda
-    targetPrice = entryPrice - rValue;
-    stopPrice = entryPrice + rValue;
-  }
-
-  // Avaliar candles futuros
-  const endIndex = Math.min(entryIndex + BACKTEST_FORWARD_CANDLES, candles.length);
-
-  for (let i = entryIndex + 1; i < endIndex; i++) {
-    const candle = candles[i];
-
-    if (isLongSetup) {
-      // Para long: high >= target = sucesso, low <= stop = falha
-      if (candle.high >= targetPrice) {
-        return true;
-      }
-      if (candle.low <= stopPrice) {
-        return false;
-      }
-    } else {
-      // Para short/breakdown: low <= target = sucesso, high >= stop = falha
-      if (candle.low <= targetPrice) {
-        return true;
-      }
-      if (candle.high >= stopPrice) {
-        return false;
-      }
-    }
-  }
-
-  // Nao atingiu nem alvo nem stop
-  return false;
+  // Fallback para outros tipos (quando implementados)
+  return '123-compra';
 }
 
 /**
- * Executa backtest para um tipo de setup
+ * Executa backtest assincrono usando dados do banco
+ */
+export async function runBacktestAsync(
+  ticker: string,
+  setupType: SetupType
+): Promise<BacktestResult> {
+  const cacheKey = `${ticker.toUpperCase()}-${setupType}`;
+
+  // Verificar cache
+  const cached = statsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.stats;
+  }
+
+  try {
+    const signalType = toSignalSetupType(setupType);
+    const dbStats: SignalStats = await getSignalStatsByType(ticker, signalType);
+
+    const result: BacktestResult = {
+      totalOccurrences: dbStats.total,
+      successCount: dbStats.success,
+      failureCount: dbStats.failure,
+      pendingCount: dbStats.pending,
+      expiredCount: dbStats.expired,
+      successRate: dbStats.successRate
+    };
+
+    // Atualizar cache
+    statsCache.set(cacheKey, { stats: result, timestamp: Date.now() });
+
+    return result;
+  } catch (error) {
+    console.error(`[backtest] Erro ao buscar stats para ${ticker}/${setupType}:`, error);
+
+    // Retornar resultado vazio em caso de erro
+    return {
+      totalOccurrences: 0,
+      successCount: 0,
+      failureCount: 0,
+      pendingCount: 0,
+      expiredCount: 0,
+      successRate: 0
+    };
+  }
+}
+
+/**
+ * Versao sincrona para compatibilidade (usa cache)
+ * Retorna 0 se nao houver dados em cache
  */
 export function runBacktest(
   candles: Candle[],
   setupType: SetupType
 ): BacktestResult {
-  let totalOccurrences = 0;
-  let successCount = 0;
-
-  // Comeca apos ter dados suficientes para indicadores
-  const startIndex = 60; // SMA50 + margem
-
-  for (let i = startIndex; i < candles.length - BACKTEST_FORWARD_CANDLES; i++) {
-    let wasActive = false;
-    let isLongSetup = setupType !== 'breakdown';
-
-    switch (setupType) {
-      case 'breakout':
-        wasActive = wasBreakoutActive(candles, i);
-        break;
-      case 'pullback-sma20': {
-        // Precisa calcular trend no momento
-        const slicedCandles = candles.slice(0, i + 1);
-        const trend = calculateTrend(slicedCandles);
-        wasActive = wasPullbackActive(candles, i, trend);
-        break;
-      }
-      case 'breakdown':
-        wasActive = wasBreakdownActive(candles, i);
-        break;
-      case 'mystic-pulse': {
-        // Mystic Pulse - pode ser long ou short dependendo da tendencia
-        const slicedCandles = candles.slice(0, i + 1);
-        const trend = calculateTrend(slicedCandles);
-        wasActive = wasMysticPulseActive(candles, i, trend);
-        // Para mystic-pulse, determinamos direcao pelo trend
-        isLongSetup = trend !== 'Baixa';
-        break;
-      }
-    }
-
-    if (wasActive) {
-      totalOccurrences++;
-      if (evaluateTrade(candles, i, isLongSetup)) {
-        successCount++;
-      }
-    }
-  }
-
-  const successRate =
-    totalOccurrences > 0
-      ? Math.round((successCount / totalOccurrences) * 100)
-      : 50; // Default se nao houver ocorrencias
-
+  // Esta funcao e mantida para compatibilidade
+  // Prefira usar runBacktestAsync
   return {
-    totalOccurrences,
-    successCount,
-    successRate,
+    totalOccurrences: 0,
+    successCount: 0,
+    failureCount: 0,
+    pendingCount: 0,
+    expiredCount: 0,
+    successRate: 0
   };
 }
 
 /**
- * Cache de resultados de backtest
- */
-const backtestCache: Map<string, BacktestResult> = new Map();
-
-/**
- * Obtem taxa de sucesso para um setup (com cache)
+ * Obtem taxa de sucesso do cache (sincrono)
+ * Retorna 0 se nao houver dados em cache
  */
 export function getSuccessRate(
   ticker: string,
   candles: Candle[],
   setupType: SetupType
 ): number {
-  const cacheKey = `${ticker}-${setupType}`;
+  const cacheKey = `${ticker.toUpperCase()}-${setupType}`;
+  const cached = statsCache.get(cacheKey);
 
-  if (backtestCache.has(cacheKey)) {
-    return backtestCache.get(cacheKey)!.successRate;
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.stats.successRate;
   }
 
-  const result = runBacktest(candles, setupType);
-  backtestCache.set(cacheKey, result);
+  return 0; // Sem dados em cache
+}
 
+/**
+ * Obtem taxa de sucesso de forma assincrona
+ */
+export async function getSuccessRateAsync(
+  ticker: string,
+  setupType: SetupType
+): Promise<number> {
+  const result = await runBacktestAsync(ticker, setupType);
   return result.successRate;
 }
 
 /**
- * Limpar cache (util para testes)
+ * Atualiza cache com estatisticas
+ */
+export function updateStatsCache(
+  ticker: string,
+  setupType: SetupType,
+  stats: BacktestResult
+): void {
+  const cacheKey = `${ticker.toUpperCase()}-${setupType}`;
+  statsCache.set(cacheKey, { stats, timestamp: Date.now() });
+}
+
+/**
+ * Limpa cache de backtest
  */
 export function clearBacktestCache(): void {
-  backtestCache.clear();
+  statsCache.clear();
 }

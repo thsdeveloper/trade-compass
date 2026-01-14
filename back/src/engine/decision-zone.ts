@@ -10,25 +10,22 @@ interface DecisionInput {
  */
 const ZONE_MESSAGES: Record<DecisionZoneType, string[]> = {
   FAVORAVEL: [
-    'Contexto apresenta caracteristicas favoraveis. Tendencia e volume alinhados.',
-    'Condicoes de mercado parecem propicias para operacoes alinhadas com a tendencia.',
-    'Indicadores apontam momento potencialmente oportuno. Avalie os setups disponiveis.',
+    'Contexto favoravel para operacoes na ponta compradora.',
+    'Tendencia de alta confirmada por setups.',
+    'Sinais de compra ativos no momento.',
   ],
   NEUTRA: [
-    'Mercado em consolidacao. Aguardar definicao pode ser prudente.',
-    'Contexto sem direcao clara. Momento de observacao e planejamento.',
-    'Sinais mistos no momento. Considere cautela ate melhor definicao.',
+    'Mercado sem direcao clara ou em transicao.',
+    'Aguardar confirmacao de rompimentos.',
+    'Observe a formacao de padroes 1-2-3.',
   ],
   RISCO: [
-    'ATENCAO: Contexto indica momento de risco elevado. Priorize protecao do capital.',
-    'Cautela recomendada. Indicadores sugerem aumento de risco.',
-    'Momento desfavoravel para novas posicoes. Avalie exposicao atual.',
+    'Tendencia de baixa predominante.',
+    'Favorece operacoes de venda ou protecao de carteira.',
+    'Cuidado com compras contra tendencia.',
   ],
 };
 
-/**
- * Seleciona mensagem aleatoria (deterministico baseado em data)
- */
 function selectMessage(zone: DecisionZoneType): string {
   const messages = ZONE_MESSAGES[zone];
   const dayOfYear = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
@@ -36,37 +33,38 @@ function selectMessage(zone: DecisionZoneType): string {
   return messages[index];
 }
 
-/**
- * Verifica se um setup especifico esta ativo
- */
 function isSetupActive(setups: SetupResult[], setupId: string): boolean {
   return setups.some(
-    (s) => s.id.startsWith(setupId) && s.status === 'ATIVO'
+    (s) => s.id === setupId && s.status === 'ATIVO'
   );
 }
 
-/**
- * Conta quantos setups estao ativos
- */
 function countActiveSetups(setups: SetupResult[]): number {
   return setups.filter((s) => s.status === 'ATIVO').length;
 }
 
-/**
- * Agrega contexto e setups para determinar a zona de decisao
- */
 export function calculateDecisionZone(input: DecisionInput): DecisionZone {
   const { context, setups } = input;
   const reasons: string[] = [];
 
-  // 1. Se Breakdown ATIVO → RISCO
-  if (isSetupActive(setups, 'breakdown')) {
-    reasons.push('Quebra de suporte detectada');
-    reasons.push('Momento de protecao de capital');
+  // 1. Setup 123 Compra ATIVO -> FAVORAVEL
+  if (isSetupActive(setups, '123-compra')) {
+    reasons.push('Setup 123 de Compra Ativado');
+    reasons.push('Tendencia de Alta (EMA8 > EMA80)');
+    reasons.push('Rompimento de pivot confirmado');
 
-    if (context.volatility === 'Alta') {
-      reasons.push('Volatilidade elevada aumenta o risco');
-    }
+    return {
+      zone: 'FAVORAVEL',
+      message: selectMessage('FAVORAVEL'),
+      reasons,
+    };
+  }
+
+  // 2. Setup 123 Venda ATIVO -> RISCO (Favorece Venda)
+  if (isSetupActive(setups, '123-venda')) {
+    reasons.push('Setup 123 de Venda Ativado');
+    reasons.push('Tendencia de Baixa (EMA8 < EMA80)');
+    reasons.push('Perda de suporte confirmada');
 
     return {
       zone: 'RISCO',
@@ -75,44 +73,12 @@ export function calculateDecisionZone(input: DecisionInput): DecisionZone {
     };
   }
 
-  // 2. Se Breakout ATIVO + trend Alta + volume Acima → FAVORAVEL
-  if (
-    isSetupActive(setups, 'breakout') &&
-    context.trend === 'Alta' &&
-    context.volume === 'Acima'
-  ) {
-    reasons.push('Rompimento de resistencia confirmado');
-    reasons.push('Tendencia de alta');
-    reasons.push('Volume acima da media');
-
-    return {
-      zone: 'FAVORAVEL',
-      message: selectMessage('FAVORAVEL'),
-      reasons,
-    };
-  }
-
-  // 3. Se Pullback ATIVO + trend Alta → FAVORAVEL
-  if (isSetupActive(setups, 'pullback') && context.trend === 'Alta') {
-    reasons.push('Pullback em tendencia de alta');
-    reasons.push('Teste de suporte dinamico na SMA20');
-
-    if (context.volume !== 'Abaixo') {
-      reasons.push('Volume adequado');
-    }
-
-    return {
-      zone: 'FAVORAVEL',
-      message: selectMessage('FAVORAVEL'),
-      reasons,
-    };
-  }
-
-  // 4. Se volatilidade Alta + nenhum setup ativo → NEUTRA (com aviso)
-  if (context.volatility === 'Alta' && countActiveSetups(setups) === 0) {
-    reasons.push('Volatilidade elevada');
-    reasons.push('Nenhum setup ativo no momento');
-    reasons.push('Aguardar reducao de volatilidade pode ser prudente');
+  // 3. Setups em formacao
+  const setupsInFormation = setups.filter(s => s.status === 'EM_FORMACAO');
+  if (setupsInFormation.length > 0) {
+    const names = setupsInFormation.map(s => s.title).join(', ');
+    reasons.push(`Setups em formacao: ${names}`);
+    reasons.push('Aguardando rompimento dos pontos de entrada');
 
     return {
       zone: 'NEUTRA',
@@ -121,34 +87,22 @@ export function calculateDecisionZone(input: DecisionInput): DecisionZone {
     };
   }
 
-  // 5. Tendencia de baixa sem setup de rompimento → NEUTRA tendendo a RISCO
-  if (context.trend === 'Baixa') {
-    reasons.push('Tendencia de baixa');
-
-    if (context.volume === 'Acima') {
-      reasons.push('Volume elevado pode indicar continuidade da queda');
-      return {
-        zone: 'RISCO',
-        message: selectMessage('RISCO'),
-        reasons,
-      };
-    }
-
-    reasons.push('Momento de cautela');
-    return {
-      zone: 'NEUTRA',
-      message: selectMessage('NEUTRA'),
-      reasons,
-    };
-  }
-
-  // 6. Default → NEUTRA
+  // 4. Default baseado no contexto
   reasons.push(`Tendencia: ${context.trend}`);
-  reasons.push(`Volume: ${context.volume}`);
   reasons.push(`Volatilidade: ${context.volatility}`);
 
-  if (countActiveSetups(setups) > 0) {
-    reasons.push(`${countActiveSetups(setups)} setup(s) ativo(s)`);
+  if (context.trend === 'Alta') {
+    return {
+      zone: 'NEUTRA', // Neutra pois nao tem setup ativo
+      message: 'Tendencia de Alta mas sem setup de entrada confirmado.',
+      reasons
+    };
+  } else if (context.trend === 'Baixa') {
+    return {
+      zone: 'RISCO',
+      message: 'Mercado em baixa sem setup de venda confirmado.',
+      reasons
+    };
   }
 
   return {

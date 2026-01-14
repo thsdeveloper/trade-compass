@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
 import { PageShell } from '@/components/organisms/PageShell';
 import { TickerInput } from '@/components/atoms/TickerInput';
+import { AssetLogo } from '@/components/atoms/AssetLogo';
 import { ContextCards } from '@/components/molecules/ContextCards';
 import { DecisionZoneCard } from '@/components/molecules/DecisionZoneCard';
+import { InlineChart } from '@/components/molecules/InlineChart';
 import { SetupList } from '@/components/organisms/SetupList';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,20 +51,26 @@ export default async function AssetPage({ params }: AssetPageProps) {
         </div>
 
         {/* Header do ativo */}
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-3xl font-bold">{summary.ticker}</h1>
-            <span className="text-xl text-muted-foreground">{summary.name}</span>
-          </div>
-          <p className="text-2xl font-semibold">{formattedPrice}</p>
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span>Atualizado em: {formattedDate}</span>
+        <div className="flex items-start gap-4">
+          <AssetLogo ticker={normalizedTicker} size="xl" className="shadow-md" />
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h1 className="text-3xl font-bold">{summary.ticker}</h1>
+              <span className="text-xl text-muted-foreground">{summary.name}</span>
+            </div>
+            <p className="text-2xl font-semibold">{formattedPrice}</p>
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Atualizado em: {formattedDate}</span>
+            </div>
           </div>
         </div>
 
         {/* Zona de Decisao */}
         <DecisionZoneCard result={decisionZone} />
+
+        {/* Grafico */}
+        <InlineChart ticker={normalizedTicker} setup={setups[0]} />
 
         {/* Contexto do Ativo */}
         <section>

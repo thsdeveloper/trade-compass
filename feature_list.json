@@ -11,7 +11,7 @@
     "Radix UI (Shadcn/ui)",
     "Lucide React",
     "react-financial-charts",
-    "yahoo-finance2",
+    "BRAPI (brapi.dev)",
     "PNPM (Monorepo)",
     "Vitest",
     "ESLint"

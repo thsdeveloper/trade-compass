@@ -8,13 +8,21 @@ export interface Candle {
   volume: number;
 }
 
+// Resultado do MACD
+export interface MACDResult {
+  macd: number | null;
+  signal: number | null;
+  histogram: number | null;
+}
+
 // Resposta do endpoint de candles
 export interface CandlesResponse {
   ticker: string;
   candles: Candle[];
   indicators: {
-    sma20: (number | null)[];
-    sma50: (number | null)[];
+    ema8: (number | null)[];
+    ema80: (number | null)[];
+    macd: MACDResult[];
   };
 }
 
@@ -120,4 +128,82 @@ export interface MysticPulseDataPoint {
 export interface MysticPulseSeriesResponse {
   ticker: string;
   data: MysticPulseDataPoint[];
+}
+
+// ==================== SINAIS HISTORICOS ====================
+
+// Status do sinal historico
+export type SignalStatus = 'pending' | 'success' | 'failure' | 'expired';
+
+// Tipo de setup
+export type SetupType = '123-compra' | '123-venda';
+
+// Sinal historico
+export interface HistoricalSignal {
+  id: string;
+  ticker: string;
+  setup_type: SetupType;
+  timeframe: string;
+  signal_time: string;
+  p1_index: number;
+  p2_index: number;
+  p3_index: number;
+  p1_price: number;
+  p2_price: number;
+  p3_price: number;
+  entry_price: number;
+  stop_price: number;
+  target_price: number;
+  status: SignalStatus;
+  resolved_at: string | null;
+  resolved_price: number | null;
+  candles_to_resolve: number | null;
+  created_at: string;
+}
+
+// Estatisticas de sinais
+export interface SignalStats {
+  total: number;
+  success: number;
+  failure: number;
+  pending: number;
+  expired: number;
+  successRate: number;
+}
+
+// Resposta do endpoint de sinais
+export interface SignalsResponse {
+  ticker: string;
+  timeframe: string;
+  signals: HistoricalSignal[];
+  stats: SignalStats;
+}
+
+// ==================== BACKTEST ====================
+
+// Resumo do backtest
+export interface BacktestSummary {
+  totalSignals: number;
+  totalSuccess: number;
+  totalFailure: number;
+  totalPending: number;
+  totalExpired: number;
+  successRate: number;
+  avgCandlesToResolve: number;
+  profitFactor: number;
+  totalReturnPct: number;    // Retorno total acumulado %
+  avgReturnPct: number;      // Retorno médio por operação %
+  avgWinPct: number;         // Ganho médio % (só vencedoras)
+  avgLossPct: number;        // Perda média % (só perdedoras)
+  bySetupType: {
+    '123-compra': SignalStats;
+    '123-venda': SignalStats;
+  };
+  byTicker: Record<string, SignalStats>;
+}
+
+// Resposta do endpoint de backtest
+export interface BacktestResponse {
+  summary: BacktestSummary;
+  operations: HistoricalSignal[];
 }

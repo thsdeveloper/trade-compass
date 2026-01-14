@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -13,29 +13,77 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
-import { Compass, Mail, Lock, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Compass, Mail, Lock, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'recover' | 'magic-link';
 
-export default function AuthPage() {
+function AuthPageContent() {
   const [mode, setMode] = useState<AuthMode>('login');
+  const [isInitialized, setIsInitialized] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { signIn, signUp, recoverPassword, signInWithMagicLink } = useAuth();
+  const { signIn, signUp, recoverPassword, signInWithMagicLink, setSessionFromTokens } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Check for error in URL params (from callback redirect)
+  // Handle initial mode from URL
   useEffect(() => {
+    if (!isInitialized) {
+      const urlMode = searchParams.get('mode');
+      if (urlMode === 'register' || urlMode === 'login' || urlMode === 'recover' || urlMode === 'magic-link') {
+        setMode(urlMode as AuthMode);
+      }
+      setIsInitialized(true);
+    }
+
     const urlError = searchParams.get('error');
     if (urlError) {
       setError(decodeURIComponent(urlError));
     }
-  }, [searchParams]);
+  }, [searchParams, isInitialized]);
+
+  // Handle hash fragment with access_token (implicit flow from magic link)
+  useEffect(() => {
+    const handleHashFragment = async () => {
+      // Check if there's a hash fragment with tokens
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          setLoading(true);
+          // Clear the hash immediately to prevent retry loops
+          window.history.replaceState(null, '', window.location.pathname);
+
+          try {
+            // Use AuthContext method to set session (same Supabase instance)
+            const { error } = await setSessionFromTokens(accessToken, refreshToken);
+
+            if (error) {
+              setError('Erro ao estabelecer sessão: ' + error.message);
+            } else {
+              // Redirect to dashboard
+              router.push('/watchlist');
+              return;
+            }
+          } catch (err) {
+            console.error('Error setting session from hash:', err);
+            setError('Erro ao processar link de autenticação');
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    };
+
+    handleHashFragment();
+  }, [router, setSessionFromTokens]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,5 +307,21 @@ export default function AuthPage() {
         </Card>
       </div>
     </PageShell>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageShell>
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </PageShell>
+      }
+    >
+      <AuthPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 import type { Asset } from './types.js';
 
 // ==================== ASSETS ====================
-// Ativos disponiveis via Yahoo Finance (sufixo .SA para B3)
+// Ativos disponiveis via BRAPI (B3)
 
 export const ASSETS: Asset[] = [
   // Blue Chips - Alta liquidez
@@ -53,6 +53,8 @@ export const ASSETS: Asset[] = [
 
 export const SMA_SHORT_PERIOD = 20;
 export const SMA_LONG_PERIOD = 50;
+export const EMA_SHORT_PERIOD = 8;
+export const EMA_LONG_PERIOD = 80;
 export const ATR_PERIOD = 14;
 export const VOLUME_PERIOD = 20;
 export const RSI_PERIOD = 14;
@@ -97,5 +99,5 @@ export const BACKTEST_R_MULTIPLIER = 1; // 1R risk/reward
 
 // ==================== DATA ====================
 
-export const CANDLES_PER_TICKER = 600;
+export const CANDLES_PER_TICKER = 1300;
 export const DEFAULT_CANDLE_LIMIT = 300;

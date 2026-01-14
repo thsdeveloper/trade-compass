@@ -1,36 +1,123 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧭 Trade Compass
 
-## Getting Started
+[![Project Status: Active](https://img.shields.io/badge/Project%20Status-Active-brightgreen.svg)](#)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
+[![Fastify](https://img.shields.io/badge/Fastify-5-black?logo=fastify)](https://www.fastify.io/)
+[![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-blue?logo=supabase)](https://supabase.com/)
 
-First, run the development server:
+**Trade Compass** is a comprehensive technical analysis platform specifically designed for the Brazilian financial market (B3). It provides traders with real-time-ish insights, market context analysis, and automated setup detection to facilitate better decision-making.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 🚀 Key Features
+
+- 🔐 **Secure Authentication**: End-to-end user authentication with Supabase, including traditional login/registration and **Magic Link** support.
+- 📋 **Personalized Watchlists**: Monitor your favorite B3 assets in a customized view.
+- 📊 **Advanced Charting**: Interactive candlestick charts with technical indicators powered by `react-financial-charts`.
+- 🧠 **Market Context Analysis**: Real-time evaluation of trend, volume, and volatility.
+- 🎯 **Decision Zones**: Identify high-probability zones (Favoravel/Neutra/Risco).
+- ⚡ **Technical Setups**: Automated detection of popular setups:
+  - Breakouts (Rompimento)
+  - SMA20 Pullbacks
+  - Breakdowns
+  - Mystic Pulse
+- 📱 **Responsive Design**: Modern UI built with Tailwind CSS and Radix UI (Shadcn/ui).
+
+---
+
+## 🛠️ Technical Stack
+
+### Frontend
+- **Framework**: Next.js 16 (App Router)
+- **Language**: TypeScript + React 19
+- **Styling**: Tailwind CSS 4 + Shadcn/ui
+- **Icons**: Lucide React
+
+### Backend
+- **Engine**: Fastify 5
+- **Database / Auth**: Supabase (PostgreSQL)
+- **Data Source**: BRAPI (`brapi.dev`)
+
+### Dev & Tooling
+- **Monorepo**: PNPM Workspaces
+- **Testing**: Vitest + Playwright (E2E)
+- **Linting**: ESLint
+
+---
+
+## 📁 Project Structure
+
+```text
+trade-compass/
+├── back/           # Fastify backend API
+├── front/          # Next.js frontend application
+├── e2e/            # Playwright end-to-end tests
+├── package.json    # Root workspace configuration
+└── pnpm-workspace.yaml
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🚦 Getting Started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Prerequisites
 
-## Learn More
+- [Node.js](https://nodejs.org/) (v18+)
+- [PNPM](https://pnpm.io/) (v8+)
 
-To learn more about Next.js, take a look at the following resources:
+### Installation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-repo/trade-compass.git
+   cd trade-compass
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
 
-## Deploy on Vercel
+3. Configure environment variables:
+   - Copy `.env.example` to `.env` in both `back/` and `front/` folders.
+   - Fill in your Supabase credentials and other required keys.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Running the Project
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Run both backend and frontend concurrently from the root:
+
+```bash
+pnpm dev
+```
+
+Alternatively, you can run them separately:
+
+```bash
+# Frontend only
+pnpm dev:front
+
+# Backend only
+pnpm dev:back
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run backend tests
+pnpm test
+
+# Run E2E tests (requires servers to be running)
+pnpm exec playwright test
+```
+
+---
+
+## 📄 License
+
+This project is proprietary and for internal use.
+
+---
+
+*Built with ❤️ for the Brazilian trading community.*

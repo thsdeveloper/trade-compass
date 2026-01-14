@@ -5,3 +5,5 @@ export { avgVolume, volumeRatio } from './volume.js';
 export { rsi } from './rsi.js';
 export { mysticPulse, mysticPulseSeries } from './mystic-pulse.js';
 export type { MysticPulseResult } from './mystic-pulse.js';
+export { macd, macdSeries } from './macd.js';
+export type { MACDResult } from './macd.js';

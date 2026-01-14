@@ -1,18 +1,9 @@
 import { PageShell } from '@/components/organisms/PageShell';
 import { TickerInput } from '@/components/atoms/TickerInput';
-import { api } from '@/lib/api';
+import { WatchlistAssets } from '@/components/molecules/WatchlistAssets';
 import { Compass } from 'lucide-react';
-import Link from 'next/link';
 
-export default async function HomePage() {
-  let assets: Array<{ ticker: string; name: string }> = [];
-
-  try {
-    assets = await api.getAssets();
-  } catch {
-    // Fallback para lista vazia se API nao estiver disponivel
-  }
-
+export default function HomePage() {
   return (
     <PageShell>
       <div className="flex flex-col items-center justify-center py-12 sm:py-20">
@@ -34,28 +25,8 @@ export default async function HomePage() {
           <TickerInput />
         </div>
 
-        {/* Lista de ativos disponiveis */}
-        {assets.length > 0 && (
-          <div className="mt-8 text-center">
-            <p className="text-sm text-muted-foreground mb-3">
-              Ativos disponiveis:
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {assets.map((asset) => (
-                <Link
-                  key={asset.ticker}
-                  href={`/asset/${asset.ticker}`}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 text-sm font-medium transition-colors"
-                >
-                  <span className="font-semibold">{asset.ticker}</span>
-                  <span className="text-muted-foreground text-xs hidden sm:inline">
-                    {asset.name}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Lista de ativos da watchlist do usuario */}
+        <WatchlistAssets />
 
         {/* Features */}
         <div className="mt-16 grid w-full max-w-2xl grid-cols-1 gap-6 sm:grid-cols-3">

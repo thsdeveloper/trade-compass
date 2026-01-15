@@ -13,7 +13,7 @@ export default function HomePage() {
             <Compass className="h-12 w-12 text-primary sm:h-16 sm:w-16" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            TradeCompass
+            MoneyCompass
           </h1>
           <p className="max-w-md text-lg text-muted-foreground">
             Clareza para decidir. Dados para navegar o mercado.

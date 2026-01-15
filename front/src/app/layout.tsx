@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'TradeCompass - Clareza para Decidir',
+  title: 'MoneyCompass - Clareza para Decidir',
   description:
     'Copiloto inteligente para decisoes no mercado financeiro. Analise de contexto, zonas de decisao e setups tecnicos.',
 };

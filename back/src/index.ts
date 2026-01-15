@@ -12,7 +12,7 @@ async function main() {
     console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║                                                       ║
-║   TradeCompass Backend API                            ║
+║   MoneyCompass Backend API                            ║
 ║   Servidor rodando em http://localhost:${PORT}          ║
 ║                                                       ║
 ║   Endpoints:                                          ║

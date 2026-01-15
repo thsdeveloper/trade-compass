@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for TradeCompass e2e tests
+ * Playwright configuration for MoneyCompass e2e tests
  *
  * Tests run against the Next.js frontend (port 3000) and Fastify backend (port 3001)
  * Both servers must be running before executing tests.

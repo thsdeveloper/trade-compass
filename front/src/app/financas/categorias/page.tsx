@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -32,13 +32,19 @@ import {
   X,
   Lock,
 } from 'lucide-react';
+import { CategoriasPageSkeleton } from '@/components/organisms/skeletons/CategoriasPageSkeleton';
 import { financeApi } from '@/lib/finance-api';
+import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
 import type {
   FinanceCategory,
   CategoryFormData,
   FinanceCategoryType,
+  BudgetCategory,
 } from '@/types/finance';
 import { CATEGORY_TYPE_LABELS } from '@/types/finance';
+import { BudgetCategorySelect, BudgetCategoryBadge } from '@/components/molecules/BudgetCategorySelect';
+import { CategoryIcon, IconSelector, ColorPicker, DEFAULT_CATEGORY_ICONS } from '@/components/atoms/CategoryIcon';
+import { DeleteConfirm } from '@/components/molecules/ConfirmDialog';
 
 export default function CategoriasPage() {
   const { user, session, loading: authLoading } = useAuth();
@@ -52,6 +58,8 @@ export default function CategoriasPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<FinanceCategory | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<FinanceCategory | null>(null);
   const [formData, setFormData] = useState<CategoryFormData>({
     name: '',
     type: 'OUTROS',
@@ -59,8 +67,15 @@ export default function CategoriasPage() {
     icon: 'Tag',
   });
 
-  const loadData = useCallback(async () => {
+  // Ref para evitar reload desnecessário
+  const hasLoadedRef = useRef(false);
+
+  const loadData = useCallback(async (forceReload = false) => {
     if (!session?.access_token) return;
+
+    if (!forceReload && hasLoadedRef.current) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -68,6 +83,7 @@ export default function CategoriasPage() {
     try {
       const data = await financeApi.getCategories(session.access_token);
       setCategories(data);
+      hasLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
     } finally {
@@ -85,6 +101,11 @@ export default function CategoriasPage() {
 
     loadData();
   }, [user, authLoading, router, loadData]);
+
+  // Listen for data changes from global dialogs
+  useFinanceDataRefresh(() => {
+    loadData(true);
+  });
 
   const openNewDialog = () => {
     setEditingCategory(null);
@@ -105,6 +126,7 @@ export default function CategoriasPage() {
       type: category.type,
       color: category.color,
       icon: category.icon,
+      budget_category: category.budget_category || undefined,
     });
     setDialogOpen(true);
   };
@@ -117,14 +139,14 @@ export default function CategoriasPage() {
       if (editingCategory) {
         await financeApi.updateCategory(
           editingCategory.id,
-          { name: formData.name, color: formData.color },
+          { name: formData.name, color: formData.color, icon: formData.icon, budget_category: formData.budget_category },
           session.access_token
         );
       } else {
         await financeApi.createCategory(formData, session.access_token);
       }
       setDialogOpen(false);
-      loadData();
+      loadData(true);
     } catch (err) {
       console.error('Error saving category:', err);
     } finally {
@@ -132,34 +154,28 @@ export default function CategoriasPage() {
     }
   };
 
-  const handleDelete = async (categoryId: string) => {
-    if (!session?.access_token) return;
-    if (!confirm('Deseja remover esta categoria?')) return;
+  const openDeleteDialog = (category: FinanceCategory) => {
+    setCategoryToDelete(category);
+    setDeleteDialogOpen(true);
+  };
 
-    try {
-      await financeApi.deleteCategory(categoryId, session.access_token);
-      loadData();
-    } catch (err) {
-      console.error('Error deleting category:', err);
-    }
+  const handleDelete = async () => {
+    if (!session?.access_token || !categoryToDelete) return;
+
+    await financeApi.deleteCategory(categoryToDelete.id, session.access_token);
+    loadData(true);
   };
 
   // Group categories by type
   const expenseCategories = categories.filter((c) =>
-    ['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'OUTROS'].includes(c.type)
+    ['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'DIVIDA', 'OUTROS'].includes(c.type)
   );
   const incomeCategories = categories.filter((c) =>
     ['SALARIO', 'FREELANCE', 'INVESTIMENTOS'].includes(c.type)
   );
 
   if (authLoading || loading) {
-    return (
-      <PageShell>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </div>
-      </PageShell>
-    );
+    return <CategoriasPageSkeleton />;
   }
 
   if (error) {
@@ -170,7 +186,7 @@ export default function CategoriasPage() {
             <AlertCircle className="h-5 w-5 text-red-500" />
           </div>
           <p className="text-sm text-slate-500">{error}</p>
-          <Button variant="outline" size="sm" onClick={loadData} className="mt-2">
+          <Button variant="outline" size="sm" onClick={() => loadData()} className="mt-2">
             Tentar novamente
           </Button>
         </div>
@@ -181,14 +197,17 @@ export default function CategoriasPage() {
   const CategoryItem = ({ category }: { category: FinanceCategory }) => (
     <div className="group flex items-center justify-between rounded-md border border-slate-100 px-3 py-2.5 transition-colors hover:border-slate-200 hover:bg-slate-50/50">
       <div className="flex items-center gap-3">
-        <div
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: category.color }}
+        <CategoryIcon
+          icon={category.icon}
+          color={category.color}
+          size="sm"
+          withBackground
         />
         <span className="text-sm font-medium text-slate-700">{category.name}</span>
         {category.is_system && (
           <Lock className="h-3 w-3 text-slate-300" />
         )}
+        <BudgetCategoryBadge category={category.budget_category} />
       </div>
       {!category.is_system && (
         <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -199,7 +218,7 @@ export default function CategoriasPage() {
             <Pencil className="h-3 w-3" />
           </button>
           <button
-            onClick={() => handleDelete(category.id)}
+            onClick={() => openDeleteDialog(category)}
             className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
           >
             <X className="h-3.5 w-3.5" />
@@ -212,34 +231,6 @@ export default function CategoriasPage() {
   return (
     <PageShell>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/financas')}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="space-y-1">
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-                Categorias
-              </h1>
-              <p className="text-sm text-slate-500">
-                Gerencie suas categorias de transacoes
-              </p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            className="h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800"
-            onClick={openNewDialog}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Nova categoria
-          </Button>
-        </div>
-
         {/* Categories Grid */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Expense Categories */}
@@ -338,7 +329,11 @@ export default function CategoriasPage() {
                 <Select
                   value={formData.type}
                   onValueChange={(value: FinanceCategoryType) =>
-                    setFormData({ ...formData, type: value })
+                    setFormData({
+                      ...formData,
+                      type: value,
+                      icon: DEFAULT_CATEGORY_ICONS[value] || 'Tag',
+                    })
                   }
                 >
                   <SelectTrigger className="h-9 text-sm">
@@ -356,22 +351,43 @@ export default function CategoriasPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="color" className="text-xs font-medium text-slate-600">
+              <Label className="text-xs font-medium text-slate-600">
                 Cor
               </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="color"
-                  type="color"
-                  value={formData.color}
-                  onChange={(e) =>
-                    setFormData({ ...formData, color: e.target.value })
-                  }
-                  className="h-9 w-16 cursor-pointer p-1"
-                />
-                <span className="text-xs text-slate-400">{formData.color}</span>
-              </div>
+              <ColorPicker
+                value={formData.color}
+                onChange={(color) => setFormData({ ...formData, color })}
+              />
             </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-600">
+                Icone
+              </Label>
+              <IconSelector
+                value={formData.icon}
+                onChange={(icon) => setFormData({ ...formData, icon })}
+                color={formData.color}
+              />
+            </div>
+
+            {/* Budget Category - only for expense categories */}
+            {['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'OUTROS', 'DIVIDA'].includes(formData.type) && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-600">
+                  Categoria 50-30-20
+                </Label>
+                <BudgetCategorySelect
+                  value={formData.budget_category || null}
+                  onValueChange={(value: BudgetCategory) =>
+                    setFormData({ ...formData, budget_category: value })
+                  }
+                />
+                <p className="text-xs text-slate-400">
+                  Define em qual bucket essa categoria se encaixa
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
@@ -396,6 +412,15 @@ export default function CategoriasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirm
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        itemName={categoryToDelete?.name || ''}
+        itemType="categoria"
+        onConfirm={handleDelete}
+      />
     </PageShell>
   );
 }

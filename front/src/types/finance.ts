@@ -45,7 +45,21 @@ export type RecurrenceFrequency =
 
 export type InvoicePaymentType = 'TOTAL' | 'PARCIAL' | 'MINIMO';
 
+export type BudgetCategory = 'ESSENCIAL' | 'ESTILO_VIDA' | 'INVESTIMENTO';
+
 // ==================== ENTITIES ====================
+
+export interface Bank {
+  id: string;
+  ispb: string;
+  code: number | null;
+  name: string;
+  full_name: string | null;
+  logo_url: string | null;
+  logo_dark_url: string | null;
+  is_active: boolean;
+  created_at: string;
+}
 
 export interface FinanceCategory {
   id: string;
@@ -56,13 +70,23 @@ export interface FinanceCategory {
   icon: string;
   is_system: boolean;
   is_active: boolean;
+  budget_category: BudgetCategory | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FinanceTag {
+  id: string;
+  user_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface FinanceAccount {
   id: string;
   user_id: string;
+  bank_id: string | null;
   name: string;
   type: FinanceAccountType;
   initial_balance: number;
@@ -72,6 +96,10 @@ export interface FinanceAccount {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AccountWithBank extends FinanceAccount {
+  bank: Bank | null;
 }
 
 export interface FinanceCreditCard {
@@ -98,6 +126,8 @@ export interface FinanceTransaction {
   recurrence_id: string | null;
   installment_group_id: string | null;
   invoice_payment_id: string | null;
+  transfer_id: string | null;
+  goal_id: string | null;
   type: TransactionType;
   status: TransactionStatus;
   description: string;
@@ -130,6 +160,36 @@ export interface FinanceRecurrence {
   updated_at: string;
 }
 
+// Tipos parciais para JOINs de recorrencia
+export interface RecurrenceCategoryDetails {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  type: FinanceCategoryType;
+}
+
+export interface RecurrenceAccountDetails {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+}
+
+export interface RecurrenceCreditCardDetails {
+  id: string;
+  name: string;
+  brand: CreditCardBrand;
+  color: string;
+}
+
+// Recorrencia com detalhes de categoria, conta e cartao
+export interface RecurrenceWithDetails extends FinanceRecurrence {
+  category: RecurrenceCategoryDetails;
+  account: RecurrenceAccountDetails | null;
+  credit_card: RecurrenceCreditCardDetails | null;
+}
+
 export interface FinanceInvoicePayment {
   id: string;
   user_id: string;
@@ -152,11 +212,13 @@ export interface CategoryFormData {
   type: FinanceCategoryType;
   color: string;
   icon: string;
+  budget_category?: BudgetCategory;
 }
 
 export interface AccountFormData {
   name: string;
   type: FinanceAccountType;
+  bank_id: string;
   initial_balance: number;
   color: string;
   icon: string;
@@ -175,6 +237,7 @@ export interface TransactionFormData {
   category_id: string;
   account_id?: string;
   credit_card_id?: string;
+  goal_id?: string;
   type: TransactionType;
   description: string;
   amount: number;
@@ -183,6 +246,12 @@ export interface TransactionFormData {
   // Parcelamento
   is_installment?: boolean;
   total_installments?: number;
+  // Tags
+  tag_ids?: string[];
+}
+
+export interface TagFormData {
+  name: string;
 }
 
 export interface RecurrenceFormData {
@@ -206,12 +275,37 @@ export interface PayInvoiceFormData {
   notes?: string;
 }
 
+export interface TransferFormData {
+  source_account_id: string;
+  destination_account_id: string;
+  category_id: string;
+  description: string;
+  amount: number;
+  transfer_date: string;
+  notes?: string;
+  goal_id?: string; // Vincular transferencia a um objetivo
+}
+
+export interface PayTransactionData {
+  paid_amount: number;
+  payment_date: string;
+  account_id?: string;
+}
+
+export interface TransferResult {
+  transfer_id: string;
+  source_transaction: FinanceTransaction;
+  destination_transaction: FinanceTransaction;
+}
+
 // ==================== RESPONSES ====================
 
 export interface TransactionWithDetails extends FinanceTransaction {
   category: FinanceCategory;
   account?: FinanceAccount;
   credit_card?: FinanceCreditCard;
+  transfer_counterpart_account?: FinanceAccount;
+  tags?: FinanceTag[];
 }
 
 export interface CreditCardInvoice {
@@ -271,6 +365,40 @@ export interface UpcomingPayment {
   credit_card?: FinanceCreditCard;
 }
 
+export interface BudgetAllocation {
+  category: BudgetCategory;
+  label: string;
+  ideal_percentage: number;
+  actual_amount: number;
+  paid_amount: number;
+  pending_amount: number;
+  actual_percentage: number;
+  paid_percentage: number;
+  pending_percentage: number;
+  status: 'on_track' | 'over_budget' | 'under_budget';
+  difference: number;
+}
+
+export interface BudgetSummary {
+  total_income: number;
+  allocations: BudgetAllocation[];
+  month: string;
+}
+
+export interface YearSummary {
+  year: number;
+  total_balance: number;
+  total_income: number;
+  total_expenses: number;
+  year_result: number;
+  monthly_breakdown: Array<{
+    month: string;
+    income: number;
+    expenses: number;
+    result: number;
+  }>;
+}
+
 // ==================== LABELS ====================
 
 export const CATEGORY_TYPE_LABELS: Record<FinanceCategoryType, string> = {
@@ -287,6 +415,24 @@ export const CATEGORY_TYPE_LABELS: Record<FinanceCategoryType, string> = {
   FREELANCE: 'Freelance',
   DIVIDA: 'Divida',
   OUTROS: 'Outros',
+};
+
+export const BUDGET_CATEGORY_LABELS: Record<BudgetCategory, string> = {
+  ESSENCIAL: 'Essenciais',
+  ESTILO_VIDA: 'Estilo de Vida',
+  INVESTIMENTO: 'Investimentos',
+};
+
+export const BUDGET_CATEGORY_IDEAL: Record<BudgetCategory, number> = {
+  ESSENCIAL: 50,
+  ESTILO_VIDA: 30,
+  INVESTIMENTO: 20,
+};
+
+export const BUDGET_CATEGORY_COLORS: Record<BudgetCategory, string> = {
+  ESSENCIAL: '#3b82f6',
+  ESTILO_VIDA: '#22c55e',
+  INVESTIMENTO: '#f59e0b',
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
@@ -542,5 +688,158 @@ export function getDebtStatusBgColor(status: DebtStatus): string {
       return 'bg-gray-100 text-gray-500';
     default:
       return 'bg-gray-100 text-gray-600';
+  }
+}
+
+// ==================== GOAL TYPES ====================
+
+export type FinanceGoalCategory =
+  | 'VEICULO'
+  | 'IMOVEL'
+  | 'VIAGEM'
+  | 'EDUCACAO'
+  | 'RESERVA_EMERGENCIA'
+  | 'INVESTIMENTO'
+  | 'OUTROS';
+
+export type FinanceGoalPriority = 'BAIXA' | 'MEDIA' | 'ALTA';
+
+export type FinanceGoalStatus = 'ATIVO' | 'PAUSADO' | 'CONCLUIDO' | 'CANCELADO';
+
+// ==================== GOAL ENTITIES ====================
+
+export interface FinanceGoal {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  goal_category: FinanceGoalCategory;
+  target_amount: number;
+  deadline: string | null;
+  priority: FinanceGoalPriority;
+  status: FinanceGoalStatus;
+  linked_account_id: string | null;
+  icon: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoalWithProgress extends FinanceGoal {
+  current_amount: number;
+  progress_percentage: number;
+  contributions_count: number;
+  linked_account?: FinanceAccount | null;
+}
+
+// ==================== GOAL FORM DATA ====================
+
+export interface GoalFormData {
+  name: string;
+  description?: string;
+  goal_category: FinanceGoalCategory;
+  target_amount: number;
+  deadline?: string;
+  priority: FinanceGoalPriority;
+  linked_account_id?: string;
+  icon: string;
+  color: string;
+}
+
+// ==================== GOAL RESPONSES ====================
+
+export interface GoalSummary {
+  total_goals: number;
+  active_goals: number;
+  completed_goals: number;
+  total_target: number;
+  total_contributed: number;
+  overall_progress: number;
+}
+
+export interface GoalSelectItem {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+}
+
+// ==================== GOAL LABELS ====================
+
+export const GOAL_CATEGORY_LABELS: Record<FinanceGoalCategory, string> = {
+  VEICULO: 'Veiculo',
+  IMOVEL: 'Imovel',
+  VIAGEM: 'Viagem',
+  EDUCACAO: 'Educacao',
+  RESERVA_EMERGENCIA: 'Reserva de Emergencia',
+  INVESTIMENTO: 'Investimento',
+  OUTROS: 'Outros',
+};
+
+export const GOAL_PRIORITY_LABELS: Record<FinanceGoalPriority, string> = {
+  BAIXA: 'Baixa',
+  MEDIA: 'Media',
+  ALTA: 'Alta',
+};
+
+export const GOAL_STATUS_LABELS: Record<FinanceGoalStatus, string> = {
+  ATIVO: 'Ativo',
+  PAUSADO: 'Pausado',
+  CONCLUIDO: 'Concluido',
+  CANCELADO: 'Cancelado',
+};
+
+export const GOAL_CATEGORY_ICONS: Record<FinanceGoalCategory, string> = {
+  VEICULO: 'Car',
+  IMOVEL: 'Home',
+  VIAGEM: 'Plane',
+  EDUCACAO: 'GraduationCap',
+  RESERVA_EMERGENCIA: 'Shield',
+  INVESTIMENTO: 'TrendingUp',
+  OUTROS: 'Target',
+};
+
+// ==================== GOAL HELPERS ====================
+
+export function getGoalStatusColor(status: FinanceGoalStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'text-blue-600';
+    case 'PAUSADO':
+      return 'text-amber-600';
+    case 'CONCLUIDO':
+      return 'text-emerald-600';
+    case 'CANCELADO':
+      return 'text-gray-400';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+export function getGoalStatusBgColor(status: FinanceGoalStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'bg-blue-100 text-blue-800';
+    case 'PAUSADO':
+      return 'bg-amber-100 text-amber-800';
+    case 'CONCLUIDO':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'CANCELADO':
+      return 'bg-gray-100 text-gray-500';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+export function getPriorityColor(priority: FinanceGoalPriority): string {
+  switch (priority) {
+    case 'ALTA':
+      return 'text-red-600';
+    case 'MEDIA':
+      return 'text-amber-600';
+    case 'BAIXA':
+      return 'text-blue-600';
+    default:
+      return 'text-gray-600';
   }
 }

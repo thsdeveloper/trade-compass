@@ -86,9 +86,24 @@ export async function updateCreditCard(
 ): Promise<FinanceCreditCard> {
   const client = createUserClient(accessToken);
 
+  // Se o total_limit mudou, precisamos ajustar o available_limit proporcionalmente
+  let finalUpdates = { ...updates };
+
+  if (updates.total_limit !== undefined) {
+    const currentCard = await getCreditCardById(cardId, userId, accessToken);
+    if (currentCard) {
+      const limitDiff = updates.total_limit - currentCard.total_limit;
+      const newAvailableLimit = currentCard.available_limit + limitDiff;
+      finalUpdates = {
+        ...updates,
+        available_limit: Math.max(0, newAvailableLimit),
+      };
+    }
+  }
+
   const { data, error } = await client
     .from(TABLE)
-    .update(updates)
+    .update(finalUpdates)
     .eq('id', cardId)
     .eq('user_id', userId)
     .select()

@@ -111,20 +111,35 @@ export async function creditCardRoutes(app: FastifyInstance) {
       const startDate = new Date(year, monthNum - 2, closingDay + 1);
       const endDate = new Date(year, monthNum - 1, closingDay);
 
-      // Data de fechamento e vencimento da fatura
-      const closingDate = new Date(year, monthNum - 1, closingDay);
-      const dueDate = new Date(year, monthNum - 1, dueDay);
+      // Data de fechamento da fatura
+      const closingDateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(closingDay).padStart(2, '0')}`;
 
-      // Se o vencimento e antes do fechamento, e do mes seguinte
+      // Data de vencimento da fatura
+      // Se o vencimento e antes ou igual ao fechamento, e do mes seguinte
+      let dueYear = year;
+      let dueMonth = monthNum;
       if (dueDay <= closingDay) {
-        dueDate.setMonth(dueDate.getMonth() + 1);
+        dueMonth = monthNum + 1;
+        if (dueMonth > 12) {
+          dueMonth = 1;
+          dueYear = year + 1;
+        }
       }
+      const dueDateStr = `${dueYear}-${String(dueMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+
+      // Formatar datas do período para a query
+      const formatDate = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
 
       const transactions = await getTransactionsByCreditCardAndPeriod(
         id,
         user.id,
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0],
+        formatDate(startDate),
+        formatDate(endDate),
         accessToken
       );
 
@@ -135,8 +150,8 @@ export async function creditCardRoutes(app: FastifyInstance) {
         month,
         transactions,
         total,
-        closing_date: closingDate.toISOString().split('T')[0],
-        due_date: dueDate.toISOString().split('T')[0],
+        closing_date: closingDateStr,
+        due_date: dueDateStr,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao buscar fatura';

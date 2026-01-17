@@ -8,6 +8,8 @@ import type {
   UpdateTransactionDTO,
   PayTransactionDTO,
   TransactionFilters,
+  CreateTransferDTO,
+  TransferResult,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -19,7 +21,12 @@ import {
   payTransaction,
   cancelTransaction,
   cancelInstallmentGroup,
+  cancelRecurrenceTransactionsFromDate,
+  cancelAllRecurrenceTransactions,
+  createTransfer,
+  cancelTransfer,
 } from '../../../data/finance/transaction-repository.js';
+import { deleteRecurrence } from '../../../data/finance/recurrence-repository.js';
 import { getCreditCardById } from '../../../data/finance/credit-card-repository.js';
 
 export async function transactionRoutes(app: FastifyInstance) {
@@ -236,6 +243,98 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
   });
 
+  // POST /finance/transactions/transfer - Create transfer between accounts
+  app.post<{
+    Body: CreateTransferDTO;
+    Reply: TransferResult | ApiError;
+  }>('/finance/transactions/transfer', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const body = request.body;
+
+    // Validacoes
+    if (!body.source_account_id || !body.destination_account_id) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Conta de origem e destino sao obrigatorias',
+        statusCode: 400,
+      });
+    }
+
+    if (body.source_account_id === body.destination_account_id) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Conta de origem e destino devem ser diferentes',
+        statusCode: 400,
+      });
+    }
+
+    if (!body.category_id) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Categoria e obrigatoria',
+        statusCode: 400,
+      });
+    }
+
+    if (!body.description) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Descricao e obrigatoria',
+        statusCode: 400,
+      });
+    }
+
+    if (!body.amount || body.amount <= 0) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Valor deve ser maior que zero',
+        statusCode: 400,
+      });
+    }
+
+    if (!body.transfer_date) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Data da transferencia e obrigatoria',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const result = await createTransfer(user.id, body, accessToken);
+      return reply.status(201).send(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao criar transferencia';
+      const status = message.includes('nao encontrada') ? 404 : 500;
+      return reply.status(status).send({
+        error: status === 404 ? 'Not Found' : 'Internal Server Error',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
+  // DELETE /finance/transactions/transfer/:transferId - Cancel a transfer
+  app.delete<{
+    Params: { transferId: string };
+    Reply: { success: boolean } | ApiError;
+  }>('/finance/transactions/transfer/:transferId', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { transferId } = request.params;
+
+    try {
+      await cancelTransfer(transferId, user.id, accessToken);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao cancelar transferencia';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
   // PATCH /finance/transactions/:id - Update transaction
   app.patch<{
     Params: { id: string };
@@ -247,6 +346,32 @@ export async function transactionRoutes(app: FastifyInstance) {
     const updates = request.body;
 
     try {
+      // Buscar transacao para verificar status
+      const existing = await getTransactionById(id, user.id, accessToken);
+      if (!existing) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Transacao nao encontrada',
+          statusCode: 404,
+        });
+      }
+
+      // Se a transacao esta paga, bloquear campos criticos
+      if (existing.status === 'PAGO') {
+        const blockedFields = ['amount', 'account_id', 'credit_card_id', 'type', 'due_date'];
+        const attemptedBlockedFields = blockedFields.filter(
+          (field) => updates[field as keyof UpdateTransactionDTO] !== undefined
+        );
+
+        if (attemptedBlockedFields.length > 0) {
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: `Transacoes pagas nao podem ter os seguintes campos alterados: ${attemptedBlockedFields.join(', ')}. Apenas categoria, descricao e notas podem ser editados.`,
+            statusCode: 400,
+          });
+        }
+      }
+
       const transaction = await updateTransaction(id, user.id, updates, accessToken);
       return transaction;
     } catch (err) {
@@ -293,6 +418,33 @@ export async function transactionRoutes(app: FastifyInstance) {
     const { id } = request.params;
 
     try {
+      // Verificar se a transacao existe
+      const transaction = await getTransactionById(id, user.id, accessToken);
+      if (!transaction) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Transacao nao encontrada',
+          statusCode: 404,
+        });
+      }
+
+      // Bloquear cancelamento individual de transacoes de transferencia
+      if (transaction.transfer_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Para cancelar uma transferencia, use DELETE /finance/transactions/transfer/:transferId',
+          statusCode: 400,
+        });
+      }
+
+      if (transaction.status === 'PAGO') {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transacoes ja pagas nao podem ser canceladas. Crie um estorno se necessario.',
+          statusCode: 400,
+        });
+      }
+
       await cancelTransaction(id, user.id, accessToken);
       return { success: true };
     } catch (err) {
@@ -318,6 +470,88 @@ export async function transactionRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao cancelar parcelas';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // DELETE /finance/transactions/:id/recurrence - Cancel recurrence transaction(s) with options
+  app.delete<{
+    Params: { id: string };
+    Body: { option: 'only_this' | 'this_and_future' | 'all' };
+    Reply: { success: boolean } | ApiError;
+  }>('/finance/transactions/:id/recurrence', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const { option } = request.body;
+
+    try {
+      // Buscar a transacao para obter recurrence_id e due_date
+      const transaction = await getTransactionById(id, user.id, accessToken);
+      if (!transaction) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Transacao nao encontrada',
+          statusCode: 404,
+        });
+      }
+
+      if (!transaction.recurrence_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transacao nao pertence a uma recorrencia',
+          statusCode: 400,
+        });
+      }
+
+      switch (option) {
+        case 'only_this':
+          // Validar se a transacao esta paga
+          if (transaction.status === 'PAGO') {
+            return reply.status(400).send({
+              error: 'Bad Request',
+              message: 'Transacoes ja pagas nao podem ser canceladas. Crie um estorno se necessario.',
+              statusCode: 400,
+            });
+          }
+          // Cancela apenas esta transacao
+          await cancelTransaction(id, user.id, accessToken);
+          break;
+
+        case 'this_and_future':
+          // Cancela esta e todas as futuras
+          await cancelRecurrenceTransactionsFromDate(
+            transaction.recurrence_id,
+            user.id,
+            transaction.due_date,
+            accessToken
+          );
+          break;
+
+        case 'all':
+          // Cancela todas as transacoes e desativa a recorrencia
+          await cancelAllRecurrenceTransactions(
+            transaction.recurrence_id,
+            user.id,
+            accessToken
+          );
+          await deleteRecurrence(transaction.recurrence_id, user.id, accessToken);
+          break;
+
+        default:
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: 'Opcao invalida',
+            statusCode: 400,
+          });
+      }
+
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao cancelar transacao';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

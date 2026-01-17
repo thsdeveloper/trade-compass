@@ -8,7 +8,8 @@ import { api, type WatchlistItemResponse } from '@/lib/api';
 import { PageShell } from '@/components/organisms/PageShell';
 import { Card, CardContent } from '@/components/ui/card';
 import { ZoneBadge } from '@/components/atoms/ZoneBadge';
-import { Eye, ChevronRight, Plus, Trash2, Edit2, Loader2 } from 'lucide-react';
+import { Eye, ChevronRight, Plus, Trash2, Edit2 } from 'lucide-react';
+import { WatchlistPageSkeleton } from '@/components/organisms/skeletons/WatchlistPageSkeleton';
 import { Button } from '@/components/ui/button';
 import { AddAssetDialog } from '@/components/organisms/AddAssetDialog';
 import { EditNotesDialog } from '@/components/organisms/EditNotesDialog';
@@ -81,13 +82,7 @@ export default function WatchlistPage() {
   };
 
   if (authLoading || loading) {
-    return (
-      <PageShell>
-        <div className="flex h-[50vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </PageShell>
-    );
+    return <WatchlistPageSkeleton />;
   }
 
   return (

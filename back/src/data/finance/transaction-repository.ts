@@ -7,11 +7,32 @@ import type {
   PayTransactionDTO,
   TransactionFilters,
   TransactionWithCategory,
+  CreateTransferDTO,
+  TransferResult,
+  FinanceAccount,
 } from '../../domain/finance-types.js';
 import { updateAccountBalance, getAccountById } from './account-repository.js';
 import { updateCreditCardAvailableLimit } from './credit-card-repository.js';
+import { setTransactionTags, getTagsForTransaction, getTransactionIdsByTag } from './tag-repository.js';
 
 const TABLE = 'finance_transactions';
+
+// Helper para enriquecer transacoes com tags
+async function enrichTransactionsWithTags(
+  transactions: TransactionWithCategory[],
+  accessToken: string
+): Promise<TransactionWithCategory[]> {
+  if (transactions.length === 0) return transactions;
+
+  const enriched = await Promise.all(
+    transactions.map(async (tx) => {
+      const tags = await getTagsForTransaction(tx.id, accessToken);
+      return { ...tx, tags };
+    })
+  );
+
+  return enriched;
+}
 
 export async function getTransactionsByUser(
   userId: string,
@@ -19,6 +40,16 @@ export async function getTransactionsByUser(
   accessToken: string
 ): Promise<TransactionWithCategory[]> {
   const client = createUserClient(accessToken);
+
+  // Se filtro por tag, buscar IDs das transacoes primeiro
+  let transactionIdsWithTag: string[] | null = null;
+  if (filters.tag_id) {
+    transactionIdsWithTag = await getTransactionIdsByTag(filters.tag_id, accessToken);
+    // Se nao houver transacoes com essa tag, retornar vazio
+    if (transactionIdsWithTag.length === 0) {
+      return [];
+    }
+  }
 
   let query = client
     .from(TABLE)
@@ -30,6 +61,11 @@ export async function getTransactionsByUser(
     `)
     .eq('user_id', userId)
     .neq('status', 'CANCELADO');
+
+  // Aplicar filtro de tag (IDs das transacoes)
+  if (transactionIdsWithTag) {
+    query = query.in('id', transactionIdsWithTag);
+  }
 
   // Aplicar filtros
   if (filters.start_date) {
@@ -69,7 +105,7 @@ export async function getTransactionsByUser(
     throw new Error(`Erro ao buscar transacoes: ${error.message}`);
   }
 
-  return data || [];
+  return enrichTransactionsWithTags(data || [], accessToken);
 }
 
 export async function getTransactionById(
@@ -96,7 +132,11 @@ export async function getTransactionById(
     throw new Error(`Erro ao buscar transacao: ${error.message}`);
   }
 
-  return data;
+  if (!data) return null;
+
+  // Enriquecer com tags
+  const tags = await getTagsForTransaction(data.id, accessToken);
+  return { ...data, tags };
 }
 
 export async function createTransaction(
@@ -137,6 +177,11 @@ export async function createTransaction(
     );
   }
 
+  // Associar tags a transacao
+  if (transaction.tag_ids && transaction.tag_ids.length > 0) {
+    await setTransactionTags(data.id, transaction.tag_ids, accessToken);
+  }
+
   return data;
 }
 
@@ -168,6 +213,7 @@ export async function createInstallmentTransactions(
       invoice_payment_id: null,
       debt_id: null,
       debt_negotiation_id: null,
+      transfer_id: null,
       type: data.type,
       status: 'PENDENTE',
       description: `${data.description} (${i + 1}/${data.total_installments})`,
@@ -200,6 +246,13 @@ export async function createInstallmentTransactions(
     );
   }
 
+  // Associar tags a todas as parcelas
+  if (data.tag_ids && data.tag_ids.length > 0 && created) {
+    await Promise.all(
+      created.map(tx => setTransactionTags(tx.id, data.tag_ids!, accessToken))
+    );
+  }
+
   return created || [];
 }
 
@@ -211,9 +264,12 @@ export async function updateTransaction(
 ): Promise<FinanceTransaction> {
   const client = createUserClient(accessToken);
 
+  // Extrair tag_ids antes de enviar para o banco
+  const { tag_ids, ...dbUpdates } = updates;
+
   const { data, error } = await client
     .from(TABLE)
-    .update(updates)
+    .update(dbUpdates)
     .eq('id', transactionId)
     .eq('user_id', userId)
     .select()
@@ -225,6 +281,11 @@ export async function updateTransaction(
 
   if (!data) {
     throw new Error('Transacao nao encontrada');
+  }
+
+  // Atualizar tags se fornecidas
+  if (tag_ids !== undefined) {
+    await setTransactionTags(transactionId, tag_ids, accessToken);
   }
 
   return data;
@@ -251,15 +312,31 @@ export async function payTransaction(
 
   const paidAmount = payment.paid_amount || existing.amount;
   const paymentDate = payment.payment_date || new Date().toISOString().split('T')[0];
+  // Usar conta fornecida ou manter a original
+  const finalAccountId = payment.account_id || existing.account_id;
 
-  // 3. Atualizar status da transacao
+  // 3. Se trocou a conta, validar que a nova conta existe
+  if (payment.account_id && payment.account_id !== existing.account_id) {
+    const newAccount = await getAccountById(payment.account_id, userId, accessToken);
+    if (!newAccount) {
+      throw new Error('Conta nao encontrada');
+    }
+  }
+
+  // 4. Atualizar status da transacao (e account_id se mudou)
+  const updateData: Record<string, unknown> = {
+    status: 'PAGO',
+    paid_amount: paidAmount,
+    payment_date: paymentDate,
+  };
+
+  if (payment.account_id) {
+    updateData.account_id = payment.account_id;
+  }
+
   const { data, error } = await client
     .from(TABLE)
-    .update({
-      status: 'PAGO',
-      paid_amount: paidAmount,
-      payment_date: paymentDate,
-    })
+    .update(updateData)
     .eq('id', transactionId)
     .eq('user_id', userId)
     .select()
@@ -273,16 +350,16 @@ export async function payTransaction(
     throw new Error('Transacao nao encontrada');
   }
 
-  // 4. Atualizar saldo da conta
-  if (existing.account_id) {
-    const account = await getAccountById(existing.account_id, userId, accessToken);
+  // 5. Atualizar saldo da conta (usa a conta final, seja nova ou original)
+  if (finalAccountId) {
+    const account = await getAccountById(finalAccountId, userId, accessToken);
     if (account) {
       const currentBalance = account.current_balance;
       const newBalance =
         existing.type === 'RECEITA'
           ? currentBalance + paidAmount
           : currentBalance - paidAmount;
-      await updateAccountBalance(existing.account_id, userId, newBalance, accessToken);
+      await updateAccountBalance(finalAccountId, userId, newBalance, accessToken);
     }
   }
 
@@ -322,6 +399,52 @@ export async function cancelInstallmentGroup(
 
   if (error) {
     throw new Error(`Erro ao cancelar parcelas: ${error.message}`);
+  }
+}
+
+// Cancela transacoes de uma recorrencia a partir de uma data
+// Nota: transacoes ja pagas (PAGO) nao sao canceladas
+export async function cancelRecurrenceTransactionsFromDate(
+  recurrenceId: string,
+  userId: string,
+  fromDate: string,
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  const { error } = await client
+    .from(TABLE)
+    .update({ status: 'CANCELADO' })
+    .eq('recurrence_id', recurrenceId)
+    .eq('user_id', userId)
+    .gte('due_date', fromDate)
+    .neq('status', 'CANCELADO')
+    .neq('status', 'PAGO');
+
+  if (error) {
+    throw new Error(`Erro ao cancelar transacoes da recorrencia: ${error.message}`);
+  }
+}
+
+// Cancela todas as transacoes de uma recorrencia
+// Nota: transacoes ja pagas (PAGO) nao sao canceladas
+export async function cancelAllRecurrenceTransactions(
+  recurrenceId: string,
+  userId: string,
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  const { error } = await client
+    .from(TABLE)
+    .update({ status: 'CANCELADO' })
+    .eq('recurrence_id', recurrenceId)
+    .eq('user_id', userId)
+    .neq('status', 'CANCELADO')
+    .neq('status', 'PAGO');
+
+  if (error) {
+    throw new Error(`Erro ao cancelar transacoes da recorrencia: ${error.message}`);
   }
 }
 
@@ -384,4 +507,190 @@ export async function getUpcomingTransactions(
   }
 
   return data || [];
+}
+
+// ==================== TRANSFERENCIAS ====================
+
+export async function createTransfer(
+  userId: string,
+  transfer: CreateTransferDTO,
+  accessToken: string
+): Promise<TransferResult> {
+  const client = createUserClient(accessToken);
+
+  // Gerar UUID compartilhado para vincular as transacoes
+  const transferId = crypto.randomUUID();
+  const transferDate = transfer.transfer_date || new Date().toISOString().split('T')[0];
+
+  // 1. Validar que origem e destino sao diferentes
+  if (transfer.source_account_id === transfer.destination_account_id) {
+    throw new Error('Conta de origem e destino devem ser diferentes');
+  }
+
+  // 2. Buscar ambas contas para validar existencia e obter saldos
+  const [sourceAccount, destAccount] = await Promise.all([
+    getAccountById(transfer.source_account_id, userId, accessToken),
+    getAccountById(transfer.destination_account_id, userId, accessToken),
+  ]);
+
+  if (!sourceAccount) {
+    throw new Error('Conta de origem nao encontrada');
+  }
+  if (!destAccount) {
+    throw new Error('Conta de destino nao encontrada');
+  }
+
+  // 3. Criar transacao de saida (DESPESA na conta origem)
+  const sourceTransactionData = {
+    user_id: userId,
+    account_id: transfer.source_account_id,
+    category_id: transfer.category_id,
+    credit_card_id: null,
+    recurrence_id: null,
+    installment_group_id: null,
+    invoice_payment_id: null,
+    debt_id: null,
+    debt_negotiation_id: null,
+    transfer_id: transferId,
+    type: 'DESPESA' as const,
+    status: 'PAGO' as const,
+    description: transfer.description,
+    amount: transfer.amount,
+    paid_amount: transfer.amount,
+    due_date: transferDate,
+    payment_date: transferDate,
+    notes: transfer.notes || null,
+  };
+
+  // 4. Criar transacao de entrada (RECEITA na conta destino)
+  const destTransactionData = {
+    user_id: userId,
+    account_id: transfer.destination_account_id,
+    category_id: transfer.category_id,
+    credit_card_id: null,
+    recurrence_id: null,
+    installment_group_id: null,
+    invoice_payment_id: null,
+    debt_id: null,
+    debt_negotiation_id: null,
+    transfer_id: transferId,
+    goal_id: transfer.goal_id || null, // Vincular a objetivo se especificado
+    type: 'RECEITA' as const,
+    status: 'PAGO' as const,
+    description: transfer.description,
+    amount: transfer.amount,
+    paid_amount: transfer.amount,
+    due_date: transferDate,
+    payment_date: transferDate,
+    notes: transfer.notes || null,
+  };
+
+  // 5. Inserir ambas transacoes
+  const { data: insertedTransactions, error: insertError } = await client
+    .from(TABLE)
+    .insert([sourceTransactionData, destTransactionData])
+    .select();
+
+  if (insertError) {
+    throw new Error(`Erro ao criar transferencia: ${insertError.message}`);
+  }
+
+  if (!insertedTransactions || insertedTransactions.length !== 2) {
+    throw new Error('Erro ao criar transacoes da transferencia');
+  }
+
+  // 6. Atualizar saldos das contas
+  const newSourceBalance = sourceAccount.current_balance - transfer.amount;
+  const newDestBalance = destAccount.current_balance + transfer.amount;
+
+  await Promise.all([
+    updateAccountBalance(transfer.source_account_id, userId, newSourceBalance, accessToken),
+    updateAccountBalance(transfer.destination_account_id, userId, newDestBalance, accessToken),
+  ]);
+
+  // Identificar qual transacao e qual
+  const sourceTx = insertedTransactions.find(t => t.type === 'DESPESA')!;
+  const destTx = insertedTransactions.find(t => t.type === 'RECEITA')!;
+
+  return {
+    transfer_id: transferId,
+    source_transaction: sourceTx,
+    destination_transaction: destTx,
+  };
+}
+
+export async function cancelTransfer(
+  transferId: string,
+  userId: string,
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  // 1. Buscar ambas transacoes
+  const { data: transactions, error: fetchError } = await client
+    .from(TABLE)
+    .select('*, account:finance_accounts(*)')
+    .eq('transfer_id', transferId)
+    .eq('user_id', userId);
+
+  if (fetchError) {
+    throw new Error(`Erro ao buscar transferencia: ${fetchError.message}`);
+  }
+
+  if (!transactions || transactions.length !== 2) {
+    throw new Error('Transferencia nao encontrada ou incompleta');
+  }
+
+  // 2. Verificar se ja esta cancelada
+  if (transactions.every(t => t.status === 'CANCELADO')) {
+    throw new Error('Transferencia ja esta cancelada');
+  }
+
+  // 3. Reverter os saldos das contas
+  for (const tx of transactions) {
+    if (tx.status === 'PAGO' && tx.account) {
+      const account = tx.account as FinanceAccount;
+      const currentBalance = account.current_balance;
+      // Se DESPESA, adicionar de volta; se RECEITA, subtrair
+      const adjustment = tx.type === 'DESPESA' ? tx.amount : -tx.amount;
+      await updateAccountBalance(tx.account_id, userId, currentBalance + adjustment, accessToken);
+    }
+  }
+
+  // 4. Cancelar ambas transacoes
+  const { error: cancelError } = await client
+    .from(TABLE)
+    .update({ status: 'CANCELADO' })
+    .eq('transfer_id', transferId)
+    .eq('user_id', userId);
+
+  if (cancelError) {
+    throw new Error(`Erro ao cancelar transferencia: ${cancelError.message}`);
+  }
+}
+
+export async function getTransferCounterpartAccount(
+  transferId: string,
+  currentTransactionId: string,
+  userId: string,
+  accessToken: string
+): Promise<FinanceAccount | null> {
+  const client = createUserClient(accessToken);
+
+  const { data, error } = await client
+    .from(TABLE)
+    .select('account:finance_accounts(*)')
+    .eq('transfer_id', transferId)
+    .eq('user_id', userId)
+    .neq('id', currentTransactionId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao buscar contraparte da transferencia: ${error.message}`);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const account = data?.account as any;
+  return account || null;
 }

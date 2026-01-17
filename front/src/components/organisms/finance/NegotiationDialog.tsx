@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DatePicker } from '@/components/ui/date-picker';
 import type {
   NegotiationFormData,
   NegotiationPaymentMethod,
@@ -234,12 +235,11 @@ export function NegotiationDialog({
             <Label htmlFor="first_payment_date" className="text-xs font-medium">
               Data do Primeiro Pagamento <span className="text-red-500">*</span>
             </Label>
-            <Input
+            <DatePicker
               id="first_payment_date"
-              type="date"
               value={formData.first_payment_date}
-              onChange={(e) =>
-                setFormData({ ...formData, first_payment_date: e.target.value })
+              onChange={(value) =>
+                setFormData({ ...formData, first_payment_date: value })
               }
               className="h-9 text-[13px]"
             />

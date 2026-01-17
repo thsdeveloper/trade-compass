@@ -15,6 +15,9 @@ export interface DayTrade {
   costs: number;
   mep: number | null; // Maxima Excursao Positiva
   men: number | null; // Maxima Excursao Negativa
+  stop_price: number | null; // Preco de stop loss planejado
+  partial_price: number | null; // Preco de realizacao parcial planejado
+  target_price: number | null; // Preco alvo planejado
   notes: string | null;
   image_path: string | null; // Caminho da imagem no storage
   created_at: string;
@@ -46,6 +49,9 @@ export interface DayTradeFormData {
   exit_time?: string;
   mep?: number; // Maxima Excursao Positiva (em pontos)
   men?: number; // Maxima Excursao Negativa (em pontos)
+  stop_price?: number; // Preco de stop loss planejado
+  partial_price?: number; // Preco de realizacao parcial planejado
+  target_price?: number; // Preco alvo planejado
   notes?: string;
   image_path?: string; // Caminho da imagem existente
   image_file?: File; // Arquivo de imagem para upload

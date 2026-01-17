@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -33,24 +33,32 @@ import {
   Building2,
   Landmark,
   PiggyBank,
+  Eye,
 } from 'lucide-react';
+import { ContasPageSkeleton } from '@/components/organisms/skeletons/ContasPageSkeleton';
 import { cn } from '@/lib/utils';
 import { financeApi } from '@/lib/finance-api';
+import { toast } from '@/lib/toast';
+import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
+import { useConfirm } from '@/components/molecules/ConfirmDialog';
 import type {
-  FinanceAccount,
+  AccountWithBank,
   AccountFormData,
   FinanceAccountType,
+  Bank,
 } from '@/types/finance';
 import {
   formatCurrency,
   ACCOUNT_TYPE_LABELS,
 } from '@/types/finance';
+import { BankSelect, BankLogo } from '@/components/molecules/BankSelect';
+import { ColorPicker } from '@/components/atoms/CategoryIcon';
 
 const getAccountIcon = (type: FinanceAccountType) => {
   switch (type) {
     case 'CONTA_CORRENTE':
       return Building2;
-    case 'CONTA_POUPANCA':
+    case 'POUPANCA':
       return PiggyBank;
     case 'INVESTIMENTO':
       return Landmark;
@@ -62,14 +70,17 @@ const getAccountIcon = (type: FinanceAccountType) => {
 export default function ContasPage() {
   const { user, session, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [popularBanks, setPopularBanks] = useState<Bank[]>([]);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
+  const [editingAccount, setEditingAccount] = useState<AccountWithBank | null>(null);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<AccountFormData>({
     name: '',
@@ -77,22 +88,41 @@ export default function ContasPage() {
     initial_balance: 0,
     color: '#64748b',
     icon: 'Wallet',
+    bank_id: '',
   });
 
-  const loadData = useCallback(async () => {
+  // Ref para evitar reload desnecessário
+  const hasLoadedRef = useRef(false);
+
+  const loadData = useCallback(async (forceReload = false) => {
     if (!session?.access_token) return;
+
+    if (!forceReload && hasLoadedRef.current) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const data = await financeApi.getAccounts(session.access_token);
-      setAccounts(data);
+      const [accountsData, popularBanksData] = await Promise.all([
+        financeApi.getAccounts(session.access_token),
+        financeApi.getPopularBanks(session.access_token),
+      ]);
+      setAccounts(accountsData);
+      setPopularBanks(popularBanksData);
+      setBanks(popularBanksData); // Inicial com os populares
+      hasLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
+  }, [session?.access_token]);
+
+  const handleSearchBanks = useCallback(async (query: string): Promise<Bank[]> => {
+    if (!session?.access_token) return [];
+    return financeApi.getBanks(session.access_token, query);
   }, [session?.access_token]);
 
   useEffect(() => {
@@ -106,6 +136,11 @@ export default function ContasPage() {
     loadData();
   }, [user, authLoading, router, loadData]);
 
+  // Listen for data changes from global dialogs
+  useFinanceDataRefresh(() => {
+    loadData(true);
+  });
+
   const openNewDialog = () => {
     setEditingAccount(null);
     setFormData({
@@ -114,11 +149,12 @@ export default function ContasPage() {
       initial_balance: 0,
       color: '#64748b',
       icon: 'Wallet',
+      bank_id: '',
     });
     setDialogOpen(true);
   };
 
-  const openEditDialog = (account: FinanceAccount) => {
+  const openEditDialog = (account: AccountWithBank) => {
     setEditingAccount(account);
     setFormData({
       name: account.name,
@@ -126,6 +162,7 @@ export default function ContasPage() {
       initial_balance: account.initial_balance,
       color: account.color,
       icon: account.icon,
+      bank_id: account.bank_id || '',
     });
     setDialogOpen(true);
   };
@@ -141,7 +178,7 @@ export default function ContasPage() {
         await financeApi.createAccount(formData, session.access_token);
       }
       setDialogOpen(false);
-      loadData();
+      loadData(true);
     } catch (err) {
       console.error('Error saving account:', err);
     } finally {
@@ -149,28 +186,31 @@ export default function ContasPage() {
     }
   };
 
-  const handleDelete = async (accountId: string) => {
+  const handleDelete = async (account: AccountWithBank) => {
     if (!session?.access_token) return;
-    if (!confirm('Deseja remover esta conta?')) return;
+
+    const confirmed = await confirm({
+      title: 'Excluir conta',
+      description: `Tem certeza que deseja excluir a conta "${account.name}"? Esta acao nao pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
 
     try {
-      await financeApi.deleteAccount(accountId, session.access_token);
-      loadData();
+      await financeApi.deleteAccount(account.id, session.access_token);
+      toast.success('Conta removida com sucesso');
+      loadData(true);
     } catch (err) {
-      console.error('Error deleting account:', err);
+      toast.apiError(err);
     }
   };
 
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.current_balance, 0);
 
   if (authLoading || loading) {
-    return (
-      <PageShell>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </div>
-      </PageShell>
-    );
+    return <ContasPageSkeleton />;
   }
 
   if (error) {
@@ -181,7 +221,7 @@ export default function ContasPage() {
             <AlertCircle className="h-5 w-5 text-red-500" />
           </div>
           <p className="text-sm text-slate-500">{error}</p>
-          <Button variant="outline" size="sm" onClick={loadData} className="mt-2">
+          <Button variant="outline" size="sm" onClick={() => loadData()} className="mt-2">
             Tentar novamente
           </Button>
         </div>
@@ -192,34 +232,6 @@ export default function ContasPage() {
   return (
     <PageShell>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/financas')}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="space-y-1">
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-                Contas
-              </h1>
-              <p className="text-sm text-slate-500">
-                Gerencie suas contas bancarias
-              </p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            className="h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800"
-            onClick={openNewDialog}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Nova conta
-          </Button>
-        </div>
-
         {/* Total Balance Card */}
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between">
@@ -271,81 +283,134 @@ export default function ContasPage() {
               return (
                 <div
                   key={account.id}
-                  className="group rounded-lg border border-slate-200 bg-white transition-colors hover:border-slate-300"
+                  className="group relative overflow-hidden rounded-xl border-0 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
+                  style={{
+                    background: `linear-gradient(135deg, ${account.color}12 0%, ${account.color}05 100%)`,
+                  }}
                 >
-                  <div className="border-b border-slate-100 p-4">
+                  {/* Barra colorida no topo */}
+                  <div
+                    className="absolute top-0 left-0 right-0 h-1"
+                    style={{ backgroundColor: account.color }}
+                  />
+
+                  {/* Decoracao circular no fundo */}
+                  <div
+                    className="absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-10"
+                    style={{ backgroundColor: account.color }}
+                  />
+
+                  <div className="relative p-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <div
-                          className="flex h-8 w-8 items-center justify-center rounded-md"
-                          style={{ backgroundColor: account.color + '15' }}
-                        >
-                          <Icon
-                            className="h-4 w-4"
-                            style={{ color: account.color }}
-                          />
-                        </div>
+                        {account.bank?.logo_url ? (
+                          <div
+                            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
+                            style={{
+                              backgroundColor: 'white',
+                              border: `2px solid ${account.color}30`
+                            }}
+                          >
+                            <img
+                              src={account.bank.logo_url}
+                              alt={account.bank.name}
+                              className="h-6 w-6 object-contain"
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
+                            style={{
+                              backgroundColor: account.color,
+                            }}
+                          >
+                            <Icon className="h-5 w-5 text-white" />
+                          </div>
+                        )}
                         <div>
-                          <p className="text-sm font-medium text-slate-900">
+                          <p className="text-sm font-semibold text-slate-800">
                             {account.name}
                           </p>
-                          <p className="text-xs text-slate-400">
-                            {ACCOUNT_TYPE_LABELS[account.type]}
+                          <p
+                            className="text-xs font-medium"
+                            style={{ color: account.color }}
+                          >
+                            {account.bank?.name || ACCOUNT_TYPE_LABELS[account.type]}
                           </p>
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
+                          onClick={() => router.push(`/financas/transacoes?account_id=${account.id}`)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-blue-50 hover:text-blue-600"
+                          title="Ver transações"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
                           onClick={() => openEditDialog(account)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-slate-700"
+                          title="Editar"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(account.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                          onClick={() => handleDelete(account)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-red-50 hover:text-red-500"
+                          title="Excluir"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-xs text-slate-400">Saldo atual</p>
-                        <p
-                          className={cn(
-                            'text-lg font-semibold tabular-nums',
-                            account.current_balance >= 0
-                              ? 'text-slate-900'
-                              : 'text-red-600'
-                          )}
-                        >
-                          {formatCurrency(account.current_balance)}
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+
+                  <div className="relative px-4 pb-4">
+                    <div
+                      className="rounded-lg p-3"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.7)' }}
+                    >
+                      <div className="flex items-end justify-between">
                         <div>
-                          <p className="text-xs text-slate-400">Saldo inicial</p>
-                          <p className="text-sm tabular-nums text-slate-600">
-                            {formatCurrency(account.initial_balance)}
+                          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
+                            Saldo atual
                           </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-slate-400">Variacao</p>
                           <p
                             className={cn(
-                              'text-sm font-medium tabular-nums',
-                              balanceDiff >= 0
-                                ? 'text-emerald-600'
+                              'text-xl font-bold tabular-nums tracking-tight',
+                              account.current_balance >= 0
+                                ? 'text-slate-800'
                                 : 'text-red-600'
                             )}
                           >
-                            {balanceDiff >= 0 ? '+' : ''}
-                            {formatCurrency(balanceDiff)}
+                            {formatCurrency(account.current_balance)}
                           </p>
                         </div>
+                        <div
+                          className={cn(
+                            'flex items-center gap-1 rounded-full px-2.5 py-1',
+                            balanceDiff >= 0
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : 'bg-red-50 text-red-600'
+                          )}
+                        >
+                          <span className="text-xs font-semibold tabular-nums">
+                            {balanceDiff >= 0 ? '+' : ''}
+                            {formatCurrency(balanceDiff)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        className="mt-3 flex items-center justify-between border-t pt-2"
+                        style={{ borderColor: `${account.color}20` }}
+                      >
+                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
+                          Saldo inicial
+                        </span>
+                        <span className="text-xs font-medium tabular-nums text-slate-500">
+                          {formatCurrency(account.initial_balance)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -370,8 +435,22 @@ export default function ContasPage() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-600">
+                Banco
+              </Label>
+              <BankSelect
+                value={formData.bank_id}
+                onChange={(value) => setFormData({ ...formData, bank_id: value })}
+                banks={banks}
+                popularBanks={popularBanks}
+                onSearch={handleSearchBanks}
+                placeholder="Selecione o banco"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <Label htmlFor="name" className="text-xs font-medium text-slate-600">
-                Nome
+                Nome da conta
               </Label>
               <Input
                 id="name"
@@ -379,7 +458,7 @@ export default function ContasPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
-                placeholder="Ex: Nubank, Itau, Carteira..."
+                placeholder="Ex: Conta Principal, Poupanca..."
                 className="h-9 text-sm"
               />
             </div>
@@ -430,21 +509,13 @@ export default function ContasPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="color" className="text-xs font-medium text-slate-600">
+              <Label className="text-xs font-medium text-slate-600">
                 Cor
               </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="color"
-                  type="color"
-                  value={formData.color}
-                  onChange={(e) =>
-                    setFormData({ ...formData, color: e.target.value })
-                  }
-                  className="h-9 w-16 cursor-pointer p-1"
-                />
-                <span className="text-xs text-slate-400">{formData.color}</span>
-              </div>
+              <ColorPicker
+                value={formData.color}
+                onChange={(color) => setFormData({ ...formData, color })}
+              />
             </div>
           </div>
 
@@ -461,7 +532,7 @@ export default function ContasPage() {
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={saving || !formData.name}
+              disabled={saving || !formData.name || !formData.bank_id}
               className="h-8 bg-slate-900 hover:bg-slate-800"
             >
               {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
@@ -470,6 +541,8 @@ export default function ContasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {ConfirmDialog}
     </PageShell>
   );
 }

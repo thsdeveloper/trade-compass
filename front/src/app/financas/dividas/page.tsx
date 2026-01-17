@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Plus,
-  Loader2,
   AlertCircle,
   MoreHorizontal,
   Edit,
@@ -42,7 +41,9 @@ import {
   FileText,
   CheckCircle,
 } from 'lucide-react';
+import { DividasPageSkeleton } from '@/components/organisms/skeletons/DividasPageSkeleton';
 import { financeApi } from '@/lib/finance-api';
+import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
 import type {
   DebtWithNegotiation,
   DebtStatus,
@@ -50,7 +51,7 @@ import type {
   NegotiationFormData,
   GenerateTransactionsFormData,
   FinanceCategory,
-  FinanceAccount,
+  AccountWithBank,
   CategoryFormData,
 } from '@/types/finance';
 import {
@@ -67,7 +68,7 @@ export default function DividasPage() {
 
   const [debts, setDebts] = useState<DebtWithNegotiation[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
-  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,8 +82,17 @@ export default function DividasPage() {
   const [editingDebt, setEditingDebt] = useState<DebtWithNegotiation | null>(null);
   const [selectedDebt, setSelectedDebt] = useState<DebtWithNegotiation | null>(null);
 
-  const loadData = useCallback(async () => {
+  // Ref para evitar reload desnecessário
+  const lastLoadedFiltersRef = useRef<string | null>(null);
+
+  const loadData = useCallback(async (forceReload = false) => {
     if (!session?.access_token) return;
+
+    const filtersKey = JSON.stringify({ statusFilter });
+
+    if (!forceReload && lastLoadedFiltersRef.current === filtersKey) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -102,6 +112,8 @@ export default function DividasPage() {
       setDebts(debtsData);
       setCategories(categoriesData);
       setAccounts(accountsData);
+
+      lastLoadedFiltersRef.current = filtersKey;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao carregar dividas';
       setError(message);
@@ -115,6 +127,11 @@ export default function DividasPage() {
       loadData();
     }
   }, [authLoading, session?.access_token, loadData]);
+
+  // Listen for data changes from global dialogs
+  useFinanceDataRefresh(() => {
+    loadData(true);
+  });
 
   // Handlers
   const handleCreateDebt = () => {
@@ -136,7 +153,7 @@ export default function DividasPage() {
       await financeApi.createDebt(data, session.access_token);
     }
 
-    await loadData();
+    await loadData(true);
   };
 
   const handleDeleteDebt = async (debt: DebtWithNegotiation) => {
@@ -145,7 +162,7 @@ export default function DividasPage() {
 
     try {
       await financeApi.deleteDebt(debt.id, session.access_token);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao cancelar divida';
       alert(message);
@@ -161,7 +178,7 @@ export default function DividasPage() {
     if (!session?.access_token || !selectedDebt) return;
 
     await financeApi.createNegotiation(selectedDebt.id, data, session.access_token);
-    await loadData();
+    await loadData(true);
   };
 
   const handleGenerateTransactions = (debt: DebtWithNegotiation) => {
@@ -182,7 +199,7 @@ export default function DividasPage() {
       data,
       session.access_token
     );
-    await loadData();
+    await loadData(true);
   };
 
   const handleCreateCategory = async (data: CategoryFormData): Promise<FinanceCategory> => {
@@ -198,7 +215,7 @@ export default function DividasPage() {
 
     try {
       await financeApi.updateDebt(debt.id, { status: 'QUITADA' }, session.access_token);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao atualizar divida';
       alert(message);
@@ -216,14 +233,8 @@ export default function DividasPage() {
       .reduce((sum, d) => sum + (d.active_negotiation?.negotiated_value || d.updated_amount), 0),
   };
 
-  if (authLoading) {
-    return (
-      <PageShell>
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-        </div>
-      </PageShell>
-    );
+  if (authLoading || loading) {
+    return <DividasPageSkeleton />;
   }
 
   if (!session) {
@@ -234,20 +245,6 @@ export default function DividasPage() {
   return (
     <PageShell>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Dividas</h1>
-            <p className="text-sm text-muted-foreground">
-              Gerencie suas dividas e acompanhe negociacoes
-            </p>
-          </div>
-          <Button onClick={handleCreateDebt}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nova Divida
-          </Button>
-        </div>
-
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-lg border bg-card p-4">
@@ -298,15 +295,8 @@ export default function DividasPage() {
           </div>
         )}
 
-        {/* Loading State */}
-        {loading && (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-          </div>
-        )}
-
         {/* Empty State */}
-        {!loading && !error && debts.length === 0 && (
+        {!error && debts.length === 0 && (
           <div className="flex h-64 flex-col items-center justify-center rounded-lg border bg-card">
             <FileText className="h-12 w-12 text-slate-300" />
             <p className="mt-4 text-sm text-muted-foreground">
@@ -320,7 +310,7 @@ export default function DividasPage() {
         )}
 
         {/* Table */}
-        {!loading && !error && debts.length > 0 && (
+        {!error && debts.length > 0 && (
           <div className="rounded-lg border bg-card">
             <Table>
               <TableHeader>

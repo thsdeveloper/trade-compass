@@ -7,8 +7,10 @@ import { createClient } from '@/lib/supabase/client';
 import { PageShell } from '@/components/organisms/PageShell';
 import { TradeDialog } from '@/components/organisms/TradeDialog';
 import { CostsConfigDialog } from '@/components/organisms/CostsConfigDialog';
+import { ImportTradesDialog, type TradeToImport } from '@/components/organisms/ImportTradesDialog';
 import { DayTradeEvolutionChart } from '@/components/molecules/DayTradeEvolutionChart';
 import { MepMenChart } from '@/components/molecules/MepMenChart';
+import { TradePlanChart } from '@/components/molecules/TradePlanChart';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -38,7 +40,9 @@ import {
   ChevronDown,
   Image as ImageIcon,
   X,
+  Upload,
 } from 'lucide-react';
+import { DaytradePageSkeleton } from '@/components/organisms/skeletons/DaytradePageSkeleton';
 import {
   Dialog,
   DialogContent,
@@ -69,6 +73,7 @@ export default function DayTradePage() {
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCostsDialogOpen, setIsCostsDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<DayTrade | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
   const [assetFilter, setAssetFilter] = useState<FuturesAsset | 'all'>('all');
@@ -210,6 +215,9 @@ export default function DayTradePage() {
       costs,
       mep: data.mep ?? null,
       men: data.men ?? null,
+      stop_price: data.stop_price ?? null,
+      partial_price: data.partial_price ?? null,
+      target_price: data.target_price ?? null,
       notes: data.notes || null,
       image_path: imagePath,
     };
@@ -257,6 +265,71 @@ export default function DayTradePage() {
   const handleNewTrade = () => {
     setEditingTrade(null);
     setIsDialogOpen(true);
+  };
+
+  const handleImportTrades = async (tradesToImport: TradeToImport[]) => {
+    if (!user) return;
+
+    for (const trade of tradesToImport) {
+      const costs = calculateTradeCosts(trade.asset, trade.contracts, costsConfig ?? undefined);
+
+      if (trade.status === 'update' && trade.existingTradeId) {
+        // UPDATE: atualizar apenas os campos do CSV, preservando campos manuais
+        const updateData = {
+          entry_price: trade.entry_price,
+          exit_price: trade.exit_price,
+          entry_time: trade.entry_time,
+          exit_time: trade.exit_time,
+          result: trade.result,
+          costs,
+          mep: trade.mep,
+          men: trade.men,
+          // Campos manuais (stop, parcial, alvo, notes, image) NAO sao alterados
+        };
+
+        const { error } = await supabase
+          .from('daytrade_trades')
+          .update(updateData)
+          .eq('id', trade.existingTradeId);
+
+        if (error) {
+          console.error('Erro ao atualizar trade:', error);
+          throw new Error(`Erro ao atualizar operacao: ${error.message}`);
+        }
+      } else {
+        // INSERT: criar novo trade
+        const tradeData = {
+          user_id: user.id,
+          asset: trade.asset,
+          direction: trade.direction,
+          contracts: trade.contracts,
+          entry_price: trade.entry_price,
+          exit_price: trade.exit_price,
+          entry_time: trade.entry_time,
+          exit_time: trade.exit_time,
+          result: trade.result,
+          costs,
+          mep: trade.mep,
+          men: trade.men,
+          stop_price: null,
+          partial_price: null,
+          target_price: null,
+          notes: null,
+          image_path: null,
+        };
+
+        const { error } = await supabase
+          .from('daytrade_trades')
+          .insert(tradeData);
+
+        if (error) {
+          console.error('Erro ao importar trade:', error);
+          throw new Error(`Erro ao importar operacao: ${error.message}`);
+        }
+      }
+    }
+
+    await loadTrades();
   };
 
   const handleSaveCostsConfig = async (winfutCost: number, wdofutCost: number) => {
@@ -311,6 +384,76 @@ export default function DayTradePage() {
       wins,
       losses,
       winRate,
+    };
+  }, [trades]);
+
+  // Metricas de aderencia ao plano operacional
+  const planStats = useMemo(() => {
+    const completedTrades = trades.filter((t) => t.result !== null);
+    const tradesComPlano = completedTrades.filter(
+      (t) => t.stop_price !== null || t.target_price !== null
+    );
+
+    if (tradesComPlano.length === 0) {
+      return {
+        tradesComPlano: 0,
+        totalTrades: completedTrades.length,
+        aderenciaStop: 0,
+        aderenciaAlvo: 0,
+        rrPlanejado: 0,
+      };
+    }
+
+    // Aderencia ao Stop (trades perdedores que respeitaram o stop)
+    const tradesPerdedoresComStop = tradesComPlano.filter(
+      (t) => t.stop_price !== null && t.result !== null && t.result < 0 && t.exit_price !== null
+    );
+    let aderenciaStop = 0;
+    if (tradesPerdedoresComStop.length > 0) {
+      const respeitouStop = tradesPerdedoresComStop.filter((t) => {
+        const stopDistance = Math.abs(t.entry_price - t.stop_price!);
+        const exitDistance = Math.abs(t.entry_price - t.exit_price!);
+        return exitDistance <= stopDistance * 1.1; // 10% tolerancia
+      });
+      aderenciaStop = (respeitouStop.length / tradesPerdedoresComStop.length) * 100;
+    }
+
+    // Aderencia ao Alvo (trades vencedores que atingiram o alvo)
+    const tradesVencedoresComAlvo = tradesComPlano.filter(
+      (t) => t.target_price !== null && t.result !== null && t.result > 0 && t.exit_price !== null
+    );
+    let aderenciaAlvo = 0;
+    if (tradesVencedoresComAlvo.length > 0) {
+      const atingiuAlvo = tradesVencedoresComAlvo.filter((t) => {
+        if (t.direction === 'BUY') {
+          return t.exit_price! >= t.target_price! * 0.95;
+        } else {
+          return t.exit_price! <= t.target_price! * 1.05;
+        }
+      });
+      aderenciaAlvo = (atingiuAlvo.length / tradesVencedoresComAlvo.length) * 100;
+    }
+
+    // R:R Planejado medio
+    const tradesComRR = tradesComPlano.filter(
+      (t) => t.stop_price !== null && t.target_price !== null
+    );
+    let rrPlanejado = 0;
+    if (tradesComRR.length > 0) {
+      const rrValues = tradesComRR.map((t) => {
+        const risco = Math.abs(t.entry_price - t.stop_price!);
+        const retorno = Math.abs(t.target_price! - t.entry_price);
+        return risco > 0 ? retorno / risco : 0;
+      });
+      rrPlanejado = rrValues.reduce((a, b) => a + b, 0) / rrValues.length;
+    }
+
+    return {
+      tradesComPlano: tradesComPlano.length,
+      totalTrades: completedTrades.length,
+      aderenciaStop,
+      aderenciaAlvo,
+      rrPlanejado,
     };
   }, [trades]);
 
@@ -384,13 +527,7 @@ export default function DayTradePage() {
   };
 
   if (authLoading || (initialLoading && !hasLoadedRef.current)) {
-    return (
-      <PageShell>
-        <div className="flex h-[50vh] items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      </PageShell>
-    );
+    return <DaytradePageSkeleton />;
   }
 
   return (
@@ -413,6 +550,15 @@ export default function DayTradePage() {
             >
               <Settings className="mr-1.5 h-3.5 w-3.5" />
               Custos
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setIsImportDialogOpen(true)}
+              className="h-8 px-3 text-[13px]"
+            >
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
+              Importar CSV
             </Button>
             <Button
               size="sm"
@@ -548,12 +694,58 @@ export default function DayTradePage() {
               </div>
             </div>
           </div>
+
+          {/* Aderencia ao Plano */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">
+              Aderencia ao Plano
+            </div>
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground">Trades c/ plano</span>
+                <span className="text-[12px] font-medium tabular-nums">
+                  {planStats.tradesComPlano}/{planStats.totalTrades}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground">Respeitou stop</span>
+                <span className={cn(
+                  "text-[12px] font-medium tabular-nums",
+                  planStats.aderenciaStop >= 80 ? 'text-emerald-600' :
+                  planStats.aderenciaStop >= 60 ? 'text-amber-600' : 'text-red-600'
+                )}>
+                  {planStats.aderenciaStop.toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground">Atingiu alvo</span>
+                <span className={cn(
+                  "text-[12px] font-medium tabular-nums",
+                  planStats.aderenciaAlvo >= 50 ? 'text-emerald-600' :
+                  planStats.aderenciaAlvo >= 30 ? 'text-amber-600' : 'text-red-600'
+                )}>
+                  {planStats.aderenciaAlvo.toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground">R:R planejado</span>
+                <span className="text-[12px] font-medium tabular-nums">
+                  1:{planStats.rrPlanejado.toFixed(1)}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Charts */}
         <div className="grid gap-4 lg:grid-cols-2">
           <DayTradeEvolutionChart trades={trades} />
           <MepMenChart trades={trades} assetFilter={assetFilter} />
+        </div>
+
+        {/* Grafico de Plano vs Execucao */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TradePlanChart trades={trades} assetFilter={assetFilter} />
         </div>
 
         {/* Table */}
@@ -788,6 +980,13 @@ export default function DayTradePage() {
         onOpenChange={setIsCostsDialogOpen}
         costsConfig={costsConfig}
         onSave={handleSaveCostsConfig}
+      />
+
+      <ImportTradesDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        onImport={handleImportTrades}
+        existingTrades={trades}
       />
 
       {/* Image Viewer Modal */}

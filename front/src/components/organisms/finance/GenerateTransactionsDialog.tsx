@@ -18,14 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, AlertCircle, Receipt } from 'lucide-react';
+import { Loader2, AlertCircle, Receipt, Building2 } from 'lucide-react';
 import { CategorySelect } from '@/components/molecules/CategorySelect';
 import type {
   GenerateTransactionsFormData,
   FinanceDebtNegotiation,
   DebtWithNegotiation,
   FinanceCategory,
-  FinanceAccount,
+  AccountWithBank,
   CategoryFormData,
 } from '@/types/finance';
 import { formatCurrency, NEGOTIATION_PAYMENT_METHOD_LABELS } from '@/types/finance';
@@ -38,7 +38,7 @@ interface GenerateTransactionsDialogProps {
   debt: DebtWithNegotiation;
   negotiation: FinanceDebtNegotiation;
   categories: FinanceCategory[];
-  accounts: FinanceAccount[];
+  accounts: AccountWithBank[];
 }
 
 export function GenerateTransactionsDialog({
@@ -200,7 +200,16 @@ export function GenerateTransactionsDialog({
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name}
+                    <div className="flex items-center gap-2">
+                      {account.bank?.logo_url ? (
+                        <img src={account.bank.logo_url} alt={account.bank.name} className="h-5 w-5 object-contain" />
+                      ) : (
+                        <div className="flex h-5 w-5 items-center justify-center rounded" style={{ backgroundColor: account.color }}>
+                          <Building2 className="h-3 w-3 text-white" />
+                        </div>
+                      )}
+                      <span>{account.name}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

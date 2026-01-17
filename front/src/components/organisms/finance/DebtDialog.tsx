@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 import type { DebtFormData, DebtType, DebtWithNegotiation } from '@/types/finance';
 import { DEBT_TYPE_LABELS, formatCurrency } from '@/types/finance';
 
@@ -218,12 +219,11 @@ export function DebtDialog({ open, onOpenChange, onSave, debt }: DebtDialogProps
                 <Label htmlFor="original_due_date" className="text-xs font-medium">
                   Data de Vencimento Original <span className="text-red-500">*</span>
                 </Label>
-                <Input
+                <DatePicker
                   id="original_due_date"
-                  type="date"
                   value={formData.original_due_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, original_due_date: e.target.value })
+                  onChange={(value) =>
+                    setFormData({ ...formData, original_due_date: value })
                   }
                   className="h-9 text-[13px]"
                 />

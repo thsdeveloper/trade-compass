@@ -5,6 +5,7 @@ import type {
   FinanceTransaction,
   CreateRecurrenceDTO,
   UpdateRecurrenceDTO,
+  RecurrenceWithDetails,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -20,7 +21,7 @@ import {
 export async function recurrenceRoutes(app: FastifyInstance) {
   // GET /finance/recurrences - List user recurrences
   app.get<{
-    Reply: FinanceRecurrence[] | ApiError;
+    Reply: RecurrenceWithDetails[] | ApiError;
   }>('/finance/recurrences', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
 
@@ -140,10 +141,10 @@ export async function recurrenceRoutes(app: FastifyInstance) {
     const { id } = request.params;
     const { count = 1 } = request.query;
 
-    if (count < 1 || count > 12) {
+    if (count < 1 || count > 2000) {
       return reply.status(400).send({
         error: 'Bad Request',
-        message: 'Quantidade deve estar entre 1 e 12',
+        message: 'Quantidade deve estar entre 1 e 2000',
         statusCode: 400,
       });
     }

@@ -1,11 +1,33 @@
 import { createUserClient } from '../../lib/supabase.js';
 import type {
   FinanceCategory,
+  FinanceCategoryType,
+  BudgetCategory,
   CreateCategoryDTO,
   UpdateCategoryDTO,
 } from '../../domain/finance-types.js';
 
 const TABLE = 'finance_categories';
+
+// Mapeamento automatico de tipo de categoria para budget category (50-30-20)
+export function getDefaultBudgetCategory(type: FinanceCategoryType): BudgetCategory | null {
+  const mapping: Record<FinanceCategoryType, BudgetCategory | null> = {
+    MORADIA: 'ESSENCIAL',
+    ALIMENTACAO: 'ESSENCIAL',
+    TRANSPORTE: 'ESSENCIAL',
+    SAUDE: 'ESSENCIAL',
+    LAZER: 'ESTILO_VIDA',
+    VESTUARIO: 'ESTILO_VIDA',
+    SERVICOS: 'ESTILO_VIDA',
+    EDUCACAO: 'ESTILO_VIDA',
+    OUTROS: 'ESTILO_VIDA',
+    INVESTIMENTOS: 'INVESTIMENTO',
+    DIVIDA: 'ESSENCIAL',
+    SALARIO: null,
+    FREELANCE: null,
+  };
+  return mapping[type];
+}
 
 export async function getCategoriesByUser(
   userId: string,
@@ -65,6 +87,7 @@ export async function createCategory(
       color: category.color || '#6366f1',
       icon: category.icon || 'Tag',
       is_system: false,
+      budget_category: getDefaultBudgetCategory(category.type),
     })
     .select()
     .single();

@@ -130,10 +130,12 @@ export async function accountRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao remover conta';
-      return reply.status(500).send({
-        error: 'Internal Server Error',
+      const isValidationError = message.includes('registros vinculados');
+      const status = isValidationError ? 409 : 500;
+      return reply.status(status).send({
+        error: isValidationError ? 'Conflict' : 'Internal Server Error',
         message,
-        statusCode: 500,
+        statusCode: status,
       });
     }
   });

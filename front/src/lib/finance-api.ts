@@ -1,16 +1,22 @@
 import type {
   FinanceCategory,
+  FinanceTag,
   FinanceAccount,
+  AccountWithBank,
   FinanceCreditCard,
   FinanceTransaction,
   FinanceRecurrence,
+  RecurrenceWithDetails,
   TransactionWithDetails,
   CreditCardInvoice,
   FinanceSummary,
   ExpensesByCategory,
   CashFlowPoint,
   UpcomingPayment,
+  BudgetSummary,
+  YearSummary,
   CategoryFormData,
+  TagFormData,
   AccountFormData,
   CreditCardFormData,
   TransactionFormData,
@@ -27,6 +33,18 @@ import type {
   DebtSummary,
   DebtStatus,
   DebtType,
+  BudgetCategory,
+  TransferFormData,
+  TransferResult,
+  Bank,
+  FinanceGoal,
+  GoalWithProgress,
+  GoalFormData,
+  GoalSummary,
+  GoalSelectItem,
+  FinanceGoalStatus,
+  FinanceGoalCategory,
+  FinanceGoalPriority,
 } from '@/types/finance';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -49,14 +67,20 @@ class FinanceApiClient {
     accessToken: string,
     options?: RequestInit
   ): Promise<T> {
+    const headers: HeadersInit = {
+      Authorization: `Bearer ${accessToken}`,
+      ...options?.headers,
+    };
+
+    // Only add Content-Type for requests with body
+    if (options?.body) {
+      (headers as Record<string, string>)['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -64,7 +88,9 @@ class FinanceApiClient {
       throw new Error(error.message);
     }
 
-    return response.json();
+    // Handle empty responses (e.g., DELETE)
+    const text = await response.text();
+    return text ? JSON.parse(text) : ({} as T);
   }
 
   // Categories
@@ -99,8 +125,26 @@ class FinanceApiClient {
     });
   }
 
+  // Tags
+  async getTags(accessToken: string): Promise<FinanceTag[]> {
+    return this.authFetch('/finance/tags', accessToken);
+  }
+
+  async createTag(data: TagFormData, accessToken: string): Promise<FinanceTag> {
+    return this.authFetch('/finance/tags', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTag(id: string, accessToken: string): Promise<void> {
+    await this.authFetch(`/finance/tags/${id}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
   // Accounts
-  async getAccounts(accessToken: string): Promise<FinanceAccount[]> {
+  async getAccounts(accessToken: string): Promise<AccountWithBank[]> {
     return this.authFetch('/finance/accounts', accessToken);
   }
 
@@ -201,6 +245,7 @@ class FinanceApiClient {
       category_id?: string;
       account_id?: string;
       credit_card_id?: string;
+      tag_id?: string;
       type?: string;
       status?: string;
       limit?: number;
@@ -242,6 +287,7 @@ class FinanceApiClient {
       total_installments: number;
       first_due_date: string;
       notes?: string;
+      tag_ids?: string[];
     },
     accessToken: string
   ): Promise<FinanceTransaction[]> {
@@ -264,7 +310,7 @@ class FinanceApiClient {
 
   async payTransaction(
     id: string,
-    data: { paid_amount?: number; payment_date?: string },
+    data: { paid_amount?: number; payment_date?: string; account_id?: string },
     accessToken: string
   ): Promise<FinanceTransaction> {
     return this.authFetch(`/finance/transactions/${id}/pay`, accessToken, {
@@ -292,8 +338,44 @@ class FinanceApiClient {
     );
   }
 
+  async cancelRecurrenceTransaction(
+    transactionId: string,
+    option: 'only_this' | 'this_and_future' | 'all',
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(
+      `/finance/transactions/${transactionId}/recurrence`,
+      accessToken,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ option }),
+      }
+    );
+  }
+
+  // Transfers
+  async createTransfer(
+    data: TransferFormData,
+    accessToken: string
+  ): Promise<TransferResult> {
+    return this.authFetch('/finance/transactions/transfer', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelTransfer(transferId: string, accessToken: string): Promise<void> {
+    await this.authFetch(
+      `/finance/transactions/transfer/${transferId}`,
+      accessToken,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
   // Recurrences
-  async getRecurrences(accessToken: string): Promise<FinanceRecurrence[]> {
+  async getRecurrences(accessToken: string): Promise<RecurrenceWithDetails[]> {
     return this.authFetch('/finance/recurrences', accessToken);
   }
 
@@ -367,12 +449,48 @@ class FinanceApiClient {
 
   async getUpcomingPayments(
     accessToken: string,
-    days: number = 30
+    params?: { days?: number; month?: string }
   ): Promise<UpcomingPayment[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.month) {
+      searchParams.append('month', params.month);
+    } else if (params?.days) {
+      searchParams.append('days', String(params.days));
+    } else {
+      searchParams.append('days', '30');
+    }
+    const query = searchParams.toString();
     return this.authFetch(
-      `/finance/dashboard/upcoming?days=${days}`,
+      `/finance/dashboard/upcoming${query ? `?${query}` : ''}`,
       accessToken
     );
+  }
+
+  async getYearSummary(
+    accessToken: string,
+    year?: number
+  ): Promise<YearSummary> {
+    const query = year ? `?year=${year}` : '';
+    return this.authFetch(`/finance/dashboard/year-summary${query}`, accessToken);
+  }
+
+  async getBudgetAllocation(
+    accessToken: string,
+    month?: string
+  ): Promise<BudgetSummary> {
+    const query = month ? `?month=${month}` : '';
+    return this.authFetch(`/finance/dashboard/budget-allocation${query}`, accessToken);
+  }
+
+  async updateCategoryBudget(
+    id: string,
+    budgetCategory: BudgetCategory,
+    accessToken: string
+  ): Promise<FinanceCategory> {
+    return this.authFetch(`/finance/categories/${id}`, accessToken, {
+      method: 'PATCH',
+      body: JSON.stringify({ budget_category: budgetCategory }),
+    });
   }
 
   // Debts
@@ -478,6 +596,85 @@ class FinanceApiClient {
 
   async getDebtSummary(accessToken: string): Promise<DebtSummary> {
     return this.authFetch('/finance/debts/summary', accessToken);
+  }
+
+  // Banks
+  async getBanks(accessToken: string, query?: string): Promise<Bank[]> {
+    const params = query ? `?q=${encodeURIComponent(query)}` : '';
+    return this.authFetch(`/finance/banks${params}`, accessToken);
+  }
+
+  async getPopularBanks(accessToken: string): Promise<Bank[]> {
+    return this.authFetch('/finance/banks/popular', accessToken);
+  }
+
+  async getBankById(id: string, accessToken: string): Promise<Bank> {
+    return this.authFetch(`/finance/banks/${id}`, accessToken);
+  }
+
+  // Goals
+  async getGoals(
+    accessToken: string,
+    filters?: {
+      status?: FinanceGoalStatus;
+      goal_category?: FinanceGoalCategory;
+      priority?: FinanceGoalPriority;
+      limit?: number;
+    }
+  ): Promise<GoalWithProgress[]> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined) {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString();
+    return this.authFetch(`/finance/goals${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  async getGoal(id: string, accessToken: string): Promise<GoalWithProgress> {
+    return this.authFetch(`/finance/goals/${id}`, accessToken);
+  }
+
+  async getGoalSummary(accessToken: string): Promise<GoalSummary> {
+    return this.authFetch('/finance/goals/summary', accessToken);
+  }
+
+  async getGoalsForSelect(accessToken: string): Promise<GoalSelectItem[]> {
+    return this.authFetch('/finance/goals/select', accessToken);
+  }
+
+  async createGoal(data: GoalFormData, accessToken: string): Promise<FinanceGoal> {
+    return this.authFetch('/finance/goals', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGoal(
+    id: string,
+    data: Partial<GoalFormData> & { status?: FinanceGoalStatus },
+    accessToken: string
+  ): Promise<FinanceGoal> {
+    return this.authFetch(`/finance/goals/${id}`, accessToken, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGoal(id: string, accessToken: string): Promise<void> {
+    await this.authFetch(`/finance/goals/${id}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
+  async getGoalContributions(
+    goalId: string,
+    accessToken: string
+  ): Promise<{ id: string; description: string; amount: number; due_date: string; status: string }[]> {
+    return this.authFetch(`/finance/goals/${goalId}/contributions`, accessToken);
   }
 }
 

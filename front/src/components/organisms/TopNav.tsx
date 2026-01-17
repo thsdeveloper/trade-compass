@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Compass } from 'lucide-react';
 import { MobileNav } from '@/components/organisms/MobileNav';
 import { UserNav } from '@/components/molecules';
+import { NewFinanceButton } from '@/components/molecules/NewFinanceButton';
 
 export function TopNav() {
   return (
@@ -22,7 +23,10 @@ export function TopNav() {
         </Link>
 
         {/* User actions */}
-        <UserNav />
+        <div className="flex items-center gap-1">
+          <NewFinanceButton variant="icon" />
+          <UserNav />
+        </div>
       </div>
     </header>
   );

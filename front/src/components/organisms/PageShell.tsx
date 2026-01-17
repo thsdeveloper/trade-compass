@@ -33,11 +33,17 @@ function PageShellContent({ children }: PageShellProps) {
           isCollapsed ? 'lg:pl-16' : 'lg:pl-64'
         )}
       >
-        <main className="container mx-auto flex-1 px-4 py-8 lg:px-8">
+        <main className="container mx-auto flex-1 px-4 py-8 pb-20 lg:px-8">
           {children}
         </main>
-        <Footer />
+        <Footer
+          className={cn(
+            'lg:transition-[left] lg:duration-200 lg:ease-in-out',
+            isCollapsed ? 'left-0 lg:left-16' : 'left-0 lg:left-64'
+          )}
+        />
       </div>
+
     </div>
   );
 }

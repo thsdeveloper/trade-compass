@@ -5,6 +5,7 @@ import type {
   CreateRecurrenceDTO,
   UpdateRecurrenceDTO,
   RecurrenceFrequency,
+  RecurrenceWithDetails,
 } from '../../domain/finance-types.js';
 
 const TABLE = 'finance_recurrences';
@@ -47,12 +48,19 @@ function calculateNextDate(currentDate: Date, frequency: RecurrenceFrequency): D
 export async function getRecurrencesByUser(
   userId: string,
   accessToken: string
-): Promise<FinanceRecurrence[]> {
+): Promise<RecurrenceWithDetails[]> {
   const client = createUserClient(accessToken);
 
   const { data, error } = await client
     .from(TABLE)
-    .select('*')
+    .select(
+      `
+      *,
+      category:finance_categories!category_id(id, name, color, icon, type),
+      account:finance_accounts!account_id(id, name, color, icon),
+      credit_card:finance_credit_cards!credit_card_id(id, name, brand, color)
+    `
+    )
     .eq('user_id', userId)
     .eq('is_active', true)
     .order('description', { ascending: true });
@@ -219,6 +227,7 @@ export async function generateNextOccurrences(
       invoice_payment_id: null,
       debt_id: null,
       debt_negotiation_id: null,
+      transfer_id: null,
       type: recurrence.type,
       status: 'PENDENTE',
       description: recurrence.description,

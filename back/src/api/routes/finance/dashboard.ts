@@ -5,6 +5,8 @@ import type {
   ExpensesByCategory,
   CashFlowPoint,
   UpcomingPayment,
+  BudgetSummary,
+  YearSummary,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -12,6 +14,9 @@ import {
   getExpensesByCategory,
   getCashFlow,
   getUpcomingPayments,
+  getUpcomingPaymentsByMonth,
+  getBudgetAllocation,
+  getYearSummary,
 } from '../../../data/finance/dashboard-repository.js';
 
 export async function dashboardRoutes(app: FastifyInstance) {
@@ -112,25 +117,105 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
   // GET /finance/dashboard/upcoming - Get upcoming payments
   app.get<{
-    Querystring: { days?: number };
+    Querystring: { days?: number; month?: string };
     Reply: UpcomingPayment[] | ApiError;
   }>('/finance/dashboard/upcoming', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
-    const { days = 30 } = request.query;
+    const { days, month } = request.query;
 
-    if (days < 1 || days > 90) {
+    try {
+      let upcoming: UpcomingPayment[];
+
+      if (month) {
+        // Filter by month
+        if (!/^\d{4}-\d{2}$/.test(month)) {
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: 'Mes deve estar no formato YYYY-MM',
+            statusCode: 400,
+          });
+        }
+        upcoming = await getUpcomingPaymentsByMonth(user.id, month, accessToken);
+      } else {
+        // Fallback to days-based (backward compatible)
+        const daysParam = days || 30;
+        if (daysParam < 1 || daysParam > 90) {
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: 'Numero de dias deve estar entre 1 e 90',
+            statusCode: 400,
+          });
+        }
+        upcoming = await getUpcomingPayments(user.id, daysParam, accessToken);
+      }
+
+      return upcoming;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar proximos vencimentos';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/dashboard/budget-allocation - Get 50-30-20 budget allocation
+  app.get<{
+    Querystring: { month?: string };
+    Reply: BudgetSummary | ApiError;
+  }>('/finance/dashboard/budget-allocation', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { month } = request.query;
+
+    // Default to current month
+    const targetMonth =
+      month || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+    if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
       return reply.status(400).send({
         error: 'Bad Request',
-        message: 'Numero de dias deve estar entre 1 e 90',
+        message: 'Mes deve estar no formato YYYY-MM',
         statusCode: 400,
       });
     }
 
     try {
-      const upcoming = await getUpcomingPayments(user.id, days, accessToken);
-      return upcoming;
+      const allocation = await getBudgetAllocation(user.id, targetMonth, accessToken);
+      return allocation;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao buscar proximos vencimentos';
+      const message = err instanceof Error ? err.message : 'Erro ao buscar alocacao de orcamento';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/dashboard/year-summary - Get annual summary
+  app.get<{
+    Querystring: { year?: number };
+    Reply: YearSummary | ApiError;
+  }>('/finance/dashboard/year-summary', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { year } = request.query;
+
+    const targetYear = year || new Date().getFullYear();
+
+    if (targetYear < 2000 || targetYear > 2100) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Ano deve estar entre 2000 e 2100',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const summary = await getYearSummary(user.id, targetYear, accessToken);
+      return summary;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar resumo anual';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

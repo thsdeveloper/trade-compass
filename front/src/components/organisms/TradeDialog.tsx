@@ -77,6 +77,9 @@ export function TradeDialog({
     exit_time: undefined,
     mep: undefined,
     men: undefined,
+    stop_price: undefined,
+    partial_price: undefined,
+    target_price: undefined,
     notes: '',
     image_path: undefined,
     image_file: undefined,
@@ -94,6 +97,9 @@ export function TradeDialog({
         exit_time: trade.exit_time ? isoToLocalDatetime(trade.exit_time) : undefined,
         mep: trade.mep ?? undefined,
         men: trade.men ?? undefined,
+        stop_price: trade.stop_price ?? undefined,
+        partial_price: trade.partial_price ?? undefined,
+        target_price: trade.target_price ?? undefined,
         notes: trade.notes ?? '',
         image_path: trade.image_path ?? undefined,
         image_file: undefined,
@@ -115,6 +121,9 @@ export function TradeDialog({
         exit_time: undefined,
         mep: undefined,
         men: undefined,
+        stop_price: undefined,
+        partial_price: undefined,
+        target_price: undefined,
         notes: '',
         image_path: undefined,
         image_file: undefined,
@@ -341,6 +350,72 @@ export function TradeDialog({
                 className="h-9 text-[13px]"
                 placeholder="Max. Excursao Negativa"
               />
+            </div>
+          </div>
+
+          {/* Plano Operacional */}
+          <div className="space-y-2">
+            <Label className="text-[12px] font-medium text-muted-foreground">
+              Plano Operacional
+            </Label>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="stop_price" className="text-[11px] font-medium text-red-600">
+                  Stop
+                </Label>
+                <Input
+                  id="stop_price"
+                  type="number"
+                  step="0.01"
+                  value={formData.stop_price ?? ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      stop_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                    })
+                  }
+                  className="h-8 text-[12px]"
+                  placeholder="Preco"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="partial_price" className="text-[11px] font-medium text-amber-600">
+                  Parcial
+                </Label>
+                <Input
+                  id="partial_price"
+                  type="number"
+                  step="0.01"
+                  value={formData.partial_price ?? ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      partial_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                    })
+                  }
+                  className="h-8 text-[12px]"
+                  placeholder="Preco"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="target_price" className="text-[11px] font-medium text-emerald-600">
+                  Alvo
+                </Label>
+                <Input
+                  id="target_price"
+                  type="number"
+                  step="0.01"
+                  value={formData.target_price ?? ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      target_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                    })
+                  }
+                  className="h-8 text-[12px]"
+                  placeholder="Preco"
+                />
+              </div>
             </div>
           </div>
 

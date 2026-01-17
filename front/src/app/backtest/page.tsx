@@ -26,6 +26,7 @@ import {
   Zap,
   Database,
 } from 'lucide-react';
+import { BacktestPageSkeleton } from '@/components/organisms/skeletons/BacktestPageSkeleton';
 import {
   Table,
   TableBody,
@@ -216,12 +217,7 @@ export default function BacktestPage() {
 
         {/* Loading */}
         {(authLoading || loadingWatchlist || (loading && !data)) && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="text-sm text-muted-foreground mt-2">
-              {authLoading || loadingWatchlist ? 'Carregando watchlist...' : 'Carregando backtest...'}
-            </span>
-          </div>
+          <BacktestPageSkeleton />
         )}
 
         {/* Error */}

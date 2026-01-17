@@ -20,11 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, CreditCard, Wallet } from 'lucide-react';
+import { Loader2, CreditCard, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   CreditCardInvoice,
-  FinanceAccount,
+  AccountWithBank,
   PayInvoiceFormData,
   InvoicePaymentType,
 } from '@/types/finance';
@@ -34,7 +34,7 @@ interface PayInvoiceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   invoice: CreditCardInvoice | null;
-  accounts: FinanceAccount[];
+  accounts: AccountWithBank[];
   onPayment: (data: PayInvoiceFormData) => Promise<void>;
 }
 
@@ -133,7 +133,7 @@ export function PayInvoiceDialog({
             </div>
             <div className="flex justify-between text-sm text-slate-500">
               <span>Vencimento:</span>
-              <span>{new Date(invoice.due_date).toLocaleDateString('pt-BR')}</span>
+              <span>{invoice.due_date.split('-').reverse().join('/')}</span>
             </div>
           </div>
 
@@ -229,8 +229,14 @@ export function PayInvoiceDialog({
                 {accounts.map((acc) => (
                   <SelectItem key={acc.id} value={acc.id} className="text-sm">
                     <div className="flex items-center gap-2">
-                      <Wallet className="h-3.5 w-3.5 text-slate-400" />
-                      <span>{acc.name}</span>
+                      {acc.bank?.logo_url ? (
+                        <img src={acc.bank.logo_url} alt={acc.bank.name} className="h-5 w-5 object-contain" />
+                      ) : (
+                        <div className="flex h-5 w-5 items-center justify-center rounded" style={{ backgroundColor: acc.color }}>
+                          <Building2 className="h-3 w-3 text-white" />
+                        </div>
+                      )}
+                      <span className="flex-1">{acc.name}</span>
                       <span className="text-xs text-slate-400">
                         ({formatCurrency(acc.current_balance)})
                       </span>

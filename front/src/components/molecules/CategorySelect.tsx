@@ -35,22 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { FinanceCategory, FinanceCategoryType, CategoryFormData } from '@/types/finance';
+import type { FinanceCategory, FinanceCategoryType, CategoryFormData, BudgetCategory } from '@/types/finance';
 import { CATEGORY_TYPE_LABELS } from '@/types/finance';
-
-// Cores predefinidas para novas categorias
-const PRESET_COLORS = [
-  '#64748b', // slate
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#22c55e', // green
-  '#14b8a6', // teal
-  '#3b82f6', // blue
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#6b7280', // gray
-];
+import { CategoryIcon, IconSelector, ColorPicker, DEFAULT_CATEGORY_ICONS } from '@/components/atoms/CategoryIcon';
+import { BudgetCategorySelect } from '@/components/molecules/BudgetCategorySelect';
 
 interface CategorySelectProps {
   value: string;
@@ -83,8 +71,8 @@ export function CategorySelect({
   const [newCategory, setNewCategory] = useState<CategoryFormData>({
     name: '',
     type: 'OUTROS',
-    color: PRESET_COLORS[0],
-    icon: 'tag',
+    color: '#64748b',
+    icon: 'Tag',
   });
 
   // Filtrar categorias por tipo se especificado
@@ -112,8 +100,8 @@ export function CategorySelect({
     setNewCategory({
       name: search,
       type: 'OUTROS',
-      color: PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)],
-      icon: 'tag',
+      color: '#64748b',
+      icon: 'Tag',
     });
     setCreateDialogOpen(true);
   }, [search]);
@@ -153,9 +141,10 @@ export function CategorySelect({
             {value ? (
               <div className="flex items-center gap-2">
                 {selectedCategory && (
-                  <div
-                    className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: selectedCategory.color }}
+                  <CategoryIcon
+                    icon={selectedCategory.icon}
+                    color={selectedCategory.color}
+                    size="xs"
                   />
                 )}
                 <span className="truncate">
@@ -175,7 +164,7 @@ export function CategorySelect({
               value={search}
               onValueChange={setSearch}
             />
-            <CommandList>
+            <CommandList onWheelCapture={(e) => e.stopPropagation()}>
               {allowAll && (
                 <CommandGroup>
                   <CommandItem
@@ -230,9 +219,11 @@ export function CategorySelect({
                           value === category.id ? 'opacity-100' : 'opacity-0'
                         )}
                       />
-                      <div
-                        className="mr-2 h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: category.color }}
+                      <CategoryIcon
+                        icon={category.icon}
+                        color={category.color}
+                        size="xs"
+                        className="mr-2"
                       />
                       <span className="truncate">{category.name}</span>
                       <span className="ml-auto text-xs text-slate-400">
@@ -264,13 +255,13 @@ export function CategorySelect({
 
       {/* Dialog para criar categoria */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[380px]">
+        <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">
               Nova categoria
             </DialogTitle>
             <DialogDescription className="text-sm text-slate-500">
-              Crie uma categoria para organizar suas transacoes
+              Preencha os dados da categoria
             </DialogDescription>
           </DialogHeader>
 
@@ -283,7 +274,7 @@ export function CategorySelect({
                 onChange={(e) =>
                   setNewCategory({ ...newCategory, name: e.target.value })
                 }
-                placeholder="Ex: Mercado, Streaming, Uber..."
+                placeholder="Ex: Streaming, Assinaturas..."
                 className="h-9 text-sm"
                 autoFocus
               />
@@ -294,12 +285,14 @@ export function CategorySelect({
               <Label className="text-xs font-medium text-slate-600">Tipo</Label>
               <Select
                 value={newCategory.type}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  const type = value as FinanceCategoryType;
                   setNewCategory({
                     ...newCategory,
-                    type: value as FinanceCategoryType,
-                  })
-                }
+                    type,
+                    icon: DEFAULT_CATEGORY_ICONS[type] || 'Tag',
+                  });
+                }}
               >
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
@@ -317,26 +310,42 @@ export function CategorySelect({
             {/* Cor */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-slate-600">Cor</Label>
-              <div className="flex flex-wrap gap-2">
-                {PRESET_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setNewCategory({ ...newCategory, color })}
-                    className={cn(
-                      'h-7 w-7 rounded-md border-2 transition-all',
-                      newCategory.color === color
-                        ? 'border-slate-900 scale-110'
-                        : 'border-transparent hover:scale-105'
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
+              <ColorPicker
+                value={newCategory.color}
+                onChange={(color) => setNewCategory({ ...newCategory, color })}
+              />
             </div>
+
+            {/* Icone */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-600">Icone</Label>
+              <IconSelector
+                value={newCategory.icon}
+                onChange={(icon) => setNewCategory({ ...newCategory, icon })}
+                color={newCategory.color}
+              />
+            </div>
+
+            {/* Budget Category - only for expense categories */}
+            {['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'OUTROS', 'DIVIDA'].includes(newCategory.type) && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-600">
+                  Categoria 50-30-20
+                </Label>
+                <BudgetCategorySelect
+                  value={newCategory.budget_category || null}
+                  onValueChange={(value: BudgetCategory) =>
+                    setNewCategory({ ...newCategory, budget_category: value })
+                  }
+                />
+                <p className="text-xs text-slate-400">
+                  Define em qual bucket essa categoria se encaixa
+                </p>
+              </div>
+            )}
           </div>
 
-          <DialogFooter className="gap-2 pt-2">
+          <DialogFooter className="gap-2">
             <Button
               type="button"
               variant="outline"

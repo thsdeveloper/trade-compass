@@ -35,7 +35,7 @@ const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(['financas', 'daytrade']);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(['financas', 'investimentos']);
   const [isHydrated, setIsHydrated] = useState(false);
 
   // Hydrate state from localStorage on mount

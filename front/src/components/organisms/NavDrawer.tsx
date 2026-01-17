@@ -15,6 +15,8 @@ import {
   Eye,
   Bell,
   FileWarning,
+  LayoutDashboard,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -31,19 +33,22 @@ const navigationConfig = [
     icon: Wallet,
     requiresAuth: true,
     items: [
-      { id: 'transacoes', label: 'Transacoes', href: '/financas', icon: Receipt },
-      { id: 'dividas', label: 'Dividas', href: '/financas/dividas', icon: FileWarning },
+      { id: 'dashboard', label: 'Dashboard', href: '/financas', icon: LayoutDashboard },
+      { id: 'transacoes', label: 'Transacoes', href: '/financas/transacoes', icon: Receipt },
+      { id: 'objetivos', label: 'Objetivos', href: '/financas/objetivos', icon: Target },
+      { id: 'dividas', label: 'Dividas Vencidas', href: '/financas/dividas', icon: FileWarning },
       { id: 'contas', label: 'Contas', href: '/financas/contas', icon: Building2 },
       { id: 'cartoes', label: 'Cartoes', href: '/financas/cartoes', icon: CreditCard },
       { id: 'categorias', label: 'Categorias', href: '/financas/categorias', icon: Tags },
     ],
   },
   {
-    id: 'daytrade',
-    label: 'Day Trade',
+    id: 'investimentos',
+    label: 'Investimentos',
     icon: CandlestickChart,
     requiresAuth: true,
     items: [
+      { id: 'daytrade', label: 'Day Trade', href: '/daytrade', icon: CandlestickChart },
       { id: 'backtest', label: 'Backtest', href: '/backtest', icon: BarChart3 },
       { id: 'watchlist', label: 'Watchlist', href: '/watchlist', icon: Eye },
       { id: 'alertas', label: 'Alertas', href: '/alerts', icon: Bell },

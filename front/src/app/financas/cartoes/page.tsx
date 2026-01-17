@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -33,15 +33,19 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from 'lucide-react';
+import { CartoesPageSkeleton } from '@/components/organisms/skeletons/CartoesPageSkeleton';
 import { financeApi } from '@/lib/finance-api';
+import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
 import { PayInvoiceDialog } from '@/components/organisms/finance/PayInvoiceDialog';
+import { ExportCreditCardTransactionsDialog } from '@/components/organisms/finance/ExportCreditCardTransactionsDialog';
 import type {
   FinanceCreditCard,
   CreditCardFormData,
   CreditCardBrand,
   CreditCardInvoice,
-  FinanceAccount,
+  AccountWithBank,
   PayInvoiceFormData,
 } from '@/types/finance';
 import {
@@ -50,6 +54,7 @@ import {
   TRANSACTION_STATUS_LABELS,
   getStatusColor,
 } from '@/types/finance';
+import { ColorPicker } from '@/components/atoms/CategoryIcon';
 
 export default function CartoesPage() {
   const { user, session, loading: authLoading } = useAuth();
@@ -58,7 +63,7 @@ export default function CartoesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
-  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
 
   // Invoice state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
@@ -73,6 +78,9 @@ export default function CartoesPage() {
   // Pay invoice state
   const [payInvoiceDialogOpen, setPayInvoiceDialogOpen] = useState(false);
 
+  // Export dialog state
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<FinanceCreditCard | null>(null);
@@ -86,8 +94,15 @@ export default function CartoesPage() {
     color: '#64748b',
   });
 
-  const loadData = useCallback(async () => {
+  // Ref para evitar reload desnecessário
+  const hasLoadedRef = useRef(false);
+
+  const loadData = useCallback(async (forceReload = false) => {
     if (!session?.access_token) return;
+
+    if (!forceReload && hasLoadedRef.current) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -99,6 +114,7 @@ export default function CartoesPage() {
       ]);
       setCreditCards(cards);
       setAccounts(accs);
+      hasLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
     } finally {
@@ -116,6 +132,11 @@ export default function CartoesPage() {
 
     loadData();
   }, [user, authLoading, router, loadData]);
+
+  // Listen for data changes from global dialogs
+  useFinanceDataRefresh(() => {
+    loadData(true);
+  });
 
   const openNewDialog = () => {
     setEditingCard(null);
@@ -154,7 +175,7 @@ export default function CartoesPage() {
         await financeApi.createCreditCard(formData, session.access_token);
       }
       setDialogOpen(false);
-      loadData();
+      loadData(true);
     } catch (err) {
       console.error('Error saving card:', err);
     } finally {
@@ -168,7 +189,7 @@ export default function CartoesPage() {
 
     try {
       await financeApi.deleteCreditCard(cardId, session.access_token);
-      loadData();
+      loadData(true);
     } catch (err) {
       console.error('Error deleting card:', err);
     }
@@ -225,7 +246,7 @@ export default function CartoesPage() {
     await financeApi.payInvoice(selectedCard.id, data, session.access_token);
     setPayInvoiceDialogOpen(false);
     setInvoiceDialogOpen(false);
-    loadData();
+    loadData(true);
   };
 
   const formatMonthDisplay = (month: string) => {
@@ -235,13 +256,7 @@ export default function CartoesPage() {
   };
 
   if (authLoading || loading) {
-    return (
-      <PageShell>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </div>
-      </PageShell>
-    );
+    return <CartoesPageSkeleton />;
   }
 
   if (error) {
@@ -252,7 +267,7 @@ export default function CartoesPage() {
             <AlertCircle className="h-5 w-5 text-red-500" />
           </div>
           <p className="text-sm text-slate-500">{error}</p>
-          <Button variant="outline" size="sm" onClick={loadData} className="mt-2">
+          <Button variant="outline" size="sm" onClick={() => loadData()} className="mt-2">
             Tentar novamente
           </Button>
         </div>
@@ -268,34 +283,6 @@ export default function CartoesPage() {
   return (
     <PageShell>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/financas')}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="space-y-1">
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-                Cartoes de Credito
-              </h1>
-              <p className="text-sm text-slate-500">
-                Gerencie seus cartoes
-              </p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            className="h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800"
-            onClick={openNewDialog}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Novo cartao
-          </Button>
-        </div>
-
         {/* Summary */}
         {creditCards.length > 0 && (
           <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -327,6 +314,16 @@ export default function CartoesPage() {
                     {usagePercent.toFixed(0)}%
                   </p>
                 </div>
+                <div className="h-10 w-px bg-slate-100" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setExportDialogOpen(true)}
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Exportar
+                </Button>
               </div>
             </div>
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -356,68 +353,175 @@ export default function CartoesPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {creditCards.map((card) => {
               const cardUsed = card.total_limit - card.available_limit;
               const cardUsagePercent = card.total_limit > 0 ? (cardUsed / card.total_limit) * 100 : 0;
 
+              // Generate darker shade for gradient
+              const darkenColor = (hex: string, percent: number) => {
+                const num = parseInt(hex.replace('#', ''), 16);
+                const amt = Math.round(2.55 * percent);
+                const R = Math.max((num >> 16) - amt, 0);
+                const G = Math.max((num >> 8 & 0x00FF) - amt, 0);
+                const B = Math.max((num & 0x0000FF) - amt, 0);
+                return `#${(0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1)}`;
+              };
+
+              // Check if color is light to determine text color
+              const isLightColor = (hex: string) => {
+                const num = parseInt(hex.replace('#', ''), 16);
+                const r = num >> 16;
+                const g = (num >> 8) & 0x00FF;
+                const b = num & 0x0000FF;
+                const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                return brightness > 155;
+              };
+
+              const textColor = isLightColor(card.color) ? 'text-slate-800' : 'text-white';
+              const textColorMuted = isLightColor(card.color) ? 'text-slate-600' : 'text-white/70';
+
+              // Brand logos as SVG components
+              const BrandLogo = () => {
+                switch (card.brand) {
+                  case 'VISA':
+                    return (
+                      <svg viewBox="0 0 48 16" className="h-6 w-auto" fill="currentColor">
+                        <path d="M19.5 1.5L16.5 14.5H13L16 1.5H19.5ZM33.5 9.5L35.5 4L36.5 9.5H33.5ZM37.5 14.5H41L38 1.5H35C34.2 1.5 33.5 2 33.2 2.7L27.5 14.5H31.5L32.3 12H37.2L37.5 14.5ZM28.5 10C28.5 6 23 5.8 23 4C23 3.4 23.5 2.8 24.7 2.6C25.3 2.5 27 2.5 28.8 3.3L29.5 1.8C28.5 1.4 27.2 1 25.5 1C21.8 1 19.2 3 19.2 5.8C19.2 9.3 24 9.5 24 11.5C24 12.2 23.2 12.8 22 12.8C20.3 12.8 18.8 12.2 18 11.7L17.2 13.3C18.2 13.9 20 14.5 21.8 14.5C26 14.5 28.5 12.7 28.5 10ZM12 1.5L7 14.5H3L0.5 3.8C0.3 3 0 2.7 0 2.7H0C1.7 3.4 3.5 4.3 5 5.3L8.5 14.5H12.5L17 1.5H12Z" />
+                      </svg>
+                    );
+                  case 'MASTERCARD':
+                    return (
+                      <svg viewBox="0 0 32 20" className="h-7 w-auto">
+                        <circle cx="10" cy="10" r="10" fill="#EB001B" />
+                        <circle cx="22" cy="10" r="10" fill="#F79E1B" />
+                        <path d="M16 3.5a10 10 0 0 0 0 13 10 10 0 0 0 0-13z" fill="#FF5F00" />
+                      </svg>
+                    );
+                  case 'ELO':
+                    return (
+                      <svg viewBox="0 0 40 16" className="h-6 w-auto">
+                        <ellipse cx="8" cy="8" rx="6" ry="6" fill="#FFCB05" />
+                        <ellipse cx="20" cy="8" rx="6" ry="6" fill="#00A4E0" />
+                        <ellipse cx="32" cy="8" rx="6" ry="6" fill="#EF4123" />
+                      </svg>
+                    );
+                  case 'AMEX':
+                    return (
+                      <svg viewBox="0 0 40 12" className="h-5 w-auto" fill="currentColor">
+                        <path d="M0 6L3 0H6L9 6L6 12H3L0 6ZM10 0H13L15 4L17 0H20L16 6L20 12H17L15 8L13 12H10L14 6L10 0ZM21 0H28V2H24V5H28V7H24V10H28V12H21V0ZM30 0H37V2H33V5H37V7H33V10H37V12H30V0Z" />
+                      </svg>
+                    );
+                  case 'HIPERCARD':
+                    return (
+                      <svg viewBox="0 0 40 14" className="h-5 w-auto">
+                        <rect x="0" y="0" width="40" height="14" rx="2" fill="#B3131B" />
+                        <text x="20" y="10" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">HIPER</text>
+                      </svg>
+                    );
+                  default:
+                    return (
+                      <CreditCard className="h-6 w-6" />
+                    );
+                }
+              };
+
               return (
-                <div
-                  key={card.id}
-                  className="group rounded-lg border border-slate-200 bg-white transition-colors hover:border-slate-300"
-                >
-                  <div className="border-b border-slate-100 p-4">
+                <div key={card.id} className="group flex flex-col gap-3">
+                  {/* Credit Card Design */}
+                  <div
+                    className="relative aspect-[1.586/1] w-full cursor-pointer overflow-hidden rounded-2xl p-5 shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+                    style={{
+                      background: `linear-gradient(135deg, ${card.color} 0%, ${darkenColor(card.color, 30)} 100%)`,
+                    }}
+                    onClick={() => openInvoiceDialog(card)}
+                  >
+                    {/* Pattern overlay */}
+                    <div
+                      className="pointer-events-none absolute inset-0 opacity-10"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+                      }}
+                    />
+
+                    {/* Top row: Chip and actions */}
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="flex h-8 w-8 items-center justify-center rounded-md"
-                          style={{ backgroundColor: card.color + '15' }}
-                        >
-                          <CreditCard
-                            className="h-4 w-4"
-                            style={{ color: card.color }}
-                          />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">
-                            {card.name}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            {CREDIT_CARD_BRAND_LABELS[card.brand]}
-                          </p>
+                      {/* Chip */}
+                      <div className="h-9 w-12 rounded-md bg-gradient-to-br from-amber-200 via-amber-300 to-amber-400 shadow-inner">
+                        <div className="flex h-full w-full flex-col justify-center gap-1 px-1.5">
+                          <div className="h-0.5 w-full rounded-full bg-amber-500/40" />
+                          <div className="h-0.5 w-full rounded-full bg-amber-500/40" />
+                          <div className="h-0.5 w-full rounded-full bg-amber-500/40" />
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
-                          onClick={() => openEditDialog(card)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDialog(card);
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm transition-colors hover:bg-white/30"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(card.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(card.id);
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm transition-colors hover:bg-red-500/50"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
+
+                    {/* Card number placeholder */}
+                    <div className={`mt-4 font-mono text-lg tracking-[0.2em] ${textColor}`}>
+                      •••• •••• •••• ••••
+                    </div>
+
+                    {/* Bottom row: Name and Brand */}
+                    <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-[10px] uppercase tracking-wider ${textColorMuted}`}>
+                          Nome do cartao
+                        </p>
+                        <p className={`truncate text-sm font-semibold tracking-wide ${textColor}`}>
+                          {card.name.toUpperCase()}
+                        </p>
+                      </div>
+                      <div className={`ml-3 flex flex-col items-end ${textColor}`}>
+                        <BrandLogo />
+                        <p className={`mt-1 font-mono text-xs ${textColorMuted}`}>
+                          {String(card.closing_day).padStart(2, '0')}/{String(card.due_day).padStart(2, '0')}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4">
+
+                  {/* Card Info Below */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400">Limite</span>
-                        <span className="text-sm font-medium tabular-nums text-slate-900">
+                        <span className="text-xs text-slate-400">Limite total</span>
+                        <span className="text-sm font-semibold tabular-nums text-slate-900">
                           {formatCurrency(card.total_limit)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-slate-400">Disponivel</span>
-                        <span className="text-sm font-medium tabular-nums text-emerald-600">
+                        <span className="text-sm font-semibold tabular-nums text-emerald-600">
                           {formatCurrency(card.available_limit)}
                         </span>
                       </div>
-                      <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">Utilizado</span>
+                        <span className="text-sm font-medium tabular-nums text-slate-500">
+                          {formatCurrency(cardUsed)} ({cardUsagePercent.toFixed(0)}%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                         <div
                           className="h-full rounded-full transition-all"
                           style={{
@@ -426,27 +530,23 @@ export default function CartoesPage() {
                           }}
                         />
                       </div>
-                      <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                      <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-400">Fecha</span>
-                          <span className="text-xs font-medium text-slate-600">
-                            dia {card.closing_day}
-                          </span>
+                          <span className="text-slate-400">Fecha dia</span>
+                          <span className="font-semibold text-slate-700">{card.closing_day}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-400">Vence</span>
-                          <span className="text-xs font-medium text-slate-600">
-                            dia {card.due_day}
-                          </span>
+                          <span className="text-slate-400">Vence dia</span>
+                          <span className="font-semibold text-slate-700">{card.due_day}</span>
                         </div>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-3 h-8 w-full text-xs"
+                        className="h-9 w-full text-xs font-medium"
                         onClick={() => openInvoiceDialog(card)}
                       >
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
+                        <FileText className="mr-1.5 h-4 w-4" />
                         Ver fatura
                       </Button>
                     </div>
@@ -573,21 +673,13 @@ export default function CartoesPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="color" className="text-xs font-medium text-slate-600">
+              <Label className="text-xs font-medium text-slate-600">
                 Cor
               </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="color"
-                  type="color"
-                  value={formData.color}
-                  onChange={(e) =>
-                    setFormData({ ...formData, color: e.target.value })
-                  }
-                  className="h-9 w-16 cursor-pointer p-1"
-                />
-                <span className="text-xs text-slate-400">{formData.color}</span>
-              </div>
+              <ColorPicker
+                value={formData.color}
+                onChange={(color) => setFormData({ ...formData, color })}
+              />
             </div>
           </div>
 
@@ -664,7 +756,7 @@ export default function CartoesPage() {
                   <div className="text-right">
                     <p className="text-xs text-slate-400">Vencimento</p>
                     <p className="text-sm font-medium text-slate-700">
-                      {new Date(currentInvoice.due_date).toLocaleDateString('pt-BR')}
+                      {currentInvoice.due_date.split('-').reverse().join('/')}
                     </p>
                   </div>
                 </div>
@@ -692,7 +784,7 @@ export default function CartoesPage() {
                             {tx.description}
                           </p>
                           <p className="text-xs text-slate-400">
-                            {new Date(tx.due_date).toLocaleDateString('pt-BR')} -{' '}
+                            {tx.due_date.split('-').reverse().join('/')} -{' '}
                             <span className={getStatusColor(tx.status)}>
                               {TRANSACTION_STATUS_LABELS[tx.status]}
                             </span>
@@ -729,6 +821,16 @@ export default function CartoesPage() {
         accounts={accounts}
         onPayment={handlePayInvoice}
       />
+
+      {/* Export Credit Card Transactions Dialog */}
+      {session?.access_token && (
+        <ExportCreditCardTransactionsDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          creditCards={creditCards}
+          accessToken={session.access_token}
+        />
+      )}
     </PageShell>
   );
 }

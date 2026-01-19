@@ -6,12 +6,15 @@
     "dev": "pnpm -r --parallel dev",
     "dev:front": "pnpm --filter front dev",
     "dev:back": "pnpm --filter back dev",
+    "dev:mobile": "pnpm --filter mobile start",
     "build": "pnpm -r build",
     "build:front": "pnpm --filter front build",
     "build:back": "pnpm --filter back build",
     "lint": "pnpm -r lint",
     "test": "pnpm --filter back test",
-    "generate-data": "pnpm --filter back generate-data"
+    "generate-data": "pnpm --filter back generate-data",
+    "android": "pnpm --filter mobile android",
+    "ios": "pnpm --filter mobile ios"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

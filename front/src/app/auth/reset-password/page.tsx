@@ -21,18 +21,31 @@ function ResetPasswordForm() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { resetPassword } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const accessToken = searchParams.get('access_token');
-
   useEffect(() => {
-    if (!accessToken) {
+    // First check query params (for backwards compatibility)
+    let token = searchParams.get('access_token');
+
+    // If not in query params, check hash fragment (Supabase sends tokens here)
+    if (!token && typeof window !== 'undefined') {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      token = params.get('access_token');
+    }
+
+    setAccessToken(token);
+    setIsInitialized(true);
+
+    if (!token) {
       setError('Link de recuperação inválido ou expirado');
     }
-  }, [accessToken]);
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +87,23 @@ function ResetPasswordForm() {
       setLoading(false);
     }
   };
+
+  if (!isInitialized) {
+    return (
+      <PageShell>
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Compass className="h-6 w-6 text-primary" />
+              </div>
+              <CardTitle>Carregando...</CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      </PageShell>
+    );
+  }
 
   if (success) {
     return (

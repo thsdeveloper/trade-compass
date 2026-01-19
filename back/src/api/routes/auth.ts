@@ -437,6 +437,7 @@ export async function authRoutes(app: FastifyInstance) {
    *
    * Request Body:
    * - email: string (required)
+   * - platform: 'web' | 'mobile' (optional, defaults to 'web')
    *
    * Response (200):
    * - message: Success message
@@ -444,16 +445,16 @@ export async function authRoutes(app: FastifyInstance) {
    * The magic link will:
    * - Expire after 1 hour (Supabase default)
    * - Be single-use only
-   * - Redirect to FRONTEND_URL/auth/callback with token in URL
+   * - Redirect to FRONTEND_URL/auth/callback (web) or tradecompass://auth (mobile)
    *
    * Errors:
    * - 400: Missing email
    * - 500: Server error
    */
   app.post<{
-    Body: { email: string };
+    Body: { email: string; platform?: 'web' | 'mobile' };
   }>('/auth/magic-link', async (request, reply) => {
-    const { email } = request.body;
+    const { email, platform = 'web' } = request.body;
 
     if (!email) {
       return reply.status(400).send({
@@ -463,11 +464,16 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
+    const redirectUrl =
+      platform === 'mobile'
+        ? process.env.MOBILE_REDIRECT_URL || 'exp://192.168.15.10:8081/--/auth'
+        : `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback`;
+
     try {
       const { error } = await supabaseAdmin.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback`,
+          emailRedirectTo: redirectUrl,
         },
       });
 

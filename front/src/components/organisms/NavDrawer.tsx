@@ -17,6 +17,7 @@ import {
   FileWarning,
   LayoutDashboard,
   Target,
+  FileBarChart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -34,6 +35,7 @@ const navigationConfig = [
     requiresAuth: true,
     items: [
       { id: 'dashboard', label: 'Dashboard', href: '/financas', icon: LayoutDashboard },
+      { id: 'relatorios', label: 'Relatorios', href: '/financas/relatorios', icon: FileBarChart },
       { id: 'transacoes', label: 'Transacoes', href: '/financas/transacoes', icon: Receipt },
       { id: 'objetivos', label: 'Objetivos', href: '/financas/objetivos', icon: Target },
       { id: 'dividas', label: 'Dividas Vencidas', href: '/financas/dividas', icon: FileWarning },

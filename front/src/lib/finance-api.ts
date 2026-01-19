@@ -676,6 +676,77 @@ class FinanceApiClient {
   ): Promise<{ id: string; description: string; amount: number; due_date: string; status: string }[]> {
     return this.authFetch(`/finance/goals/${goalId}/contributions`, accessToken);
   }
+
+  // Reports
+  async getCashFlowReport(
+    accessToken: string,
+    period: string = '6m',
+    includePending: boolean = true
+  ): Promise<import('@/types/reports').CashFlowReportData> {
+    const params = new URLSearchParams({
+      period,
+      include_pending: String(includePending),
+    });
+    return this.authFetch(`/finance/reports/cash-flow?${params}`, accessToken);
+  }
+
+  async getBudgetAnalysisReport(
+    accessToken: string,
+    period: string = '6m',
+    includePending: boolean = true
+  ): Promise<import('@/types/reports').BudgetAnalysisReportData> {
+    const params = new URLSearchParams({
+      period,
+      include_pending: String(includePending),
+    });
+    return this.authFetch(`/finance/reports/budget-analysis?${params}`, accessToken);
+  }
+
+  async getCategoryBreakdownReport(
+    accessToken: string,
+    period: string = '6m',
+    includePending: boolean = true
+  ): Promise<import('@/types/reports').CategoryBreakdownReportData> {
+    const params = new URLSearchParams({
+      period,
+      include_pending: String(includePending),
+    });
+    return this.authFetch(`/finance/reports/category-breakdown?${params}`, accessToken);
+  }
+
+  async getPaymentMethodsReport(
+    accessToken: string,
+    period: string = '6m',
+    includePending: boolean = true
+  ): Promise<import('@/types/reports').PaymentMethodsReportData> {
+    const params = new URLSearchParams({
+      period,
+      include_pending: String(includePending),
+    });
+    return this.authFetch(`/finance/reports/payment-methods?${params}`, accessToken);
+  }
+
+  async getGoalsProgressReport(
+    accessToken: string
+  ): Promise<import('@/types/reports').GoalsProgressReportData> {
+    return this.authFetch('/finance/reports/goals-progress', accessToken);
+  }
+
+  async getRecurringAnalysisReport(
+    accessToken: string
+  ): Promise<import('@/types/reports').RecurringAnalysisReportData> {
+    return this.authFetch('/finance/reports/recurring-analysis', accessToken);
+  }
+
+  async getYoYComparisonReport(
+    accessToken: string,
+    years: number[]
+  ): Promise<import('@/types/reports').YoYComparisonReportData> {
+    const params = new URLSearchParams({
+      years: years.join(','),
+    });
+    return this.authFetch(`/finance/reports/yoy-comparison?${params}`, accessToken);
+  }
 }
 
 export const financeApi = new FinanceApiClient(API_BASE_URL);

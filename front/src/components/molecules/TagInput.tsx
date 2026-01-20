@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { X, Plus, Loader2, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -45,9 +45,7 @@ export function TagInput({
   maxTags = 10,
 }: TagInputProps) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Garantir que tags e value nunca sejam undefined
   const safeTags = tags || [];
@@ -56,26 +54,20 @@ export function TagInput({
   // Tags selecionadas
   const selectedTags = safeTags.filter((tag) => safeValue.includes(tag.id));
 
-  // Tags disponiveis (nao selecionadas e que correspondem a busca)
-  const availableTags = safeTags.filter(
-    (tag) =>
-      !safeValue.includes(tag.id) &&
-      tag.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Verifica se busca corresponde exatamente a uma tag existente
-  const exactMatch = safeTags.some(
-    (tag) => tag.name.toLowerCase() === search.toLowerCase().trim()
-  );
+  // Tags disponiveis (nao selecionadas)
+  const availableTags = safeTags.filter((tag) => !safeValue.includes(tag.id));
 
   const handleSelect = useCallback(
-    (tagId: string) => {
-      if (safeValue.length < maxTags) {
-        onChange([...safeValue, tagId]);
+    (currentValue: string) => {
+      // Encontrar tag pelo nome (cmdk passa o value em lowercase)
+      const tag = availableTags.find(
+        (t) => t.name.toLowerCase() === currentValue.toLowerCase()
+      );
+      if (tag && safeValue.length < maxTags) {
+        onChange([...safeValue, tag.id]);
       }
-      setSearch('');
     },
-    [safeValue, onChange, maxTags]
+    [availableTags, safeValue, onChange, maxTags]
   );
 
   const handleRemove = useCallback(
@@ -85,33 +77,32 @@ export function TagInput({
     [safeValue, onChange]
   );
 
-  const handleCreate = useCallback(async () => {
-    if (!onCreateTag || !search.trim() || exactMatch) return;
+  const handleCreateClick = useCallback(async () => {
+    if (!onCreateTag) return;
+
+    const tagName = prompt('Nome da nova tag:');
+    if (!tagName?.trim()) return;
+
+    // Verifica se tag já existe
+    const exists = safeTags.some(
+      (t) => t.name.toLowerCase() === tagName.toLowerCase().trim()
+    );
+    if (exists) {
+      alert('Tag já existe!');
+      return;
+    }
 
     setCreating(true);
     try {
-      const newTag = await onCreateTag({ name: search.trim() });
+      const newTag = await onCreateTag({ name: tagName.trim() });
       onChange([...safeValue, newTag.id]);
-      setSearch('');
+      setOpen(false);
     } catch (error) {
       console.error('Erro ao criar tag:', error);
     } finally {
       setCreating(false);
     }
-  }, [onCreateTag, search, exactMatch, safeValue, onChange]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace' && !search && safeValue.length > 0) {
-        handleRemove(safeValue[safeValue.length - 1]);
-      }
-      if (e.key === 'Enter' && search && !exactMatch && onCreateTag) {
-        e.preventDefault();
-        handleCreate();
-      }
-    },
-    [search, safeValue, exactMatch, onCreateTag, handleRemove, handleCreate]
-  );
+  }, [onCreateTag, safeTags, safeValue, onChange]);
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -147,7 +138,7 @@ export function TagInput({
       )}
 
       {/* Seletor de tags */}
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal={true}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
@@ -164,60 +155,42 @@ export function TagInput({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[280px] p-0" align="start">
-          <Command shouldFilter={false}>
-            <CommandInput
-              ref={inputRef}
-              placeholder="Buscar ou criar tag..."
-              value={search}
-              onValueChange={setSearch}
-              onKeyDown={handleKeyDown}
-            />
+          <Command>
+            <CommandInput placeholder="Buscar tag..." />
             <CommandList>
-              {/* Sem tags e sem busca - mostrar instrução */}
-              {availableTags.length === 0 && !search && !onCreateTag && (
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  Nenhuma tag disponivel
-                </div>
-              )}
-
-              {/* Sem tags disponíveis, sem busca, mas pode criar */}
-              {availableTags.length === 0 && !search && onCreateTag && (
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  Digite para criar uma nova tag
-                </div>
-              )}
-
-              {/* Busca sem resultados - mostrar botão de criar */}
-              {availableTags.length === 0 && search && !exactMatch && onCreateTag && (
-                <div className="py-4 text-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCreate}
-                    disabled={creating}
-                    className="h-8"
-                  >
-                    {creating ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    Criar tag "{search}"
-                  </Button>
-                </div>
-              )}
-
-              {availableTags.length === 0 && search && exactMatch && (
-                <CommandEmpty>Tag ja selecionada</CommandEmpty>
-              )}
+              <CommandEmpty>
+                {onCreateTag ? (
+                  <div className="py-2">
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Nenhuma tag encontrada.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCreateClick}
+                      disabled={creating}
+                      className="h-8"
+                    >
+                      {creating ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      Criar nova tag
+                    </Button>
+                  </div>
+                ) : (
+                  'Nenhuma tag encontrada.'
+                )}
+              </CommandEmpty>
 
               {availableTags.length > 0 && (
                 <CommandGroup>
                   {availableTags.map((tag) => (
                     <CommandItem
                       key={tag.id}
-                      value={tag.id}
-                      onSelect={() => handleSelect(tag.id)}
+                      value={tag.name}
+                      onSelect={handleSelect}
                       className="cursor-pointer"
                     >
                       <div
@@ -230,21 +203,21 @@ export function TagInput({
                 </CommandGroup>
               )}
 
-              {onCreateTag && availableTags.length > 0 && search && !exactMatch && (
+              {onCreateTag && availableTags.length > 0 && (
                 <>
                   <CommandSeparator />
                   <CommandGroup>
                     <CommandItem
-                      onSelect={handleCreate}
+                      value="__criar_nova_tag__"
+                      onSelect={handleCreateClick}
                       className="cursor-pointer text-slate-600"
-                      disabled={creating}
                     >
                       {creating ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <Plus className="mr-2 h-4 w-4" />
                       )}
-                      Criar tag "{search}"
+                      Criar nova tag
                     </CommandItem>
                   </CommandGroup>
                 </>

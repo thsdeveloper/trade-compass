@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
 import { TransactionDialog } from '@/components/organisms/finance/TransactionDialog';
 import { DeleteRecurrenceTransactionDialog, type DeleteRecurrenceOption } from '@/components/organisms/finance/DeleteRecurrenceTransactionDialog';
+import { EditRecurrenceTransactionDialog, type EditRecurrenceOption } from '@/components/organisms/finance/EditRecurrenceTransactionDialog';
+import { EditInstallmentTransactionDialog, type EditInstallmentOption } from '@/components/organisms/finance/EditInstallmentTransactionDialog';
 import { PayTransactionDialog } from '@/components/organisms/finance/PayTransactionDialog';
 import { ExportTransactionsDialog } from '@/components/organisms/finance/ExportTransactionsDialog';
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog';
@@ -121,6 +123,16 @@ function TransacoesPageContent() {
   const [deleteRecurrenceDialogOpen, setDeleteRecurrenceDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<TransactionWithDetails | null>(null);
 
+  // Edit recurrence dialog state
+  const [editRecurrenceDialogOpen, setEditRecurrenceDialogOpen] = useState(false);
+  const [transactionToEdit, setTransactionToEdit] = useState<TransactionWithDetails | null>(null);
+  const [editRecurrenceOption, setEditRecurrenceOption] = useState<EditRecurrenceOption | null>(null);
+
+  // Edit installment dialog state
+  const [editInstallmentDialogOpen, setEditInstallmentDialogOpen] = useState(false);
+  const [installmentToEdit, setInstallmentToEdit] = useState<TransactionWithDetails | null>(null);
+  const [editInstallmentOption, setEditInstallmentOption] = useState<EditInstallmentOption | null>(null);
+
   // Pay transaction dialog state
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [transactionToPay, setTransactionToPay] = useState<TransactionWithDetails | null>(null);
@@ -139,16 +151,35 @@ function TransacoesPageContent() {
 
   // Filter states
   const [selectedMonth, setSelectedMonth] = useState(() => {
+    const urlMonth = searchParams.get('month');
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+      return urlMonth;
+    }
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
-  const [statusFilter, setStatusFilter] = useState<TransactionStatus | 'all'>('all');
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const urlMonth = searchParams.get('month');
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+      return parseInt(urlMonth.split('-')[0]);
+    }
+    return new Date().getFullYear();
+  });
+  const [statusFilter, setStatusFilter] = useState<TransactionStatus | 'all'>(() => {
+    const urlStatus = searchParams.get('status');
+    if (urlStatus && ['PENDENTE', 'PAGO', 'VENCIDO', 'CANCELADO'].includes(urlStatus)) {
+      return urlStatus as TransactionStatus;
+    }
+    return 'all';
+  });
   const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [accountFilter, setAccountFilter] = useState<string>(() => {
     return searchParams.get('account_id') || 'all';
+  });
+  const [urgentFilter, setUrgentFilter] = useState<boolean>(() => {
+    return searchParams.get('urgent') === 'true';
   });
   const [groupCardTransactions, setGroupCardTransactions] = useState(() => {
     if (typeof window === 'undefined') return true;
@@ -161,13 +192,26 @@ function TransacoesPageContent() {
     localStorage.setItem('finance:groupCardTransactions', String(groupCardTransactions));
   }, [groupCardTransactions]);
 
-  // Sync account filter with URL changes
+  // Sync filters with URL changes
   useEffect(() => {
     const urlAccountId = searchParams.get('account_id');
+    const urlMonth = searchParams.get('month');
+    const urlStatus = searchParams.get('status');
+    const urlUrgent = searchParams.get('urgent');
+
     if (urlAccountId && urlAccountId !== accountFilter) {
       setAccountFilter(urlAccountId);
-    } else if (!urlAccountId && accountFilter !== 'all') {
-      // Keep filter if user changed it manually
+    }
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth) && urlMonth !== selectedMonth) {
+      setSelectedMonth(urlMonth);
+      setSelectedYear(parseInt(urlMonth.split('-')[0]));
+    }
+    if (urlStatus && ['PENDENTE', 'PAGO', 'VENCIDO', 'CANCELADO'].includes(urlStatus) && urlStatus !== statusFilter) {
+      setStatusFilter(urlStatus as TransactionStatus);
+    }
+    const isUrgent = urlUrgent === 'true';
+    if (isUrgent !== urgentFilter) {
+      setUrgentFilter(isUrgent);
     }
   }, [searchParams]);
 
@@ -191,9 +235,10 @@ function TransacoesPageContent() {
       typeFilter !== 'all' ||
       categoryFilter !== 'all' ||
       tagFilter !== 'all' ||
-      accountFilter !== 'all'
+      accountFilter !== 'all' ||
+      urgentFilter
     );
-  }, [statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter]);
+  }, [statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter, urgentFilter]);
 
   // Clear all filters
   const handleClearFilters = useCallback(() => {
@@ -202,6 +247,7 @@ function TransacoesPageContent() {
     setCategoryFilter('all');
     setTagFilter('all');
     setAccountFilter('all');
+    setUrgentFilter(false);
     router.replace('/financas/transacoes', { scroll: false });
   }, [router]);
 
@@ -315,6 +361,19 @@ function TransacoesPageContent() {
     const monthStart = new Date(selYear, selMonth - 1, 1);
     const monthEnd = new Date(selYear, selMonth, 0);
 
+    // Para filtro urgente: calcular data limite (amanhã)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Funcao para verificar se transacao e urgente (vencida, hoje ou amanha)
+    const isUrgentTransaction = (dueDate: string): boolean => {
+      const txDate = new Date(dueDate + 'T00:00:00');
+      txDate.setHours(0, 0, 0, 0);
+      return txDate <= tomorrow;
+    };
+
     for (const tx of transactions) {
       if (tx.credit_card_id && tx.credit_card) {
         const invoiceMonth = getInvoiceMonth(tx.due_date, tx.credit_card.closing_day);
@@ -323,7 +382,10 @@ function TransacoesPageContent() {
         if (!groupCardTransactions) {
           // Filtrar apenas transações cuja fatura é do mês selecionado
           if (invoiceMonth === selectedMonth) {
-            accountTx.push(tx);
+            // Aplicar filtro urgente se ativo
+            if (!urgentFilter || isUrgentTransaction(tx.due_date)) {
+              accountTx.push(tx);
+            }
           }
           continue;
         }
@@ -343,13 +405,19 @@ function TransacoesPageContent() {
         }
 
         const group = cardTxMap.get(key)!;
-        group.transactions.push(tx);
-        group.total += tx.amount;
+        // Aplicar filtro urgente se ativo
+        if (!urgentFilter || isUrgentTransaction(tx.due_date)) {
+          group.transactions.push(tx);
+          group.total += tx.amount;
+        }
       } else {
         // Transações de conta: filtrar apenas as do mês selecionado
         const txDate = new Date(tx.due_date + 'T12:00:00');
         if (txDate >= monthStart && txDate <= monthEnd) {
-          accountTx.push(tx);
+          // Aplicar filtro urgente se ativo
+          if (!urgentFilter || isUrgentTransaction(tx.due_date)) {
+            accountTx.push(tx);
+          }
         }
       }
     }
@@ -368,16 +436,16 @@ function TransacoesPageContent() {
       }
     }
 
-    // Filtrar apenas faturas do mês selecionado e ordenar
+    // Filtrar apenas faturas do mês selecionado com transações e ordenar
     const groups = Array.from(cardTxMap.values())
-      .filter(g => g.invoiceMonth === selectedMonth)
+      .filter(g => g.invoiceMonth === selectedMonth && g.transactions.length > 0)
       .sort((a, b) => b.invoiceMonth.localeCompare(a.invoiceMonth));
 
     // Ordenar transações por data de vencimento
     accountTx.sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     return { accountTransactions: accountTx, invoiceGroups: groups };
-  }, [transactions, selectedMonth, groupCardTransactions]);
+  }, [transactions, selectedMonth, groupCardTransactions, urgentFilter]);
 
   const toggleInvoice = (key: string) => {
     setExpandedInvoices(prev => {
@@ -417,6 +485,46 @@ function TransacoesPageContent() {
         },
         session.access_token
       );
+    } else if (editingTransaction && editingTransaction.recurrence_id && editRecurrenceOption) {
+      // Edicao de transacao recorrente com escopo
+      await financeApi.updateRecurrenceTransaction(
+        editingTransaction.id,
+        {
+          category_id: data.category_id,
+          account_id: data.account_id,
+          credit_card_id: data.credit_card_id,
+          description: data.description,
+          amount: data.amount,
+          due_date: data.due_date,
+          notes: data.notes,
+          tag_ids: data.tag_ids,
+          goal_id: data.goal_id,
+        },
+        editRecurrenceOption,
+        session.access_token
+      );
+      setEditRecurrenceOption(null);
+      setTransactionToEdit(null);
+    } else if (editingTransaction && editingTransaction.installment_group_id && editInstallmentOption) {
+      // Edicao de transacao parcelada com escopo
+      await financeApi.updateInstallmentTransaction(
+        editingTransaction.id,
+        {
+          category_id: data.category_id,
+          account_id: data.account_id,
+          credit_card_id: data.credit_card_id,
+          description: data.description,
+          amount: data.amount,
+          due_date: data.due_date,
+          notes: data.notes,
+          tag_ids: data.tag_ids,
+          goal_id: data.goal_id,
+        },
+        editInstallmentOption,
+        session.access_token
+      );
+      setEditInstallmentOption(null);
+      setInstallmentToEdit(null);
     } else if (editingTransaction) {
       await financeApi.updateTransaction(
         editingTransaction.id,
@@ -429,6 +537,7 @@ function TransacoesPageContent() {
           due_date: data.due_date,
           notes: data.notes,
           tag_ids: data.tag_ids,
+          goal_id: data.goal_id,
         },
         session.access_token
       );
@@ -444,6 +553,7 @@ function TransacoesPageContent() {
           due_date: data.due_date,
           notes: data.notes,
           tag_ids: data.tag_ids,
+          goal_id: data.goal_id,
         },
         session.access_token
       );
@@ -578,7 +688,40 @@ function TransacoesPageContent() {
   };
 
   const openEditDialog = (transaction: TransactionWithDetails) => {
+    // Se for transacao de recorrencia, abrir modal de escopo primeiro
+    if (transaction.recurrence_id) {
+      setTransactionToEdit(transaction);
+      setEditRecurrenceDialogOpen(true);
+      return;
+    }
+
+    // Se for transacao parcelada, abrir modal de escopo primeiro
+    if (transaction.installment_group_id) {
+      setInstallmentToEdit(transaction);
+      setEditInstallmentDialogOpen(true);
+      return;
+    }
+
+    // Transacao normal - abrir direto o dialog de edicao
     setEditingTransaction(transaction);
+    setDialogOpen(true);
+  };
+
+  const handleEditRecurrenceConfirm = (option: EditRecurrenceOption) => {
+    if (!transactionToEdit) return;
+
+    setEditRecurrenceOption(option);
+    setEditingTransaction(transactionToEdit);
+    setEditRecurrenceDialogOpen(false);
+    setDialogOpen(true);
+  };
+
+  const handleEditInstallmentConfirm = (option: EditInstallmentOption) => {
+    if (!installmentToEdit) return;
+
+    setEditInstallmentOption(option);
+    setEditingTransaction(installmentToEdit);
+    setEditInstallmentDialogOpen(false);
     setDialogOpen(true);
   };
 
@@ -714,9 +857,14 @@ function TransacoesPageContent() {
         </div>
       </td>
       <td className="px-4 py-3">
-        <span className="text-sm text-slate-600">
-          {transaction.credit_card?.name || transaction.account?.name || '-'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {transaction.credit_card && (
+            <CreditCard className="h-3.5 w-3.5 text-slate-400" />
+          )}
+          <span className="text-sm text-slate-600">
+            {transaction.credit_card?.name || transaction.account?.name || '-'}
+          </span>
+        </div>
       </td>
       <td className="px-4 py-3">
         <span className="text-sm tabular-nums text-slate-600">
@@ -735,7 +883,7 @@ function TransacoesPageContent() {
           )}
         >
           {transaction.type === 'RECEITA' ? '+' : '-'}
-          {formatCurrency(transaction.amount)}
+          {formatCurrency(Math.abs(transaction.amount))}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -1033,7 +1181,7 @@ function TransacoesPageContent() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span className="text-sm font-semibold tabular-nums text-slate-900">
-                              -{formatCurrency(group.total)}
+                              -{formatCurrency(Math.abs(group.total))}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -1091,6 +1239,26 @@ function TransacoesPageContent() {
           onOpenChange={setDeleteRecurrenceDialogOpen}
           onConfirm={handleDeleteRecurrenceConfirm}
           transaction={transactionToDelete}
+        />
+      )}
+
+      {/* Edit Recurrence Transaction Dialog */}
+      {transactionToEdit && (
+        <EditRecurrenceTransactionDialog
+          open={editRecurrenceDialogOpen}
+          onOpenChange={setEditRecurrenceDialogOpen}
+          onConfirm={handleEditRecurrenceConfirm}
+          transaction={transactionToEdit}
+        />
+      )}
+
+      {/* Edit Installment Transaction Dialog */}
+      {installmentToEdit && (
+        <EditInstallmentTransactionDialog
+          open={editInstallmentDialogOpen}
+          onOpenChange={setEditInstallmentDialogOpen}
+          onConfirm={handleEditInstallmentConfirm}
+          transaction={installmentToEdit}
         />
       )}
 

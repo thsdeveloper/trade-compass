@@ -20,6 +20,8 @@ import { toast } from '@/lib/toast';
 import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
 import { useConfirm } from '@/components/molecules/ConfirmDialog';
 import { GoalDialog } from '@/components/organisms/finance/GoalDialog';
+import { GoalContributionDialog } from '@/components/organisms/finance/GoalContributionDialog';
+import { GoalContributionsHistoryDialog } from '@/components/organisms/finance/GoalContributionsHistoryDialog';
 import { GoalProgressCard } from '@/components/molecules/GoalProgressCard';
 import type {
   GoalWithProgress,
@@ -27,6 +29,7 @@ import type {
   GoalSummary,
   AccountWithBank,
   FinanceGoalStatus,
+  GoalContributionFormData,
 } from '@/types/finance';
 import { formatCurrency, GOAL_STATUS_LABELS } from '@/types/finance';
 
@@ -44,6 +47,14 @@ export default function ObjetivosPage() {
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalWithProgress | null>(null);
+
+  // Contribution dialog state
+  const [contributionDialogOpen, setContributionDialogOpen] = useState(false);
+  const [selectedGoalForContribution, setSelectedGoalForContribution] = useState<GoalWithProgress | null>(null);
+
+  // History dialog state
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedGoalForHistory, setSelectedGoalForHistory] = useState<GoalWithProgress | null>(null);
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<string>('ATIVO');
@@ -169,6 +180,35 @@ export default function ObjetivosPage() {
     }
   };
 
+  const openContributionDialog = (goal: GoalWithProgress) => {
+    setSelectedGoalForContribution(goal);
+    setContributionDialogOpen(true);
+  };
+
+  const openHistoryDialog = (goal: GoalWithProgress) => {
+    setSelectedGoalForHistory(goal);
+    setHistoryDialogOpen(true);
+  };
+
+  const handleSaveContribution = async (data: GoalContributionFormData) => {
+    if (!session?.access_token || !selectedGoalForContribution) return;
+
+    try {
+      await financeApi.createGoalContribution(
+        selectedGoalForContribution.id,
+        data,
+        session.access_token
+      );
+      toast.success('Contribuicao adicionada com sucesso');
+      loadData(true);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Erro ao adicionar contribuicao'
+      );
+      throw err;
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <PageShell>
@@ -278,6 +318,8 @@ export default function ObjetivosPage() {
                 <GoalProgressCard
                   goal={goal}
                   onClick={() => openEditDialog(goal)}
+                  onAddContribution={() => openContributionDialog(goal)}
+                  onViewHistory={() => openHistoryDialog(goal)}
                 />
                 <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                   {goal.status === 'ATIVO' && (
@@ -349,6 +391,20 @@ export default function ObjetivosPage() {
         onSave={handleSave}
         goal={editingGoal}
         accounts={accounts}
+      />
+
+      <GoalContributionDialog
+        open={contributionDialogOpen}
+        onOpenChange={setContributionDialogOpen}
+        onSave={handleSaveContribution}
+        goal={selectedGoalForContribution}
+      />
+
+      <GoalContributionsHistoryDialog
+        open={historyDialogOpen}
+        onOpenChange={setHistoryDialogOpen}
+        goal={selectedGoalForHistory}
+        accessToken={session?.access_token || ''}
       />
 
       {ConfirmDialog}

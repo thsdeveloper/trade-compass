@@ -13,12 +13,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency, RECURRENCE_FREQUENCY_LABELS, RecurrenceFrequency } from '@/types/finance';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
-import type { RecurringAnalysisReportData, ReportPeriod } from '@/types/reports';
+import type { RecurringAnalysisReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface RecurringAnalysisReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }

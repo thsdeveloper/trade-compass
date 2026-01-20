@@ -10,12 +10,20 @@ import {
   getAccounts,
   getTransactions,
   createTransaction as apiCreateTransaction,
+  getDashboardSummary,
+  getExpensesByCategory,
+  getUpcomingPayments,
+  getBudgetAllocation,
 } from '@/lib/finance-api';
 import type {
   FinanceCategory,
   FinanceAccount,
   TransactionWithDetails,
   TransactionFormData,
+  FinanceSummary,
+  ExpensesByCategory,
+  UpcomingPayment,
+  BudgetSummary,
 } from '@/types/finance';
 
 interface FinanceContextType {
@@ -31,6 +39,14 @@ interface FinanceContextType {
   loadAccounts: () => Promise<void>;
   createTransaction: (data: TransactionFormData) => Promise<void>;
   refreshAll: () => Promise<void>;
+  // Dashboard
+  dashboardSummary: FinanceSummary | null;
+  expensesByCategory: ExpensesByCategory[];
+  upcomingPayments: UpcomingPayment[];
+  budgetSummary: BudgetSummary | null;
+  isDashboardLoading: boolean;
+  dashboardError: string | null;
+  loadDashboard: () => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -45,6 +61,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Dashboard state
+  const [dashboardSummary, setDashboardSummary] = useState<FinanceSummary | null>(null);
+  const [expensesByCategory, setExpensesByCategory] = useState<ExpensesByCategory[]>([]);
+  const [upcomingPayments, setUpcomingPayments] = useState<UpcomingPayment[]>([]);
+  const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
+  const [isDashboardLoading, setIsDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
   const getMonthRange = useCallback((date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -54,6 +78,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       start_date: start.toISOString().split('T')[0],
       end_date: end.toISOString().split('T')[0],
     };
+  }, []);
+
+  const getMonthString = useCallback((date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
   }, []);
 
   const loadTransactions = useCallback(async () => {
@@ -118,6 +148,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [loadTransactions, loadCategories, loadAccounts]);
 
+  const loadDashboard = useCallback(async () => {
+    setIsDashboardLoading(true);
+    setDashboardError(null);
+    try {
+      const month = getMonthString(selectedMonth);
+      const [summary, expenses, upcoming, budget] = await Promise.all([
+        getDashboardSummary(month),
+        getExpensesByCategory(month),
+        getUpcomingPayments({ month }),
+        getBudgetAllocation(month),
+      ]);
+      setDashboardSummary(summary);
+      setExpensesByCategory(expenses);
+      setUpcomingPayments(upcoming);
+      setBudgetSummary(budget);
+    } catch (err) {
+      setDashboardError(err instanceof Error ? err.message : 'Erro ao carregar dashboard');
+    } finally {
+      setIsDashboardLoading(false);
+    }
+  }, [selectedMonth, getMonthString]);
+
   return (
     <FinanceContext.Provider
       value={{
@@ -133,6 +185,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         loadAccounts,
         createTransaction,
         refreshAll,
+        // Dashboard
+        dashboardSummary,
+        expensesByCategory,
+        upcomingPayments,
+        budgetSummary,
+        isDashboardLoading,
+        dashboardError,
+        loadDashboard,
       }}
     >
       {children}

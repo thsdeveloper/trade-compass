@@ -1,6 +1,6 @@
 'use client';
 
-import { Target, Calendar, TrendingUp } from 'lucide-react';
+import { Target, Calendar, TrendingUp, Plus, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   formatCurrency,
@@ -15,9 +15,11 @@ interface GoalProgressCardProps {
   goal: GoalWithProgress;
   compact?: boolean;
   onClick?: () => void;
+  onAddContribution?: () => void;
+  onViewHistory?: () => void;
 }
 
-export function GoalProgressCard({ goal, compact, onClick }: GoalProgressCardProps) {
+export function GoalProgressCard({ goal, compact, onClick, onAddContribution, onViewHistory }: GoalProgressCardProps) {
   const progressPercentage = Math.min(goal.progress_percentage, 100);
 
   // Calculate months remaining
@@ -125,10 +127,37 @@ export function GoalProgressCard({ goal, compact, onClick }: GoalProgressCardPro
         </div>
       )}
 
-      {/* Contributions count */}
-      {!compact && goal.contributions_count > 0 && (
-        <div className="mt-2 text-xs text-slate-400">
-          {goal.contributions_count} contribuicao(oes)
+      {/* Contributions count and buttons */}
+      {!compact && (
+        <div className="mt-2 flex items-center justify-between">
+          {onViewHistory && goal.contributions_count > 0 ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewHistory();
+              }}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <History className="h-3 w-3" />
+              {goal.contributions_count} contribuicao(oes)
+            </button>
+          ) : (
+            <span className="text-xs text-slate-400">
+              Nenhuma contribuicao
+            </span>
+          )}
+          {onAddContribution && goal.status === 'ATIVO' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddContribution();
+              }}
+              className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-100"
+            >
+              <Plus className="h-3 w-3" />
+              Contribuir
+            </button>
+          )}
         </div>
       )}
     </div>

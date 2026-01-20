@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -429,19 +430,15 @@ export function TransactionDialog({
                   <Label htmlFor="amount" className="text-xs font-medium text-slate-600">
                     Valor (R$)
                   </Label>
-                  <Input
+                  <CurrencyInput
                     id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.amount || ''}
-                    onChange={(e) =>
+                    value={formData.amount}
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        amount: parseFloat(e.target.value) || 0,
+                        amount: value,
                       })
                     }
-                    required
                     disabled={isPaidTransaction}
                     className={cn('h-9 text-sm', isPaidTransaction && 'opacity-60 cursor-not-allowed')}
                   />
@@ -493,6 +490,25 @@ export function TransactionDialog({
                   placeholder="Adicionar tags..."
                 />
               </div>
+
+              {/* Goal Selection - disponivel para DESPESA e RECEITA */}
+              {formData.type !== 'TRANSFERENCIA' && goals.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-600">
+                    Vincular a objetivo (opcional)
+                  </Label>
+                  <GoalSelect
+                    value={formData.goal_id}
+                    onChange={(value) => setFormData({ ...formData, goal_id: value })}
+                    goals={goals}
+                  />
+                  <p className="text-xs text-slate-400">
+                    {formData.type === 'DESPESA'
+                      ? 'Vincule esta despesa a um objetivo para contribuir com seu progresso'
+                      : 'Vincule esta receita a um objetivo para contribuir com seu progresso'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Right Column */}

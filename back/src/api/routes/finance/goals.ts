@@ -11,6 +11,10 @@ import type {
   FinanceGoalStatus,
   FinanceGoalCategory,
   FinanceGoalPriority,
+  FinanceGoalContribution,
+  CreateGoalContributionDTO,
+  UpdateGoalContributionDTO,
+  GoalContributionItem,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -22,6 +26,10 @@ import {
   getGoalSummary,
   getActiveGoalsForSelect,
   getGoalContributionTransactions,
+  getGoalContributionHistory,
+  createGoalContribution,
+  updateGoalContribution,
+  deleteGoalContribution,
 } from '../../../data/finance/goal-repository.js';
 
 export async function goalRoutes(app: FastifyInstance) {
@@ -215,6 +223,120 @@ export async function goalRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao remover objetivo';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/goals/:id/contributions/history - Get unified contribution history
+  app.get<{
+    Params: { id: string };
+    Reply: GoalContributionItem[] | ApiError;
+  }>('/finance/goals/:id/contributions/history', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+
+    try {
+      const history = await getGoalContributionHistory(id, user.id, accessToken);
+      return history;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar historico';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // POST /finance/goals/:id/contributions - Create manual contribution
+  app.post<{
+    Params: { id: string };
+    Body: CreateGoalContributionDTO;
+    Reply: FinanceGoalContribution | ApiError;
+  }>('/finance/goals/:id/contributions', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const body = request.body;
+
+    if (!body.amount || body.amount <= 0) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Valor deve ser maior que zero',
+        statusCode: 400,
+      });
+    }
+
+    if (!body.contribution_date) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Data da contribuicao e obrigatoria',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const contribution = await createGoalContribution(id, user.id, body, accessToken);
+      return reply.status(201).send(contribution);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao criar contribuicao';
+      const status = message.includes('nao encontrado') ? 404 : 500;
+      return reply.status(status).send({
+        error: status === 404 ? 'Not Found' : 'Internal Server Error',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
+  // PATCH /finance/goals/:goalId/contributions/:id - Update manual contribution
+  app.patch<{
+    Params: { goalId: string; id: string };
+    Body: UpdateGoalContributionDTO;
+    Reply: FinanceGoalContribution | ApiError;
+  }>('/finance/goals/:goalId/contributions/:id', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { goalId, id } = request.params;
+    const body = request.body;
+
+    if (body.amount !== undefined && body.amount <= 0) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Valor deve ser maior que zero',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const contribution = await updateGoalContribution(id, goalId, user.id, body, accessToken);
+      return contribution;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao atualizar contribuicao';
+      const status = message.includes('nao encontrada') ? 404 : 500;
+      return reply.status(status).send({
+        error: status === 404 ? 'Not Found' : 'Internal Server Error',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
+  // DELETE /finance/goals/:goalId/contributions/:id - Delete manual contribution
+  app.delete<{
+    Params: { goalId: string; id: string };
+    Reply: { success: boolean } | ApiError;
+  }>('/finance/goals/:goalId/contributions/:id', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { goalId, id } = request.params;
+
+    try {
+      await deleteGoalContribution(id, goalId, user.id, accessToken);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao remover contribuicao';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

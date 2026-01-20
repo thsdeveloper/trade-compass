@@ -30,6 +30,7 @@ export async function sendMagicLink(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'bypass-tunnel-reminder': 'true',
       },
       body: JSON.stringify({ email, platform }),
     });
@@ -55,6 +56,7 @@ export async function loginWithPassword(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'bypass-tunnel-reminder': 'true',
       },
       body: JSON.stringify({ email, password }),
     });

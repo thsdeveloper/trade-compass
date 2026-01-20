@@ -95,3 +95,20 @@ export async function getPopularBanks(): Promise<Bank[]> {
 
   return data || [];
 }
+
+export async function getBenefitProviders(): Promise<Bank[]> {
+  const client = supabaseAdmin;
+
+  const { data, error } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('is_active', true)
+    .eq('is_benefit_provider', true)
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Erro ao buscar empresas de beneficios: ${error.message}`);
+  }
+
+  return data || [];
+}

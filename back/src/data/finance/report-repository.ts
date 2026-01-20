@@ -18,7 +18,6 @@ import type {
   YoYComparisonReportData,
   YoYMonthData,
   YoYYearTotal,
-  ReportPeriod,
 } from '../../domain/report-types.js';
 import type { BudgetCategory } from '../../domain/finance-types.js';
 
@@ -33,76 +32,114 @@ const BUDGET_CATEGORY_CONFIG: Record<BudgetCategory, { label: string; ideal: num
   INVESTIMENTO: { label: 'Investimentos', ideal: 20 },
 };
 
-function getPeriodMonths(period: ReportPeriod): number {
-  switch (period) {
-    case '3m': return 3;
-    case '6m': return 6;
-    case '12m': return 12;
-    default: return 6;
+/**
+ * Get all months between two dates
+ */
+function getMonthsBetweenDates(startDate: string, endDate: string): { month: string; startDate: string; endDate: string; label: string }[] {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const months: { month: string; startDate: string; endDate: string; label: string }[] = [];
+
+  const current = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+
+  while (current <= endMonth) {
+    const year = current.getFullYear();
+    const month = current.getMonth();
+    const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+
+    // Clamp to provided date range
+    const effectiveStart = monthStart < start ? start : monthStart;
+    const effectiveEnd = monthEnd > end ? end : monthEnd;
+
+    months.push({
+      month: monthKey,
+      startDate: effectiveStart.toISOString().split('T')[0],
+      endDate: effectiveEnd.toISOString().split('T')[0],
+      label: MONTH_LABELS[month],
+    });
+
+    current.setMonth(current.getMonth() + 1);
   }
+
+  return months;
 }
 
-function getDateRange(period: ReportPeriod): { startDate: string; endDate: string } {
-  const months = getPeriodMonths(period);
-  const now = new Date();
-  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
-
-  return {
-    startDate: startDate.toISOString().split('T')[0],
-    endDate: endDate.toISOString().split('T')[0],
-  };
+/**
+ * Format period label from date range
+ */
+function formatPeriodLabel(startDate: string, endDate: string): string {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const formatDate = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return `${formatDate(start)} - ${formatDate(end)}`;
 }
 
 // ==================== CASH FLOW REPORT ====================
 
 export async function getCashFlowReport(
   userId: string,
-  period: ReportPeriod,
+  startDate: string,
+  endDate: string,
   includePending: boolean,
   accessToken: string
 ): Promise<CashFlowReportData> {
   const client = createUserClient(accessToken);
-  const months = getPeriodMonths(period);
-  const now = new Date();
+  const months = getMonthsBetweenDates(startDate, endDate);
+
+  // Buscar IDs de contas BENEFICIO para excluir do calculo
+  const { data: benefitAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'BENEFICIO');
+
+  const benefitAccountIds = (benefitAccounts || []).map((a) => a.id);
 
   const data: CashFlowReportPoint[] = [];
   let cumulativeBalance = 0;
   let totalIncome = 0;
   let totalExpenses = 0;
 
-  for (let i = months - 1; i >= 0; i--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const startDate = `${month}-01`;
-    const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0)
-      .toISOString()
-      .split('T')[0];
+  const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
 
-    const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
-
-    // Income
-    const { data: incomeData } = await client
+  for (const monthInfo of months) {
+    // Income - excluir transacoes de contas BENEFICIO
+    let incomeQuery = client
       .from('finance_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('type', 'RECEITA')
       .in('status', statuses)
-      .gte('due_date', startDate)
-      .lte('due_date', endDate);
+      .gte('due_date', monthInfo.startDate)
+      .lte('due_date', monthInfo.endDate);
 
+    // Excluir transacoes de contas beneficio
+    if (benefitAccountIds.length > 0) {
+      incomeQuery = incomeQuery.not('account_id', 'in', `(${benefitAccountIds.join(',')})`);
+    }
+
+    const { data: incomeData } = await incomeQuery;
     const monthIncome = incomeData?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-    // Expenses
-    const { data: expenseData } = await client
+    // Expenses - excluir transacoes de contas BENEFICIO
+    let expenseQuery = client
       .from('finance_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('type', 'DESPESA')
       .in('status', statuses)
-      .gte('due_date', startDate)
-      .lte('due_date', endDate);
+      .gte('due_date', monthInfo.startDate)
+      .lte('due_date', monthInfo.endDate);
 
+    // Excluir transacoes de contas beneficio
+    if (benefitAccountIds.length > 0) {
+      expenseQuery = expenseQuery.not('account_id', 'in', `(${benefitAccountIds.join(',')})`);
+    }
+
+    const { data: expenseData } = await expenseQuery;
     const monthExpenses = expenseData?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
     const balance = monthIncome - monthExpenses;
@@ -111,8 +148,8 @@ export async function getCashFlowReport(
     totalExpenses += monthExpenses;
 
     data.push({
-      month,
-      month_label: MONTH_LABELS[date.getMonth()],
+      month: monthInfo.month,
+      month_label: monthInfo.label,
       income: monthIncome,
       expenses: monthExpenses,
       balance,
@@ -120,15 +157,17 @@ export async function getCashFlowReport(
     });
   }
 
+  const monthCount = months.length || 1;
+
   return {
-    period,
+    period: formatPeriodLabel(startDate, endDate),
     data,
     totals: {
       total_income: totalIncome,
       total_expenses: totalExpenses,
       net_balance: totalIncome - totalExpenses,
-      average_monthly_income: totalIncome / months,
-      average_monthly_expenses: totalExpenses / months,
+      average_monthly_income: totalIncome / monthCount,
+      average_monthly_expenses: totalExpenses / monthCount,
     },
   };
 }
@@ -137,13 +176,22 @@ export async function getCashFlowReport(
 
 export async function getBudgetAnalysisReport(
   userId: string,
-  period: ReportPeriod,
+  startDate: string,
+  endDate: string,
   includePending: boolean,
   accessToken: string
 ): Promise<BudgetAnalysisReportData> {
   const client = createUserClient(accessToken);
-  const months = getPeriodMonths(period);
-  const now = new Date();
+  const months = getMonthsBetweenDates(startDate, endDate);
+
+  // Buscar IDs de contas BENEFICIO para excluir do calculo de renda
+  const { data: benefitAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'BENEFICIO');
+
+  const benefitAccountIds = (benefitAccounts || []).map((a) => a.id);
 
   const monthsData: BudgetAnalysisMonth[] = [];
   const categoryTotals: Record<BudgetCategory, number[]> = {
@@ -152,26 +200,25 @@ export async function getBudgetAnalysisReport(
     INVESTIMENTO: [],
   };
 
-  for (let i = months - 1; i >= 0; i--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const startDate = `${month}-01`;
-    const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0)
-      .toISOString()
-      .split('T')[0];
+  const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
 
-    const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
-
-    // Get income
-    const { data: incomeData } = await client
+  for (const monthInfo of months) {
+    // Get income - excluir receitas de contas BENEFICIO
+    let incomeQuery = client
       .from('finance_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('type', 'RECEITA')
       .in('status', statuses)
-      .gte('due_date', startDate)
-      .lte('due_date', endDate);
+      .gte('due_date', monthInfo.startDate)
+      .lte('due_date', monthInfo.endDate);
 
+    // Excluir transacoes de contas beneficio
+    if (benefitAccountIds.length > 0) {
+      incomeQuery = incomeQuery.not('account_id', 'in', `(${benefitAccountIds.join(',')})`);
+    }
+
+    const { data: incomeData } = await incomeQuery;
     const totalIncome = incomeData?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
     // Get expenses by budget category
@@ -184,8 +231,8 @@ export async function getBudgetAnalysisReport(
       .eq('user_id', userId)
       .eq('type', 'DESPESA')
       .in('status', statuses)
-      .gte('due_date', startDate)
-      .lte('due_date', endDate);
+      .gte('due_date', monthInfo.startDate)
+      .lte('due_date', monthInfo.endDate);
 
     const budgetTotals: Record<BudgetCategory, number> = {
       ESSENCIAL: 0,
@@ -228,8 +275,8 @@ export async function getBudgetAnalysisReport(
     }
 
     monthsData.push({
-      month,
-      month_label: MONTH_LABELS[date.getMonth()],
+      month: monthInfo.month,
+      month_label: monthInfo.label,
       total_income: totalIncome,
       allocations: {
         essencial: allocations.ESSENCIAL,
@@ -239,16 +286,18 @@ export async function getBudgetAnalysisReport(
     });
   }
 
-  // Calculate averages and trend
-  const avgEssencial = categoryTotals.ESSENCIAL.reduce((a, b) => a + b, 0) / months;
-  const avgEstiloVida = categoryTotals.ESTILO_VIDA.reduce((a, b) => a + b, 0) / months;
-  const avgInvestimento = categoryTotals.INVESTIMENTO.reduce((a, b) => a + b, 0) / months;
+  const monthCount = months.length || 1;
 
-  // Determine trend based on last 3 months vs first 3 months
+  // Calculate averages and trend
+  const avgEssencial = categoryTotals.ESSENCIAL.reduce((a, b) => a + b, 0) / monthCount;
+  const avgEstiloVida = categoryTotals.ESTILO_VIDA.reduce((a, b) => a + b, 0) / monthCount;
+  const avgInvestimento = categoryTotals.INVESTIMENTO.reduce((a, b) => a + b, 0) / monthCount;
+
+  // Determine trend based on last half vs first half
   let trend: 'improving' | 'stable' | 'worsening' = 'stable';
   if (monthsData.length >= 6) {
-    const firstHalf = monthsData.slice(0, Math.floor(months / 2));
-    const secondHalf = monthsData.slice(Math.floor(months / 2));
+    const firstHalf = monthsData.slice(0, Math.floor(monthCount / 2));
+    const secondHalf = monthsData.slice(Math.floor(monthCount / 2));
 
     const firstScore = firstHalf.reduce((sum, m) => {
       const e = Math.abs(m.allocations.essencial.percentage - 50);
@@ -272,7 +321,7 @@ export async function getBudgetAnalysisReport(
   }
 
   return {
-    period,
+    period: formatPeriodLabel(startDate, endDate),
     months: monthsData,
     average: {
       essencial: avgEssencial,
@@ -287,12 +336,12 @@ export async function getBudgetAnalysisReport(
 
 export async function getCategoryBreakdownReport(
   userId: string,
-  period: ReportPeriod,
+  startDate: string,
+  endDate: string,
   includePending: boolean,
   accessToken: string
 ): Promise<CategoryBreakdownReportData> {
   const client = createUserClient(accessToken);
-  const { startDate, endDate } = getDateRange(period);
   const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
 
   // Get expenses by category
@@ -312,7 +361,7 @@ export async function getCategoryBreakdownReport(
 
   if (!transactions || transactions.length === 0) {
     return {
-      period,
+      period: formatPeriodLabel(startDate, endDate),
       categories: [],
       top_categories: [],
       total_expenses: 0,
@@ -384,13 +433,14 @@ export async function getCategoryBreakdownReport(
     };
   });
 
-  // Compare with previous period
-  const months = getPeriodMonths(period);
-  const prevEndDate = new Date(startDate);
-  prevEndDate.setDate(prevEndDate.getDate() - 1);
-  const prevStartDate = new Date(prevEndDate);
-  prevStartDate.setMonth(prevStartDate.getMonth() - months + 1);
-  prevStartDate.setDate(1);
+  // Compare with previous period (same duration before start date)
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const duration = end.getTime() - start.getTime();
+
+  const prevEnd = new Date(start);
+  prevEnd.setDate(prevEnd.getDate() - 1);
+  const prevStart = new Date(prevEnd.getTime() - duration);
 
   const { data: prevTransactions } = await client
     .from('finance_transactions')
@@ -398,13 +448,13 @@ export async function getCategoryBreakdownReport(
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
     .in('status', statuses)
-    .gte('due_date', prevStartDate.toISOString().split('T')[0])
-    .lte('due_date', prevEndDate.toISOString().split('T')[0]);
+    .gte('due_date', prevStart.toISOString().split('T')[0])
+    .lte('due_date', prevEnd.toISOString().split('T')[0]);
 
   const previousTotal = prevTransactions?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
   return {
-    period,
+    period: formatPeriodLabel(startDate, endDate),
     categories,
     top_categories: topCategories,
     total_expenses: totalExpenses,
@@ -419,12 +469,12 @@ export async function getCategoryBreakdownReport(
 
 export async function getPaymentMethodsReport(
   userId: string,
-  period: ReportPeriod,
+  startDate: string,
+  endDate: string,
   includePending: boolean,
   accessToken: string
 ): Promise<PaymentMethodsReportData> {
   const client = createUserClient(accessToken);
-  const { startDate, endDate } = getDateRange(period);
   const statuses = includePending ? ['PAGO', 'PENDENTE'] : ['PAGO'];
 
   // Get transactions with account/credit card
@@ -516,7 +566,7 @@ export async function getPaymentMethodsReport(
     .sort((a, b) => b.used_amount - a.used_amount);
 
   return {
-    period,
+    period: formatPeriodLabel(startDate, endDate),
     summary: {
       total_account_payments: totalAccountPayments,
       total_card_payments: totalCardPayments,
@@ -567,15 +617,33 @@ export async function getGoalsProgressReport(
   let atRiskGoals = 0;
 
   for (const goal of goals) {
-    // Get contributions for this goal
-    const { data: contributions } = await client
+    // Get contributions from transactions linked to this goal
+    const { data: transactionContributions } = await client
       .from('finance_transactions')
       .select('amount, due_date')
       .eq('goal_id', goal.id)
       .eq('status', 'PAGO')
       .order('due_date', { ascending: true });
 
-    const currentAmount = contributions?.reduce((sum, c) => sum + Number(c.amount), 0) || 0;
+    // Get manual contributions from finance_goal_contributions
+    const { data: manualContributions } = await client
+      .from('finance_goal_contributions')
+      .select('amount, contribution_date')
+      .eq('goal_id', goal.id)
+      .order('contribution_date', { ascending: true });
+
+    // Combine all contributions
+    const allContributions: { amount: number; date: string }[] = [];
+
+    for (const c of transactionContributions || []) {
+      allContributions.push({ amount: Number(c.amount), date: c.due_date });
+    }
+
+    for (const c of manualContributions || []) {
+      allContributions.push({ amount: Number(c.amount), date: c.contribution_date });
+    }
+
+    const currentAmount = allContributions.reduce((sum, c) => sum + c.amount, 0);
     const progressPercentage = goal.target_amount > 0 ? (currentAmount / goal.target_amount) * 100 : 0;
 
     totalTarget += goal.target_amount;
@@ -601,7 +669,7 @@ export async function getGoalsProgressReport(
       }
 
       // Project completion based on current pace
-      if (currentAmount > 0 && contributions && contributions.length > 0) {
+      if (currentAmount > 0 && allContributions.length > 0) {
         const daysSinceStart = elapsedDays;
         const dailyRate = currentAmount / daysSinceStart;
         const remaining = goal.target_amount - currentAmount;
@@ -613,9 +681,9 @@ export async function getGoalsProgressReport(
 
     // Group contributions by month
     const monthlyContributions: Record<string, number> = {};
-    for (const c of contributions || []) {
-      const month = c.due_date.substring(0, 7);
-      monthlyContributions[month] = (monthlyContributions[month] || 0) + Number(c.amount);
+    for (const c of allContributions) {
+      const month = c.date.substring(0, 7);
+      monthlyContributions[month] = (monthlyContributions[month] || 0) + c.amount;
     }
 
     goalItems.push({

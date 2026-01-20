@@ -25,6 +25,8 @@ import {
   cancelAllRecurrenceTransactions,
   createTransfer,
   cancelTransfer,
+  updateRecurrenceTransactions,
+  updateInstallmentTransactions,
 } from '../../../data/finance/transaction-repository.js';
 import { deleteRecurrence } from '../../../data/finance/recurrence-repository.js';
 import { getCreditCardById } from '../../../data/finance/credit-card-repository.js';
@@ -470,6 +472,108 @@ export async function transactionRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao cancelar parcelas';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // PATCH /finance/transactions/:id/recurrence - Update recurrence transaction(s) with scope
+  app.patch<{
+    Params: { id: string };
+    Body: UpdateTransactionDTO & { option: 'only_this' | 'this_and_future' | 'all' };
+    Reply: { success: boolean } | ApiError;
+  }>('/finance/transactions/:id/recurrence', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const { option, ...updates } = request.body;
+
+    try {
+      // Buscar a transacao para obter recurrence_id e due_date
+      const transaction = await getTransactionById(id, user.id, accessToken);
+      if (!transaction) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Transacao nao encontrada',
+          statusCode: 404,
+        });
+      }
+
+      if (!transaction.recurrence_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transacao nao pertence a uma recorrencia',
+          statusCode: 400,
+        });
+      }
+
+      await updateRecurrenceTransactions(
+        id,
+        user.id,
+        transaction.recurrence_id,
+        transaction.due_date,
+        transaction.status,
+        updates,
+        option,
+        accessToken
+      );
+
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao atualizar transacoes';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // PATCH /finance/transactions/:id/installment - Update installment transaction(s) with scope
+  app.patch<{
+    Params: { id: string };
+    Body: UpdateTransactionDTO & { option: 'only_this' | 'this_and_future' | 'all' };
+    Reply: { success: boolean } | ApiError;
+  }>('/finance/transactions/:id/installment', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const { option, ...updates } = request.body;
+
+    try {
+      // Buscar a transacao para obter installment_group_id e due_date
+      const transaction = await getTransactionById(id, user.id, accessToken);
+      if (!transaction) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Transacao nao encontrada',
+          statusCode: 404,
+        });
+      }
+
+      if (!transaction.installment_group_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transacao nao pertence a um parcelamento',
+          statusCode: 400,
+        });
+      }
+
+      await updateInstallmentTransactions(
+        id,
+        user.id,
+        transaction.installment_group_id,
+        transaction.due_date,
+        transaction.status,
+        updates,
+        option,
+        accessToken
+      );
+
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao atualizar parcelas';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

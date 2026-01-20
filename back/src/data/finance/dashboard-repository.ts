@@ -28,14 +28,23 @@ export async function getFinanceSummary(
     .toISOString()
     .split('T')[0];
 
-  // Buscar saldo total das contas
+  // Buscar saldo total das contas (separando beneficios)
   const { data: accounts } = await client
     .from('finance_accounts')
-    .select('current_balance')
+    .select('current_balance, type')
     .eq('user_id', userId)
     .eq('is_active', true);
 
-  const totalBalance = accounts?.reduce((sum, acc) => sum + Number(acc.current_balance), 0) || 0;
+  let totalBalance = 0;
+  let benefitBalance = 0;
+  for (const acc of accounts || []) {
+    const balance = Number(acc.current_balance);
+    if (acc.type === 'BENEFICIO') {
+      benefitBalance += balance;
+    } else {
+      totalBalance += balance;
+    }
+  }
 
   // Buscar transacoes pendentes do mes (despesas)
   const { data: pendingExpenses } = await client
@@ -88,6 +97,7 @@ export async function getFinanceSummary(
 
   return {
     total_balance: totalBalance,
+    benefit_balance: benefitBalance,
     total_pending_expenses: totalPendingExpenses,
     total_pending_income: totalPendingIncome,
     month_result: monthIncomeTotal - monthExpensesTotal,
@@ -492,14 +502,20 @@ export async function getYearSummary(
 ): Promise<YearSummary> {
   const client = createUserClient(accessToken);
 
-  // Buscar saldo total das contas
+  // Buscar saldo total das contas (separando beneficios)
   const { data: accounts } = await client
     .from('finance_accounts')
-    .select('current_balance')
+    .select('current_balance, type')
     .eq('user_id', userId)
     .eq('is_active', true);
 
-  const totalBalance = accounts?.reduce((sum, acc) => sum + Number(acc.current_balance), 0) || 0;
+  let totalBalance = 0;
+  for (const acc of accounts || []) {
+    // Nao incluir saldo de contas BENEFICIO no total
+    if (acc.type !== 'BENEFICIO') {
+      totalBalance += Number(acc.current_balance);
+    }
+  }
 
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;

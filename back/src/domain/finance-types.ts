@@ -13,13 +13,15 @@ export type FinanceCategoryType =
   | 'SALARIO'
   | 'FREELANCE'
   | 'DIVIDA'
+  | 'BENEFICIO'
   | 'OUTROS';
 
 export type FinanceAccountType =
   | 'CONTA_CORRENTE'
   | 'POUPANCA'
   | 'CARTEIRA'
-  | 'INVESTIMENTO';
+  | 'INVESTIMENTO'
+  | 'BENEFICIO';
 
 export type CreditCardBrand =
   | 'VISA'
@@ -58,6 +60,7 @@ export interface Bank {
   logo_url: string | null;
   logo_dark_url: string | null;
   is_active: boolean;
+  is_benefit_provider: boolean;
   created_at: string;
 }
 
@@ -425,6 +428,7 @@ export interface InvoicePaymentWithDetails extends FinanceInvoicePayment {
 
 export interface FinanceSummary {
   total_balance: number;
+  benefit_balance: number;
   total_pending_expenses: number;
   total_pending_income: number;
   month_result: number;
@@ -737,4 +741,39 @@ export interface GoalSelectItem {
   name: string;
   icon: string;
   color: string;
+}
+
+// ==================== GOAL CONTRIBUTIONS ====================
+
+export interface FinanceGoalContribution {
+  id: string;
+  user_id: string;
+  goal_id: string;
+  amount: number;
+  contribution_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGoalContributionDTO {
+  amount: number;
+  contribution_date: string;
+  description?: string;
+}
+
+export interface UpdateGoalContributionDTO {
+  amount?: number;
+  contribution_date?: string;
+  description?: string;
+}
+
+// Item unificado do histórico (transação ou manual)
+export interface GoalContributionItem {
+  id: string;
+  type: 'transaction' | 'manual';
+  amount: number;
+  date: string;
+  description: string;
+  status?: string; // Apenas para transações
 }

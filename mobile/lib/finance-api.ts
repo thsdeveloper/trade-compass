@@ -5,6 +5,10 @@ import type {
   TransactionWithDetails,
   TransactionFormData,
   FinanceTransaction,
+  FinanceSummary,
+  ExpensesByCategory,
+  UpcomingPayment,
+  BudgetSummary,
 } from '@/types/finance';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
@@ -16,9 +20,11 @@ interface ApiError {
 }
 
 async function getAccessToken(): Promise<string | null> {
+  console.log('[finance-api] Buscando sessão...');
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  console.log('[finance-api] Sessão encontrada:', !!session);
   return session?.access_token ?? null;
 }
 
@@ -26,6 +32,7 @@ async function authFetch<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
+  console.log('[finance-api] authFetch iniciado para:', endpoint);
   const accessToken = await getAccessToken();
 
   if (!accessToken) {
@@ -34,6 +41,7 @@ async function authFetch<T>(
 
   const headers: HeadersInit = {
     Authorization: `Bearer ${accessToken}`,
+    'bypass-tunnel-reminder': 'true',
     ...options?.headers,
   };
 
@@ -41,10 +49,12 @@ async function authFetch<T>(
     (headers as Record<string, string>)['Content-Type'] = 'application/json';
   }
 
+  console.log('[finance-api] Fazendo fetch para:', `${API_URL}${endpoint}`);
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
   });
+  console.log('[finance-api] Resposta recebida:', response.status);
 
   if (!response.ok) {
     const error: ApiError = await response.json();
@@ -94,4 +104,47 @@ export async function createTransaction(
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+// Dashboard
+export async function getDashboardSummary(month?: string): Promise<FinanceSummary> {
+  const params = new URLSearchParams();
+  if (month) {
+    params.append('month', month);
+  }
+  const query = params.toString();
+  return authFetch(`/finance/dashboard/summary${query ? `?${query}` : ''}`);
+}
+
+export async function getExpensesByCategory(month?: string): Promise<ExpensesByCategory[]> {
+  const params = new URLSearchParams();
+  if (month) {
+    params.append('month', month);
+  }
+  const query = params.toString();
+  return authFetch(`/finance/dashboard/by-category${query ? `?${query}` : ''}`);
+}
+
+export async function getUpcomingPayments(params?: {
+  days?: number;
+  month?: string;
+}): Promise<UpcomingPayment[]> {
+  const queryParams = new URLSearchParams();
+  if (params?.days) {
+    queryParams.append('days', String(params.days));
+  }
+  if (params?.month) {
+    queryParams.append('month', params.month);
+  }
+  const query = queryParams.toString();
+  return authFetch(`/finance/dashboard/upcoming${query ? `?${query}` : ''}`);
+}
+
+export async function getBudgetAllocation(month?: string): Promise<BudgetSummary> {
+  const params = new URLSearchParams();
+  if (month) {
+    params.append('month', month);
+  }
+  const query = params.toString();
+  return authFetch(`/finance/dashboard/budget-allocation${query ? `?${query}` : ''}`);
 }

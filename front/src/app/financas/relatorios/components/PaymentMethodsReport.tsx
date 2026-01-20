@@ -17,19 +17,21 @@ import { CreditCard, Wallet, AlertTriangle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
-import type { PaymentMethodsReportData, ReportPeriod } from '@/types/reports';
+import type { PaymentMethodsReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface PaymentMethodsReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }
 
 export function PaymentMethodsReport({
   accessToken,
-  period,
+  startDate,
+  endDate,
   includePending,
   refreshKey,
 }: PaymentMethodsReportProps) {
@@ -47,7 +49,8 @@ export function PaymentMethodsReport({
       try {
         const result = await financeApi.getPaymentMethodsReport(
           accessToken,
-          period,
+          startDate,
+          endDate,
           includePending
         );
         setData(result);
@@ -59,7 +62,7 @@ export function PaymentMethodsReport({
     }
 
     loadData();
-  }, [accessToken, period, includePending, refreshKey]);
+  }, [accessToken, startDate, endDate, includePending, refreshKey]);
 
   if (loading) {
     return <PaymentMethodsReportSkeleton />;
@@ -137,7 +140,7 @@ export function PaymentMethodsReport({
             {formatCurrency(totalPayments)}
           </p>
           <p className="text-xs text-slate-400">
-            No periodo de {period === '3m' ? '3' : period === '6m' ? '6' : '12'} meses
+            Periodo selecionado
           </p>
         </div>
 

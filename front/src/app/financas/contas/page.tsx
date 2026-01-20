@@ -34,6 +34,7 @@ import {
   Landmark,
   PiggyBank,
   Eye,
+  Gift,
 } from 'lucide-react';
 import { ContasPageSkeleton } from '@/components/organisms/skeletons/ContasPageSkeleton';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,8 @@ const getAccountIcon = (type: FinanceAccountType) => {
       return PiggyBank;
     case 'INVESTIMENTO':
       return Landmark;
+    case 'BENEFICIO':
+      return Gift;
     default:
       return Wallet;
   }
@@ -77,6 +80,7 @@ export default function ContasPage() {
   const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [popularBanks, setPopularBanks] = useState<Bank[]>([]);
+  const [benefitProviders, setBenefitProviders] = useState<Bank[]>([]);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -105,13 +109,15 @@ export default function ContasPage() {
     setError(null);
 
     try {
-      const [accountsData, popularBanksData] = await Promise.all([
+      const [accountsData, popularBanksData, benefitProvidersData] = await Promise.all([
         financeApi.getAccounts(session.access_token),
         financeApi.getPopularBanks(session.access_token),
+        financeApi.getBenefitProviders(session.access_token),
       ]);
       setAccounts(accountsData);
       setPopularBanks(popularBanksData);
-      setBanks(popularBanksData); // Inicial com os populares
+      setBenefitProviders(benefitProvidersData);
+      setBanks([...popularBanksData, ...benefitProvidersData]);
       hasLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
@@ -207,7 +213,10 @@ export default function ContasPage() {
     }
   };
 
-  const totalBalance = accounts.reduce((sum, acc) => sum + acc.current_balance, 0);
+  const regularAccounts = accounts.filter((acc) => acc.type !== 'BENEFICIO');
+  const benefitAccounts = accounts.filter((acc) => acc.type === 'BENEFICIO');
+  const totalBalance = regularAccounts.reduce((sum, acc) => sum + acc.current_balance, 0);
+  const benefitBalance = benefitAccounts.reduce((sum, acc) => sum + acc.current_balance, 0);
 
   if (authLoading || loading) {
     return <ContasPageSkeleton />;
@@ -229,36 +238,200 @@ export default function ContasPage() {
     );
   }
 
-  return (
-    <PageShell>
-      <div className="space-y-6">
-        {/* Total Balance Card */}
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-                Saldo Total
-              </p>
-              <span
-                className={cn(
-                  'text-2xl font-semibold tabular-nums tracking-tight',
-                  totalBalance >= 0 ? 'text-slate-900' : 'text-red-600'
-                )}
-              >
-                {formatCurrency(totalBalance)}
-              </span>
+  // Componente de card de conta reutilizável
+  const AccountCard = ({ account }: { account: AccountWithBank }) => {
+    const Icon = getAccountIcon(account.type);
+    const balanceDiff = account.current_balance - account.initial_balance;
+    const isBenefit = account.type === 'BENEFICIO';
+
+    return (
+      <div
+        className="group relative overflow-hidden rounded-xl border-0 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+        style={{
+          background: `linear-gradient(135deg, ${account.color}12 0%, ${account.color}05 100%)`,
+        }}
+      >
+        {/* Barra colorida no topo */}
+        <div
+          className="absolute top-0 left-0 right-0 h-1"
+          style={{ backgroundColor: account.color }}
+        />
+
+        {/* Decoracao circular no fundo */}
+        <div
+          className="absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-10"
+          style={{ backgroundColor: account.color }}
+        />
+
+        <div className="relative p-4">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              {account.bank?.logo_url ? (
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
+                  style={{
+                    backgroundColor: 'white',
+                    border: `2px solid ${account.color}30`
+                  }}
+                >
+                  <img
+                    src={account.bank.logo_url}
+                    alt={account.bank.name}
+                    className="h-6 w-6 object-contain"
+                  />
+                </div>
+              ) : (
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
+                  style={{
+                    backgroundColor: account.color,
+                  }}
+                >
+                  <Icon className="h-5 w-5 text-white" />
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  {account.name}
+                </p>
+                <p
+                  className="text-xs font-medium"
+                  style={{ color: account.color }}
+                >
+                  {account.bank?.name || ACCOUNT_TYPE_LABELS[account.type]}
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-slate-400">Contas</p>
-              <p className="text-sm font-medium text-slate-900">
-                {accounts.length}
-              </p>
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <button
+                onClick={() => router.push(`/financas/transacoes?account_id=${account.id}`)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-blue-50 hover:text-blue-600"
+                title="Ver transacoes"
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => openEditDialog(account)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-slate-700"
+                title="Editar"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => handleDelete(account)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-red-50 hover:text-red-500"
+                title="Excluir"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Accounts Grid */}
-        {accounts.length === 0 ? (
+        <div className="relative px-4 pb-4">
+          <div
+            className="rounded-lg p-3"
+            style={{ backgroundColor: 'rgba(255,255,255,0.7)' }}
+          >
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
+                  Saldo atual
+                </p>
+                <p
+                  className={cn(
+                    'text-xl font-bold tabular-nums tracking-tight',
+                    account.current_balance >= 0
+                      ? 'text-slate-800'
+                      : 'text-red-600'
+                  )}
+                >
+                  {formatCurrency(account.current_balance)}
+                </p>
+              </div>
+              <div
+                className={cn(
+                  'flex items-center gap-1 rounded-full px-2.5 py-1',
+                  balanceDiff >= 0
+                    ? 'bg-emerald-50 text-emerald-600'
+                    : 'bg-red-50 text-red-600'
+                )}
+              >
+                <span className="text-xs font-semibold tabular-nums">
+                  {balanceDiff >= 0 ? '+' : ''}
+                  {formatCurrency(balanceDiff)}
+                </span>
+              </div>
+            </div>
+
+            <div
+              className="mt-3 flex items-center justify-between border-t pt-2"
+              style={{ borderColor: `${account.color}20` }}
+            >
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
+                Saldo inicial
+              </span>
+              <span className="text-xs font-medium tabular-nums text-slate-500">
+                {formatCurrency(account.initial_balance)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <PageShell>
+      <div className="space-y-6">
+        {/* Summary Cards */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Saldo em Contas */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
+                <Building2 className="h-5 w-5 text-slate-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-medium text-slate-500">Saldo em Contas</p>
+                <p
+                  className={cn(
+                    'text-xl font-semibold tabular-nums tracking-tight',
+                    totalBalance >= 0 ? 'text-slate-900' : 'text-red-600'
+                  )}
+                >
+                  {formatCurrency(totalBalance)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400">{regularAccounts.length}</p>
+                <p className="text-[10px] text-slate-400">conta{regularAccounts.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Saldo em Benefícios */}
+          <div className="rounded-lg border border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-white p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+                <Gift className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-medium text-emerald-700">Saldo em Beneficios</p>
+                <p className="text-xl font-semibold tabular-nums tracking-tight text-emerald-700">
+                  {formatCurrency(benefitBalance)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-emerald-600">{benefitAccounts.length}</p>
+                <p className="text-[10px] text-emerald-600">cartao{benefitAccounts.length !== 1 ? 'es' : ''}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Empty State */}
+        {accounts.length === 0 && (
           <div className="rounded-lg border border-slate-200 bg-white">
             <div className="flex flex-col items-center justify-center py-12">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50">
@@ -274,149 +447,45 @@ export default function ContasPage() {
               </Button>
             </div>
           </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((account) => {
-              const Icon = getAccountIcon(account.type);
-              const balanceDiff = account.current_balance - account.initial_balance;
+        )}
 
-              return (
-                <div
-                  key={account.id}
-                  className="group relative overflow-hidden rounded-xl border-0 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
-                  style={{
-                    background: `linear-gradient(135deg, ${account.color}12 0%, ${account.color}05 100%)`,
-                  }}
-                >
-                  {/* Barra colorida no topo */}
-                  <div
-                    className="absolute top-0 left-0 right-0 h-1"
-                    style={{ backgroundColor: account.color }}
-                  />
-
-                  {/* Decoracao circular no fundo */}
-                  <div
-                    className="absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-10"
-                    style={{ backgroundColor: account.color }}
-                  />
-
-                  <div className="relative p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        {account.bank?.logo_url ? (
-                          <div
-                            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
-                            style={{
-                              backgroundColor: 'white',
-                              border: `2px solid ${account.color}30`
-                            }}
-                          >
-                            <img
-                              src={account.bank.logo_url}
-                              alt={account.bank.name}
-                              className="h-6 w-6 object-contain"
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-sm"
-                            style={{
-                              backgroundColor: account.color,
-                            }}
-                          >
-                            <Icon className="h-5 w-5 text-white" />
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">
-                            {account.name}
-                          </p>
-                          <p
-                            className="text-xs font-medium"
-                            style={{ color: account.color }}
-                          >
-                            {account.bank?.name || ACCOUNT_TYPE_LABELS[account.type]}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        <button
-                          onClick={() => router.push(`/financas/transacoes?account_id=${account.id}`)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-blue-50 hover:text-blue-600"
-                          title="Ver transações"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => openEditDialog(account)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-slate-700"
-                          title="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(account)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-red-50 hover:text-red-500"
-                          title="Excluir"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="relative px-4 pb-4">
-                    <div
-                      className="rounded-lg p-3"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.7)' }}
-                    >
-                      <div className="flex items-end justify-between">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
-                            Saldo atual
-                          </p>
-                          <p
-                            className={cn(
-                              'text-xl font-bold tabular-nums tracking-tight',
-                              account.current_balance >= 0
-                                ? 'text-slate-800'
-                                : 'text-red-600'
-                            )}
-                          >
-                            {formatCurrency(account.current_balance)}
-                          </p>
-                        </div>
-                        <div
-                          className={cn(
-                            'flex items-center gap-1 rounded-full px-2.5 py-1',
-                            balanceDiff >= 0
-                              ? 'bg-emerald-50 text-emerald-600'
-                              : 'bg-red-50 text-red-600'
-                          )}
-                        >
-                          <span className="text-xs font-semibold tabular-nums">
-                            {balanceDiff >= 0 ? '+' : ''}
-                            {formatCurrency(balanceDiff)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div
-                        className="mt-3 flex items-center justify-between border-t pt-2"
-                        style={{ borderColor: `${account.color}20` }}
-                      >
-                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
-                          Saldo inicial
-                        </span>
-                        <span className="text-xs font-medium tabular-nums text-slate-500">
-                          {formatCurrency(account.initial_balance)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+        {/* Contas Bancárias Section */}
+        {regularAccounts.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-100">
+                  <Building2 className="h-3.5 w-3.5 text-slate-600" />
                 </div>
-              );
-            })}
+                <h2 className="text-sm font-medium text-slate-900">Contas Bancarias</h2>
+                <span className="text-xs text-slate-400">({regularAccounts.length})</span>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {regularAccounts.map((account) => (
+                <AccountCard key={account.id} account={account} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Cartões de Benefícios Section */}
+        {benefitAccounts.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded bg-emerald-100">
+                  <Gift className="h-3.5 w-3.5 text-emerald-600" />
+                </div>
+                <h2 className="text-sm font-medium text-slate-900">Cartoes de Beneficios</h2>
+                <span className="text-xs text-emerald-600">({benefitAccounts.length})</span>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {benefitAccounts.map((account) => (
+                <AccountCard key={account.id} account={account} />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -434,35 +503,6 @@ export default function ContasPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-600">
-                Banco
-              </Label>
-              <BankSelect
-                value={formData.bank_id}
-                onChange={(value) => setFormData({ ...formData, bank_id: value })}
-                banks={banks}
-                popularBanks={popularBanks}
-                onSearch={handleSearchBanks}
-                placeholder="Selecione o banco"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="name" className="text-xs font-medium text-slate-600">
-                Nome da conta
-              </Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="Ex: Conta Principal, Poupanca..."
-                className="h-9 text-sm"
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-slate-600">
@@ -471,7 +511,7 @@ export default function ContasPage() {
                 <Select
                   value={formData.type}
                   onValueChange={(value: FinanceAccountType) =>
-                    setFormData({ ...formData, type: value })
+                    setFormData({ ...formData, type: value, bank_id: '' })
                   }
                 >
                   <SelectTrigger className="h-9 text-sm">
@@ -506,6 +546,36 @@ export default function ContasPage() {
                   className="h-9 text-sm"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-600">
+                {formData.type === 'BENEFICIO' ? 'Empresa de beneficios' : 'Banco'}
+              </Label>
+              <BankSelect
+                value={formData.bank_id}
+                onChange={(value) => setFormData({ ...formData, bank_id: value })}
+                banks={banks}
+                popularBanks={formData.type === 'BENEFICIO' ? benefitProviders : popularBanks}
+                onSearch={handleSearchBanks}
+                placeholder={formData.type === 'BENEFICIO' ? 'Selecione a empresa' : 'Selecione o banco'}
+                showOnlyBenefitProviders={formData.type === 'BENEFICIO'}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="name" className="text-xs font-medium text-slate-600">
+                Nome da conta
+              </Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                placeholder={formData.type === 'BENEFICIO' ? 'Ex: VA Alelo, VR Sodexo...' : 'Ex: Conta Principal, Poupanca...'}
+                className="h-9 text-sm"
+              />
             </div>
 
             <div className="space-y-1.5">

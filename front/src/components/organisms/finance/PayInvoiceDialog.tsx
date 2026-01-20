@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -188,14 +189,10 @@ export function PayInvoiceDialog({
               <Label htmlFor="amount" className="text-xs font-medium text-slate-600">
                 Valor do pagamento (R$)
               </Label>
-              <Input
+              <CurrencyInput
                 id="amount"
-                type="number"
-                step="0.01"
-                min={minimumAmount}
-                max={invoice.total}
                 value={amount}
-                onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                onChange={(value) => setAmount(value)}
                 className="h-9 text-sm"
               />
               <p className="text-xs text-slate-400">

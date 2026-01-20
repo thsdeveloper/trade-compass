@@ -16,12 +16,13 @@ import { Progress } from '@/components/ui/progress';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
-import type { GoalsProgressReportData, ReportPeriod } from '@/types/reports';
+import type { GoalsProgressReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface GoalsProgressReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }

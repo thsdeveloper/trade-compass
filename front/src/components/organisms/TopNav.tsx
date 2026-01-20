@@ -8,7 +8,7 @@ import { NewFinanceButton } from '@/components/molecules/NewFinanceButton';
 
 export function TopNav() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:hidden">
+    <header className="sticky top-0 z-50 w-full border-b border-sidebar-border bg-sidebar lg:hidden">
       <div className="flex h-14 items-center justify-between px-4">
         {/* Mobile hamburger menu */}
         <MobileNav />
@@ -18,8 +18,8 @@ export function TopNav() {
           href="/"
           className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 transition-opacity hover:opacity-80"
         >
-          <Compass className="h-5 w-5 text-primary" />
-          <span className="font-semibold">MoneyCompass</span>
+          <Compass className="h-5 w-5 text-sidebar-primary" />
+          <span className="font-semibold text-sidebar-foreground">MoneyCompass</span>
         </Link>
 
         {/* User actions */}

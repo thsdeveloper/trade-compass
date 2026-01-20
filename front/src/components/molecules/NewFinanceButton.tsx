@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   Plus,
@@ -44,6 +45,15 @@ const menuItems: Array<{
 function NewFinanceButtonContent({ className, variant }: NewFinanceButtonProps) {
   const { openDialog } = useFinanceDialogs();
 
+  // Defer dialog opening to avoid focus conflicts between DropdownMenu and Dialog
+  const handleOpenDialog = useCallback((type: FinanceDialogType) => {
+    // Use requestAnimationFrame to wait for DropdownMenu to fully close
+    // before opening the Dialog, preventing focus management conflicts
+    requestAnimationFrame(() => {
+      openDialog(type);
+    });
+  }, [openDialog]);
+
   const primaryItems = menuItems.filter((item) => item.group === 'primary');
   const secondaryItems = menuItems.filter((item) => item.group === 'secondary');
 
@@ -54,7 +64,7 @@ function NewFinanceButtonContent({ className, variant }: NewFinanceButtonProps) 
           <Button
             size="icon"
             variant="ghost"
-            className={cn('h-9 w-9', className)}
+            className={cn('h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground', className)}
             title="Novo"
           >
             <Plus className="h-5 w-5" />
@@ -63,7 +73,7 @@ function NewFinanceButtonContent({ className, variant }: NewFinanceButtonProps) 
           <Button
             size="sm"
             className={cn(
-              'h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800',
+              'h-8 bg-white text-sidebar text-sm font-medium hover:bg-white/90',
               className
             )}
           >
@@ -76,7 +86,7 @@ function NewFinanceButtonContent({ className, variant }: NewFinanceButtonProps) 
         {primaryItems.map((item) => (
           <DropdownMenuItem
             key={item.type}
-            onClick={() => openDialog(item.type)}
+            onSelect={() => handleOpenDialog(item.type)}
             className="cursor-pointer"
           >
             <item.icon className="mr-2 h-4 w-4" />
@@ -87,7 +97,7 @@ function NewFinanceButtonContent({ className, variant }: NewFinanceButtonProps) 
         {secondaryItems.map((item) => (
           <DropdownMenuItem
             key={item.type}
-            onClick={() => openDialog(item.type)}
+            onSelect={() => handleOpenDialog(item.type)}
             className="cursor-pointer"
           >
             <item.icon className="mr-2 h-4 w-4" />

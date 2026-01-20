@@ -19,19 +19,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
-import type { CategoryBreakdownReportData, ReportPeriod } from '@/types/reports';
+import type { CategoryBreakdownReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface CategoryBreakdownReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }
 
 export function CategoryBreakdownReport({
   accessToken,
-  period,
+  startDate,
+  endDate,
   includePending,
   refreshKey,
 }: CategoryBreakdownReportProps) {
@@ -49,7 +51,8 @@ export function CategoryBreakdownReport({
       try {
         const result = await financeApi.getCategoryBreakdownReport(
           accessToken,
-          period,
+          startDate,
+          endDate,
           includePending
         );
         setData(result);
@@ -61,7 +64,7 @@ export function CategoryBreakdownReport({
     }
 
     loadData();
-  }, [accessToken, period, includePending, refreshKey]);
+  }, [accessToken, startDate, endDate, includePending, refreshKey]);
 
   if (loading) {
     return <CategoryBreakdownReportSkeleton />;

@@ -25,6 +25,7 @@ export function getDefaultBudgetCategory(type: FinanceCategoryType): BudgetCateg
     DIVIDA: 'ESSENCIAL',
     SALARIO: null,
     FREELANCE: null,
+    BENEFICIO: null,
   };
   return mapping[type];
 }

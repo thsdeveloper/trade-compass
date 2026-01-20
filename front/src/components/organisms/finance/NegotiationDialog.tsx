@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
@@ -165,16 +166,13 @@ export function NegotiationDialog({
               <Label htmlFor="negotiated_value" className="text-xs font-medium">
                 Valor Negociado <span className="text-red-500">*</span>
               </Label>
-              <Input
+              <CurrencyInput
                 id="negotiated_value"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.negotiated_value || ''}
-                onChange={(e) =>
+                value={formData.negotiated_value}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    negotiated_value: parseFloat(e.target.value) || 0,
+                    negotiated_value: value,
                   })
                 }
                 placeholder="0,00"

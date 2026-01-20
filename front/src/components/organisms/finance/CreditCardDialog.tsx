@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -141,15 +142,13 @@ export function CreditCardDialog({
               <Label htmlFor="total_limit" className="text-xs font-medium text-slate-600">
                 Limite (R$)
               </Label>
-              <Input
+              <CurrencyInput
                 id="total_limit"
-                type="number"
-                step="0.01"
-                value={formData.total_limit || ''}
-                onChange={(e) =>
+                value={formData.total_limit}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    total_limit: parseFloat(e.target.value) || 0,
+                    total_limit: value,
                   })
                 }
                 className="h-9 text-sm"

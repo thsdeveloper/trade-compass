@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -163,15 +164,13 @@ export function AccountDialog({
               <Label htmlFor="initial_balance" className="text-xs font-medium text-slate-600">
                 Saldo inicial (R$)
               </Label>
-              <Input
+              <CurrencyInput
                 id="initial_balance"
-                type="number"
-                step="0.01"
-                value={formData.initial_balance || ''}
-                onChange={(e) =>
+                value={formData.initial_balance}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    initial_balance: parseFloat(e.target.value) || 0,
+                    initial_balance: value,
                   })
                 }
                 disabled={isEditing}

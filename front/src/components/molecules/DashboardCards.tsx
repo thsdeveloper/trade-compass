@@ -9,6 +9,7 @@ import {
   TrendingUp,
   ArrowRight,
   Calendar,
+  Gift,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AccountWithBank, FinanceCreditCard } from '@/types/finance';
@@ -24,6 +25,7 @@ const ACCOUNT_TYPE_ICONS: Record<string, typeof Building2> = {
   POUPANCA: PiggyBank,
   CARTEIRA: Wallet,
   INVESTIMENTO: TrendingUp,
+  BENEFICIO: Gift,
 };
 
 interface AccountsCardProps {

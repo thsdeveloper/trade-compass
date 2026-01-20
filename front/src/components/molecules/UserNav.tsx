@@ -21,7 +21,7 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
   const { user, signOut, loading } = useAuth();
 
   if (loading) {
-    return <div className="h-9 w-9 animate-pulse rounded-full bg-muted" />;
+    return <div className="h-9 w-9 animate-pulse rounded-full bg-sidebar-accent" />;
   }
 
   // Header variant with dropdown menu
@@ -34,9 +34,9 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="relative h-9 w-9 rounded-full p-0 transition-all duration-150 hover:ring-2 hover:ring-ring/20"
+            className="relative h-9 w-9 rounded-full p-0 transition-all duration-150 hover:ring-2 hover:ring-sidebar-ring/40"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
               <span className="text-sm font-medium">{initials}</span>
             </div>
           </Button>
@@ -93,10 +93,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
   if (variant === 'header' && !user) {
     return (
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="ghost" size="sm" asChild className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
           <Link href="/auth?mode=login">Entrar</Link>
         </Button>
-        <Button size="sm" asChild>
+        <Button size="sm" asChild className="bg-white text-sidebar hover:bg-white/90">
           <Link href="/auth?mode=register">Cadastre-se</Link>
         </Button>
       </div>
@@ -108,10 +108,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
     return (
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
             <User className="h-4 w-4" />
           </div>
-          <span className="hidden text-sm font-medium md:inline-block">
+          <span className="hidden text-sm font-medium text-sidebar-foreground md:inline-block">
             {user.email?.split('@')[0]}
           </span>
         </div>
@@ -119,7 +119,7 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
           variant="ghost"
           size="icon"
           onClick={() => signOut()}
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="h-8 w-8 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
           title="Sair"
         >
           <LogOut className="h-4 w-4" />
@@ -130,10 +130,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <Button variant="ghost" size="sm" asChild>
+      <Button variant="ghost" size="sm" asChild className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
         <Link href="/auth?mode=login">Entrar</Link>
       </Button>
-      <Button size="sm" asChild>
+      <Button size="sm" asChild className="bg-white text-sidebar hover:bg-white/90">
         <Link href="/auth?mode=register">Cadastre-se</Link>
       </Button>
     </div>

@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, FileDown } from 'lucide-react';
+import { AlertCircle, FileDown, Loader2 } from 'lucide-react';
+import { exportReportToPDF } from '@/lib/pdf-export';
+import { toast } from '@/lib/toast';
 import { ReportsSkeleton } from '@/components/organisms/skeletons/ReportsSkeleton';
 import { ReportTabs } from './components/ReportTabs';
 import { ReportFilters } from './components/ReportFilters';
@@ -16,7 +18,8 @@ import { PaymentMethodsReport } from './components/PaymentMethodsReport';
 import { GoalsProgressReport } from './components/GoalsProgressReport';
 import { RecurringAnalysisReport } from './components/RecurringAnalysisReport';
 import { YoYComparisonReport } from './components/YoYComparisonReport';
-import type { ReportType, ReportPeriod } from '@/types/reports';
+import type { ReportType, ReportDateFilter } from '@/types/reports';
+import { createDateFilter } from '@/lib/date-utils';
 
 export default function RelatoriosPage() {
   const { user, session, loading: authLoading } = useAuth();
@@ -24,10 +27,14 @@ export default function RelatoriosPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const reportContainerRef = useRef<HTMLDivElement>(null);
 
   // Report state
   const [activeReport, setActiveReport] = useState<ReportType>('cash-flow');
-  const [period, setPeriod] = useState<ReportPeriod>('6m');
+  const [dateFilter, setDateFilter] = useState<ReportDateFilter>(() =>
+    createDateFilter('6m')
+  );
   const [includePending, setIncludePending] = useState(true);
   const [selectedYears, setSelectedYears] = useState<number[]>(() => {
     const currentYear = new Date().getFullYear();
@@ -42,9 +49,22 @@ export default function RelatoriosPage() {
   }, []);
 
   const handleExportPDF = useCallback(async () => {
-    // TODO: Implement PDF export
-    alert('Exportacao PDF sera implementada em breve!');
-  }, []);
+    if (!reportContainerRef.current) return;
+    setExporting(true);
+    try {
+      await exportReportToPDF({
+        reportType: activeReport,
+        startDate: dateFilter.startDate,
+        endDate: dateFilter.endDate,
+        element: reportContainerRef.current,
+      });
+      toast.success('PDF exportado com sucesso!');
+    } catch (error) {
+      toast.apiError(error, 'Erro ao exportar PDF');
+    } finally {
+      setExporting(false);
+    }
+  }, [activeReport, dateFilter.startDate, dateFilter.endDate]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -85,7 +105,8 @@ export default function RelatoriosPage() {
   const renderReport = () => {
     const commonProps = {
       accessToken: session?.access_token || '',
-      period,
+      startDate: dateFilter.startDate,
+      endDate: dateFilter.endDate,
       includePending,
       refreshKey,
     };
@@ -131,10 +152,15 @@ export default function RelatoriosPage() {
             variant="outline"
             size="sm"
             onClick={handleExportPDF}
+            disabled={exporting}
             className="gap-2"
           >
-            <FileDown className="h-4 w-4" />
-            Exportar PDF
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4" />
+            )}
+            {exporting ? 'Exportando...' : 'Exportar PDF'}
           </Button>
         </div>
 
@@ -144,8 +170,8 @@ export default function RelatoriosPage() {
         {/* Filters */}
         <ReportFilters
           reportType={activeReport}
-          period={period}
-          onPeriodChange={setPeriod}
+          dateFilter={dateFilter}
+          onDateFilterChange={setDateFilter}
           includePending={includePending}
           onIncludePendingChange={setIncludePending}
           selectedYears={selectedYears}
@@ -154,7 +180,9 @@ export default function RelatoriosPage() {
         />
 
         {/* Report Content */}
-        <div className="min-h-[500px]">{renderReport()}</div>
+        <div ref={reportContainerRef} className="min-h-[500px]">
+          {renderReport()}
+        </div>
       </div>
     </PageShell>
   );

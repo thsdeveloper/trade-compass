@@ -30,7 +30,7 @@ export async function buildServer() {
 
   // CORS
   await app.register(cors, {
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: true, // Permite todas as origens em desenvolvimento (mobile, localhost, etc)
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 

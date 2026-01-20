@@ -21,12 +21,13 @@ import { TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle } from 'luc
 import { Skeleton } from '@/components/ui/skeleton';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
-import type { BudgetAnalysisReportData, ReportPeriod } from '@/types/reports';
+import type { BudgetAnalysisReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface BudgetAnalysisReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }
@@ -45,7 +46,8 @@ const BUDGET_LABELS = {
 
 export function BudgetAnalysisReport({
   accessToken,
-  period,
+  startDate,
+  endDate,
   includePending,
   refreshKey,
 }: BudgetAnalysisReportProps) {
@@ -63,7 +65,8 @@ export function BudgetAnalysisReport({
       try {
         const result = await financeApi.getBudgetAnalysisReport(
           accessToken,
-          period,
+          startDate,
+          endDate,
           includePending
         );
         setData(result);
@@ -75,7 +78,7 @@ export function BudgetAnalysisReport({
     }
 
     loadData();
-  }, [accessToken, period, includePending, refreshKey]);
+  }, [accessToken, startDate, endDate, includePending, refreshKey]);
 
   if (loading) {
     return <BudgetAnalysisReportSkeleton />;

@@ -9,7 +9,7 @@ export function Footer({ className }: FooterProps) {
   return (
     <footer
       className={cn(
-        'fixed bottom-0 right-0 z-30 border-t border-sidebar-border bg-sidebar',
+        'fixed bottom-0 right-0 z-30 border-t border-border bg-background',
         'flex h-14 items-center px-4',
         className
       )}

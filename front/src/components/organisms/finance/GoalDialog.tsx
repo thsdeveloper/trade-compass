@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -184,16 +185,13 @@ export function GoalDialog({
               >
                 Valor alvo (R$)
               </Label>
-              <Input
+              <CurrencyInput
                 id="target_amount"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.target_amount || ''}
-                onChange={(e) =>
+                value={formData.target_amount}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    target_amount: parseFloat(e.target.value) || 0,
+                    target_amount: value,
                   })
                 }
                 className="h-9 text-sm"
@@ -223,11 +221,14 @@ export function GoalDialog({
             <AccountSelect
               value={formData.linked_account_id || ''}
               onChange={(value) =>
-                setFormData({ ...formData, linked_account_id: value || undefined })
+                setFormData({
+                  ...formData,
+                  linked_account_id: value || undefined
+                })
               }
               accounts={accounts}
-              placeholder="Vincular a uma conta"
-              allowAll
+              placeholder="Nenhuma"
+              allowClear
             />
           </div>
 

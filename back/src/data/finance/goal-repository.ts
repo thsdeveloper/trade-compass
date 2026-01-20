@@ -7,6 +7,10 @@ import type {
   GoalWithProgress,
   GoalSummary,
   GoalSelectItem,
+  FinanceGoalContribution,
+  CreateGoalContributionDTO,
+  UpdateGoalContributionDTO,
+  GoalContributionItem,
 } from '../../domain/finance-types.js';
 
 const TABLE = 'finance_goals';
@@ -118,21 +122,47 @@ async function getGoalContributions(
 ): Promise<{ current_amount: number; contributions_count: number }> {
   const client = createUserClient(accessToken);
 
-  // Filtrar apenas RECEITA (lado destino da transferencia)
-  // Contribuicoes sao transferencias para o objetivo
+  // Buscar transações vinculadas ao objetivo (qualquer tipo, status PAGO)
+  // Para transferências, contamos apenas o lado RECEITA (destino)
+  // Para DESPESA/RECEITA avulsa, contamos normalmente
   const { data: transactions } = await client
     .from('finance_transactions')
-    .select('amount')
+    .select('amount, type, transfer_id')
     .eq('goal_id', goalId)
     .eq('user_id', userId)
-    .eq('type', 'RECEITA')
     .eq('status', 'PAGO');
 
-  const current_amount =
-    transactions?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-  const contributions_count = transactions?.length || 0;
+  // Calcular soma das transações
+  // - DESPESA: soma ao progresso (representa pagamento feito para o objetivo)
+  // - RECEITA: soma ao progresso (inclui lado destino de transferências)
+  // - Para transferências, apenas o lado RECEITA é contado (evita duplicação)
+  let transactionAmount = 0;
+  let transactionCount = 0;
 
-  return { current_amount, contributions_count };
+  if (transactions) {
+    for (const t of transactions) {
+      // Se for transferência, só conta o lado RECEITA
+      if (t.transfer_id && t.type !== 'RECEITA') continue;
+      transactionAmount += Number(t.amount);
+      transactionCount++;
+    }
+  }
+
+  // Buscar contribuições manuais
+  const { data: manualContributions } = await client
+    .from('finance_goal_contributions')
+    .select('amount')
+    .eq('goal_id', goalId)
+    .eq('user_id', userId);
+
+  const manualAmount =
+    manualContributions?.reduce((sum, c) => sum + Number(c.amount), 0) || 0;
+  const manualCount = manualContributions?.length || 0;
+
+  return {
+    current_amount: transactionAmount + manualAmount,
+    contributions_count: transactionCount + manualCount,
+  };
 }
 
 export async function createGoal(
@@ -299,13 +329,13 @@ export async function getGoalContributionTransactions(
 ): Promise<{ id: string; description: string; amount: number; due_date: string; status: string }[]> {
   const client = createUserClient(accessToken);
 
-  // Filtrar apenas RECEITA (lado destino da transferencia)
+  // Buscar transações vinculadas ao objetivo (qualquer tipo)
+  // Para transferências, retornamos apenas o lado RECEITA
   const { data, error } = await client
     .from('finance_transactions')
-    .select('id, description, amount, due_date, status')
+    .select('id, description, amount, due_date, status, type, transfer_id')
     .eq('goal_id', goalId)
     .eq('user_id', userId)
-    .eq('type', 'RECEITA')
     .neq('status', 'CANCELADO')
     .order('due_date', { ascending: false });
 
@@ -313,5 +343,170 @@ export async function getGoalContributionTransactions(
     throw new Error(`Erro ao buscar contribuicoes: ${error.message}`);
   }
 
-  return data || [];
+  // Filtrar: para transferências, só retorna o lado RECEITA
+  const filtered = (data || []).filter((t) => {
+    if (t.transfer_id && t.type !== 'RECEITA') return false;
+    return true;
+  });
+
+  return filtered.map((t) => ({
+    id: t.id,
+    description: t.description,
+    amount: t.amount,
+    due_date: t.due_date,
+    status: t.status,
+  }));
+}
+
+// ==================== GOAL CONTRIBUTION CRUD ====================
+
+export async function getGoalContributionHistory(
+  goalId: string,
+  userId: string,
+  accessToken: string
+): Promise<GoalContributionItem[]> {
+  const client = createUserClient(accessToken);
+
+  // Buscar transações vinculadas ao objetivo
+  const { data: transactions } = await client
+    .from('finance_transactions')
+    .select('id, description, amount, due_date, status, type, transfer_id')
+    .eq('goal_id', goalId)
+    .eq('user_id', userId)
+    .neq('status', 'CANCELADO');
+
+  // Buscar contribuições manuais
+  const { data: manualContributions } = await client
+    .from('finance_goal_contributions')
+    .select('id, description, amount, contribution_date')
+    .eq('goal_id', goalId)
+    .eq('user_id', userId);
+
+  const items: GoalContributionItem[] = [];
+
+  // Adicionar transações (filtrando lado DESPESA de transferências)
+  if (transactions) {
+    for (const t of transactions) {
+      // Para transferências, só incluir o lado RECEITA
+      if (t.transfer_id && t.type !== 'RECEITA') continue;
+
+      items.push({
+        id: t.id,
+        type: 'transaction',
+        amount: Number(t.amount),
+        date: t.due_date,
+        description: t.description,
+        status: t.status,
+      });
+    }
+  }
+
+  // Adicionar contribuições manuais
+  if (manualContributions) {
+    for (const c of manualContributions) {
+      items.push({
+        id: c.id,
+        type: 'manual',
+        amount: Number(c.amount),
+        date: c.contribution_date,
+        description: c.description || 'Contribuicao manual',
+      });
+    }
+  }
+
+  // Ordenar por data decrescente
+  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return items;
+}
+
+export async function createGoalContribution(
+  goalId: string,
+  userId: string,
+  data: CreateGoalContributionDTO,
+  accessToken: string
+): Promise<FinanceGoalContribution> {
+  const client = createUserClient(accessToken);
+
+  // Verificar se o objetivo existe e pertence ao usuário
+  const { data: goal, error: goalError } = await client
+    .from('finance_goals')
+    .select('id')
+    .eq('id', goalId)
+    .eq('user_id', userId)
+    .single();
+
+  if (goalError || !goal) {
+    throw new Error('Objetivo nao encontrado');
+  }
+
+  const { data: contribution, error } = await client
+    .from('finance_goal_contributions')
+    .insert({
+      user_id: userId,
+      goal_id: goalId,
+      amount: data.amount,
+      contribution_date: data.contribution_date,
+      description: data.description || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Erro ao criar contribuicao: ${error.message}`);
+  }
+
+  return contribution;
+}
+
+export async function updateGoalContribution(
+  contributionId: string,
+  goalId: string,
+  userId: string,
+  data: UpdateGoalContributionDTO,
+  accessToken: string
+): Promise<FinanceGoalContribution> {
+  const client = createUserClient(accessToken);
+
+  const { data: contribution, error } = await client
+    .from('finance_goal_contributions')
+    .update({
+      ...data,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', contributionId)
+    .eq('goal_id', goalId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Erro ao atualizar contribuicao: ${error.message}`);
+  }
+
+  if (!contribution) {
+    throw new Error('Contribuicao nao encontrada');
+  }
+
+  return contribution;
+}
+
+export async function deleteGoalContribution(
+  contributionId: string,
+  goalId: string,
+  userId: string,
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  const { error } = await client
+    .from('finance_goal_contributions')
+    .delete()
+    .eq('id', contributionId)
+    .eq('goal_id', goalId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Erro ao remover contribuicao: ${error.message}`);
+  }
 }

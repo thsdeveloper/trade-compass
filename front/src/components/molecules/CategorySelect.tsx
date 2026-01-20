@@ -65,7 +65,6 @@ export function CategorySelect({
   allowAll = false,
 }: CategorySelectProps) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newCategory, setNewCategory] = useState<CategoryFormData>({
@@ -80,31 +79,32 @@ export function CategorySelect({
     ? categories.filter((c) => filterTypes.includes(c.type))
     : categories;
 
-  // Filtrar por busca
-  const filteredCategories = filteredByType.filter((category) =>
-    category.name.toLowerCase().includes(search.toLowerCase())
-  );
-
   const selectedCategory = categories.find((c) => c.id === value);
 
   const handleSelect = useCallback(
-    (categoryId: string) => {
-      onChange(categoryId);
+    (currentValue: string) => {
+      // Encontrar categoria pelo nome (cmdk passa o value em lowercase)
+      const category = filteredByType.find(
+        (c) => c.name.toLowerCase() === currentValue.toLowerCase()
+      );
+      if (category) {
+        onChange(category.id);
+      }
       setOpen(false);
-      setSearch('');
     },
-    [onChange]
+    [onChange, filteredByType]
   );
 
   const handleCreateClick = useCallback(() => {
     setNewCategory({
-      name: search,
+      name: '',
       type: 'OUTROS',
       color: '#64748b',
       icon: 'Tag',
     });
     setCreateDialogOpen(true);
-  }, [search]);
+    setOpen(false);
+  }, []);
 
   const handleCreate = useCallback(async () => {
     if (!onCreateCategory || !newCategory.name.trim()) return;
@@ -114,8 +114,6 @@ export function CategorySelect({
       const created = await onCreateCategory(newCategory);
       onChange(created.id);
       setCreateDialogOpen(false);
-      setOpen(false);
-      setSearch('');
     } catch (error) {
       console.error('Erro ao criar categoria:', error);
     } finally {
@@ -125,7 +123,7 @@ export function CategorySelect({
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal={true}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
@@ -158,18 +156,38 @@ export function CategorySelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[280px] p-0" align="start">
-          <Command shouldFilter={false}>
-            <CommandInput
-              placeholder="Buscar categoria..."
-              value={search}
-              onValueChange={setSearch}
-            />
-            <CommandList onWheelCapture={(e) => e.stopPropagation()}>
+          <Command>
+            <CommandInput placeholder="Buscar categoria..." />
+            <CommandList>
+              <CommandEmpty>
+                {onCreateCategory ? (
+                  <div className="py-2">
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Nenhuma categoria encontrada.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCreateClick}
+                      className="h-8"
+                    >
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Criar nova categoria
+                    </Button>
+                  </div>
+                ) : (
+                  'Nenhuma categoria encontrada.'
+                )}
+              </CommandEmpty>
+
               {allowAll && (
                 <CommandGroup>
                   <CommandItem
-                    value=""
-                    onSelect={() => handleSelect('')}
+                    value="__todas__"
+                    onSelect={() => {
+                      onChange('');
+                      setOpen(false);
+                    }}
                     className="cursor-pointer"
                   >
                     <Check
@@ -183,34 +201,13 @@ export function CategorySelect({
                 </CommandGroup>
               )}
 
-              {filteredCategories.length === 0 && !onCreateCategory && (
-                <CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>
-              )}
-
-              {filteredCategories.length === 0 && onCreateCategory && (
-                <div className="py-6 text-center">
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Nenhuma categoria encontrada.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCreateClick}
-                    className="h-8"
-                  >
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Criar "{search || 'nova categoria'}"
-                  </Button>
-                </div>
-              )}
-
-              {filteredCategories.length > 0 && (
+              {filteredByType.length > 0 && (
                 <CommandGroup>
-                  {filteredCategories.map((category) => (
+                  {filteredByType.map((category) => (
                     <CommandItem
                       key={category.id}
-                      value={category.id}
-                      onSelect={() => handleSelect(category.id)}
+                      value={category.name}
+                      onSelect={handleSelect}
                       className="cursor-pointer"
                     >
                       <Check
@@ -234,11 +231,12 @@ export function CategorySelect({
                 </CommandGroup>
               )}
 
-              {onCreateCategory && filteredCategories.length > 0 && (
+              {onCreateCategory && filteredByType.length > 0 && (
                 <>
                   <CommandSeparator />
                   <CommandGroup>
                     <CommandItem
+                      value="__criar_nova__"
                       onSelect={handleCreateClick}
                       className="cursor-pointer text-slate-600"
                     >

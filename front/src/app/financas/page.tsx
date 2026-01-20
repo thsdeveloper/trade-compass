@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Wallet,
   TrendingUp,
+  Gift,
 } from 'lucide-react';
 import { FinanceDashboardSkeleton } from '@/components/organisms/skeletons/FinanceDashboardSkeleton';
 import { cn } from '@/lib/utils';
@@ -268,14 +269,24 @@ export default function FinancasPage() {
         ) : (
           <>
             {/* Summary Cards */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className={`grid gap-4 sm:grid-cols-2 ${summary?.benefit_balance && summary.benefit_balance > 0 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
               <SummaryCard
                 title="Saldo Total"
                 value={summary?.total_balance ?? 0}
-                subtitle={`${accounts.length} conta${accounts.length !== 1 ? 's' : ''} ativa${accounts.length !== 1 ? 's' : ''}`}
+                subtitle={`${accounts.filter(a => a.type !== 'BENEFICIO').length} conta${accounts.filter(a => a.type !== 'BENEFICIO').length !== 1 ? 's' : ''} ativa${accounts.filter(a => a.type !== 'BENEFICIO').length !== 1 ? 's' : ''}`}
                 icon={Wallet}
                 variant="default"
               />
+
+              {summary?.benefit_balance && summary.benefit_balance > 0 && (
+                <SummaryCard
+                  title="Beneficios"
+                  value={summary.benefit_balance}
+                  subtitle={`${accounts.filter(a => a.type === 'BENEFICIO').length} conta${accounts.filter(a => a.type === 'BENEFICIO').length !== 1 ? 's' : ''}`}
+                  icon={Gift}
+                  variant="default"
+                />
+              )}
 
               <SummaryCard
                 title="A Pagar"

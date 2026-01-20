@@ -13,13 +13,15 @@ export type FinanceCategoryType =
   | 'SALARIO'
   | 'FREELANCE'
   | 'DIVIDA'
+  | 'BENEFICIO'
   | 'OUTROS';
 
 export type FinanceAccountType =
   | 'CONTA_CORRENTE'
   | 'POUPANCA'
   | 'CARTEIRA'
-  | 'INVESTIMENTO';
+  | 'INVESTIMENTO'
+  | 'BENEFICIO';
 
 export type CreditCardBrand =
   | 'VISA'
@@ -58,6 +60,7 @@ export interface Bank {
   logo_url: string | null;
   logo_dark_url: string | null;
   is_active: boolean;
+  is_benefit_provider: boolean;
   created_at: string;
 }
 
@@ -332,6 +335,7 @@ export interface InvoicePaymentWithDetails extends FinanceInvoicePayment {
 
 export interface FinanceSummary {
   total_balance: number;
+  benefit_balance: number;
   total_pending_expenses: number;
   total_pending_income: number;
   month_result: number;
@@ -414,6 +418,7 @@ export const CATEGORY_TYPE_LABELS: Record<FinanceCategoryType, string> = {
   SALARIO: 'Salario',
   FREELANCE: 'Freelance',
   DIVIDA: 'Divida',
+  BENEFICIO: 'Beneficio',
   OUTROS: 'Outros',
 };
 
@@ -440,6 +445,7 @@ export const ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
   POUPANCA: 'Poupanca',
   CARTEIRA: 'Carteira',
   INVESTIMENTO: 'Investimento',
+  BENEFICIO: 'Beneficio',
 };
 
 export const CREDIT_CARD_BRAND_LABELS: Record<CreditCardBrand, string> = {
@@ -762,6 +768,35 @@ export interface GoalSelectItem {
   name: string;
   icon: string;
   color: string;
+}
+
+// ==================== GOAL CONTRIBUTIONS ====================
+
+export interface FinanceGoalContribution {
+  id: string;
+  user_id: string;
+  goal_id: string;
+  amount: number;
+  contribution_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoalContributionFormData {
+  amount: number;
+  contribution_date: string;
+  description?: string;
+}
+
+// Item unificado do histórico (transação ou manual)
+export interface GoalContributionItem {
+  id: string;
+  type: 'transaction' | 'manual';
+  amount: number;
+  date: string;
+  description: string;
+  status?: string; // Apenas para transações
 }
 
 // ==================== GOAL LABELS ====================

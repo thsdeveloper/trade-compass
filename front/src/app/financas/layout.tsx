@@ -1,6 +1,7 @@
 'use client';
 
 import { FinanceDialogProvider } from '@/contexts/FinanceDialogContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
 import { FinanceDialogsContainer } from '@/components/organisms/finance/FinanceDialogsContainer';
 
 export default function FinancasLayout({
@@ -10,8 +11,10 @@ export default function FinancasLayout({
 }) {
   return (
     <FinanceDialogProvider>
-      {children}
-      <FinanceDialogsContainer />
+      <NotificationProvider>
+        {children}
+        <FinanceDialogsContainer />
+      </NotificationProvider>
     </FinanceDialogProvider>
   );
 }

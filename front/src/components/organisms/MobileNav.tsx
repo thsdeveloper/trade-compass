@@ -23,7 +23,7 @@ export function MobileNav() {
         variant="ghost"
         size="icon"
         onClick={() => setIsOpen(true)}
-        className="h-9 w-9"
+        className="h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         aria-label="Abrir menu"
       >
         <Menu className="h-5 w-5" />

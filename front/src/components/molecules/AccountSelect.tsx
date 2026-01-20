@@ -26,6 +26,7 @@ interface AccountSelectProps {
   placeholder?: string;
   disabled?: boolean;
   allowAll?: boolean;
+  allowClear?: boolean;
   className?: string;
 }
 
@@ -76,6 +77,7 @@ export function AccountSelect({
   placeholder = 'Selecione uma conta',
   disabled = false,
   allowAll = false,
+  allowClear = false,
   className,
 }: AccountSelectProps) {
   const [open, setOpen] = useState(false);
@@ -103,7 +105,7 @@ export function AccountSelect({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -142,6 +144,22 @@ export function AccountSelect({
           <CommandList>
             <CommandEmpty>Nenhuma conta encontrada.</CommandEmpty>
             <CommandGroup>
+              {allowClear && (
+                <CommandItem
+                  value=""
+                  onSelect={() => handleSelect('')}
+                  className="cursor-pointer"
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      !value ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <Wallet className="mr-2 h-4 w-4 text-slate-300" />
+                  <span className="text-slate-500">Nenhuma</span>
+                </CommandItem>
+              )}
               {allowAll && (
                 <CommandItem
                   value="all"

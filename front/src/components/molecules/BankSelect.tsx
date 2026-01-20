@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Check, ChevronsUpDown, Building2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Building2, Gift } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +28,8 @@ interface BankSelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Quando true, mostra apenas empresas de benefícios. Quando false, mostra apenas bancos. */
+  showOnlyBenefitProviders?: boolean;
 }
 
 function BankLogo({
@@ -45,16 +47,26 @@ function BankLogo({
     md: 'h-6 w-6',
   };
 
+  const iconSizeClasses = {
+    xs: 'h-2.5 w-2.5',
+    sm: 'h-3 w-3',
+    md: 'h-3.5 w-3.5',
+  };
+
+  const isBenefitProvider = bank?.is_benefit_provider;
+  const Icon = isBenefitProvider ? Gift : Building2;
+
   if (!bank?.logo_url) {
     return (
       <div
         className={cn(
-          'flex items-center justify-center rounded bg-slate-100 text-slate-400',
+          'flex items-center justify-center rounded',
+          isBenefitProvider ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400',
           sizeClasses[size],
           className
         )}
       >
-        <Building2 className="h-3 w-3" />
+        <Icon className={iconSizeClasses[size]} />
       </div>
     );
   }
@@ -81,12 +93,19 @@ export function BankSelect({
   placeholder = 'Selecione um banco',
   disabled = false,
   className,
+  showOnlyBenefitProviders,
 }: BankSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<Bank[]>([]);
   const [searching, setSearching] = useState(false);
   const [cachedSelectedBank, setCachedSelectedBank] = useState<Bank | null>(null);
+
+  // Filtrar bancos baseado no tipo (beneficio ou banco tradicional)
+  const filterByProviderType = useCallback((bankList: Bank[]) => {
+    if (showOnlyBenefitProviders === undefined) return bankList;
+    return bankList.filter((b) => b.is_benefit_provider === showOnlyBenefitProviders);
+  }, [showOnlyBenefitProviders]);
 
   // Buscar bancos quando o usuario digita
   useEffect(() => {
@@ -100,7 +119,7 @@ export function BankSelect({
       const timer = setTimeout(async () => {
         try {
           const results = await onSearch(search);
-          setSearchResults(results);
+          setSearchResults(filterByProviderType(results));
         } catch (error) {
           console.error('Erro ao buscar bancos:', error);
         } finally {
@@ -111,7 +130,7 @@ export function BankSelect({
       return () => clearTimeout(timer);
     } else {
       // Filtragem local
-      const filtered = banks.filter(
+      const filtered = filterByProviderType(banks).filter(
         (bank) =>
           bank.name.toLowerCase().includes(search.toLowerCase()) ||
           bank.full_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -119,7 +138,7 @@ export function BankSelect({
       );
       setSearchResults(filtered);
     }
-  }, [search, onSearch, banks]);
+  }, [search, onSearch, banks, filterByProviderType]);
 
   // Encontrar o banco selecionado em todas as fontes possiveis
   const selectedBank =
@@ -150,12 +169,27 @@ export function BankSelect({
     [onChange, banks, searchResults, popularBanks]
   );
 
+  // Filtrar bancos populares pelo tipo
+  const filteredPopularBanks = filterByProviderType(popularBanks);
+
   // Determinar quais bancos mostrar
-  const displayBanks = search.length >= 2 ? searchResults : popularBanks;
-  const showPopularLabel = search.length < 2 && popularBanks.length > 0;
+  const displayBanks = search.length >= 2 ? searchResults : filteredPopularBanks;
+  const showPopularLabel = search.length < 2 && filteredPopularBanks.length > 0;
+
+  // Labels dinamicos baseados no tipo
+  const listLabel = showOnlyBenefitProviders ? 'Empresas de beneficios' : 'Bancos populares';
+  const searchPlaceholder = showOnlyBenefitProviders
+    ? 'Buscar empresa de beneficios...'
+    : 'Buscar banco por nome ou codigo...';
+  const emptyMessage = showOnlyBenefitProviders
+    ? 'Nenhuma empresa encontrada.'
+    : 'Nenhum banco encontrado.';
+  const searchHint = showOnlyBenefitProviders
+    ? 'Digite para buscar entre todas as empresas'
+    : 'Digite para buscar entre todos os bancos';
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -172,9 +206,14 @@ export function BankSelect({
             <div className="flex items-center gap-2">
               <BankLogo bank={selectedBank} size="xs" />
               <span className="truncate">{selectedBank.name}</span>
-              {selectedBank.code && (
+              {selectedBank.code && !selectedBank.is_benefit_provider && (
                 <span className="text-xs text-slate-400 font-mono">
                   {String(selectedBank.code).padStart(3, '0')}
+                </span>
+              )}
+              {selectedBank.is_benefit_provider && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                  Beneficio
                 </span>
               )}
             </div>
@@ -187,13 +226,13 @@ export function BankSelect({
       <PopoverContent className="w-[320px] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Buscar banco por nome ou codigo..."
+            placeholder={searchPlaceholder}
             value={search}
             onValueChange={setSearch}
           />
           <CommandList>
             {search.length >= 2 && displayBanks.length === 0 && !searching && (
-              <CommandEmpty>Nenhum banco encontrado.</CommandEmpty>
+              <CommandEmpty>{emptyMessage}</CommandEmpty>
             )}
 
             {search.length >= 2 && searching && (
@@ -209,8 +248,8 @@ export function BankSelect({
             )}
 
             {showPopularLabel && (
-              <CommandGroup heading="Bancos populares">
-                {popularBanks.map((bank) => (
+              <CommandGroup heading={listLabel}>
+                {filteredPopularBanks.map((bank) => (
                   <div
                     key={bank.id}
                     onClick={() => handleSelect(bank.id, bank)}
@@ -227,9 +266,14 @@ export function BankSelect({
                     />
                     <BankLogo bank={bank} size="sm" className="mr-2" />
                     <span className="truncate flex-1">{bank.name}</span>
-                    {bank.code && (
+                    {bank.code && !bank.is_benefit_provider && (
                       <span className="ml-2 text-xs text-slate-400 font-mono">
                         {String(bank.code).padStart(3, '0')}
+                      </span>
+                    )}
+                    {bank.is_benefit_provider && (
+                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                        Beneficio
                       </span>
                     )}
                   </div>
@@ -263,9 +307,14 @@ export function BankSelect({
                         </span>
                       )}
                     </div>
-                    {bank.code && (
+                    {bank.code && !bank.is_benefit_provider && (
                       <span className="ml-2 text-xs text-slate-400 font-mono">
                         {String(bank.code).padStart(3, '0')}
+                      </span>
+                    )}
+                    {bank.is_benefit_provider && (
+                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                        Beneficio
                       </span>
                     )}
                   </div>
@@ -273,11 +322,11 @@ export function BankSelect({
               </CommandGroup>
             )}
 
-            {search.length < 2 && popularBanks.length > 0 && (
+            {search.length < 2 && filteredPopularBanks.length > 0 && (
               <>
                 <CommandSeparator />
                 <div className="py-2 px-3 text-xs text-slate-400">
-                  Digite para buscar entre todos os bancos
+                  {searchHint}
                 </div>
               </>
             )}

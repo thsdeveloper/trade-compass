@@ -16,19 +16,21 @@ import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
-import type { CashFlowReportData, ReportPeriod } from '@/types/reports';
+import type { CashFlowReportData } from '@/types/reports';
 import { cn } from '@/lib/utils';
 
 interface CashFlowReportProps {
   accessToken: string;
-  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
   includePending: boolean;
   refreshKey: number;
 }
 
 export function CashFlowReport({
   accessToken,
-  period,
+  startDate,
+  endDate,
   includePending,
   refreshKey,
 }: CashFlowReportProps) {
@@ -46,7 +48,8 @@ export function CashFlowReport({
       try {
         const result = await financeApi.getCashFlowReport(
           accessToken,
-          period,
+          startDate,
+          endDate,
           includePending
         );
         setData(result);
@@ -58,7 +61,7 @@ export function CashFlowReport({
     }
 
     loadData();
-  }, [accessToken, period, includePending, refreshKey]);
+  }, [accessToken, startDate, endDate, includePending, refreshKey]);
 
   if (loading) {
     return <CashFlowReportSkeleton />;
@@ -161,7 +164,7 @@ export function CashFlowReport({
             {formatCurrency(data.totals.net_balance)}
           </p>
           <p className="text-xs text-slate-400">
-            No periodo de {period === '3m' ? '3' : period === '6m' ? '6' : '12'} meses
+            Periodo selecionado
           </p>
         </div>
 

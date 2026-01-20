@@ -122,6 +122,81 @@ export const ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
   INVESTIMENTO: 'Investimento',
 };
 
+// ==================== DASHBOARD TYPES ====================
+
+export interface FinanceSummary {
+  total_balance: number;
+  benefit_balance: number;
+  total_pending_expenses: number;
+  total_pending_income: number;
+  month_result: number;
+  month_expenses: number;
+  month_income: number;
+}
+
+export interface ExpensesByCategory {
+  category_id: string;
+  category_name: string;
+  category_color: string;
+  category_icon: string;
+  total: number;
+  percentage: number;
+}
+
+export interface UpcomingPayment {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  days_until_due: number;
+  category: FinanceCategory;
+  credit_card?: {
+    id: string;
+    name: string;
+    brand: string;
+    color: string;
+  };
+}
+
+export interface BudgetAllocation {
+  category: BudgetCategory;
+  label: string;
+  ideal_percentage: number;
+  actual_amount: number;
+  paid_amount: number;
+  pending_amount: number;
+  actual_percentage: number;
+  paid_percentage: number;
+  pending_percentage: number;
+  status: 'on_track' | 'over_budget' | 'under_budget';
+  difference: number;
+}
+
+export interface BudgetSummary {
+  total_income: number;
+  allocations: BudgetAllocation[];
+  month: string;
+}
+
+// Budget category colors and labels
+export const BUDGET_CATEGORY_COLORS: Record<BudgetCategory, string> = {
+  ESSENCIAL: '#3b82f6',
+  ESTILO_VIDA: '#22c55e',
+  INVESTIMENTO: '#f59e0b',
+};
+
+export const BUDGET_CATEGORY_LABELS: Record<BudgetCategory, string> = {
+  ESSENCIAL: 'Essenciais',
+  ESTILO_VIDA: 'Estilo de Vida',
+  INVESTIMENTO: 'Investimentos',
+};
+
+export const BUDGET_STATUS_LABELS: Record<BudgetAllocation['status'], string> = {
+  on_track: 'No limite',
+  over_budget: 'Acima',
+  under_budget: 'Abaixo',
+};
+
 // ==================== HELPERS ====================
 
 export function formatCurrency(value: number): string {

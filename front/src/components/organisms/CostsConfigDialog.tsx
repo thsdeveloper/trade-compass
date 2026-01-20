@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Settings } from 'lucide-react';
 import type { CostsConfig } from '@/types/daytrade';
@@ -81,14 +82,10 @@ export function CostsConfigDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="winfut_cost">Custo por contrato (R$)</Label>
-                <Input
+                <CurrencyInput
                   id="winfut_cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
                   value={winfutCost}
-                  onChange={(e) => setWinfutCost(parseFloat(e.target.value) || 0)}
-                  required
+                  onChange={setWinfutCost}
                 />
                 <p className="text-xs text-muted-foreground">
                   Custo total = R$ {winfutCost.toFixed(2)} x contratos x 2 (entrada + saida)
@@ -103,14 +100,10 @@ export function CostsConfigDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="wdofut_cost">Custo por contrato (R$)</Label>
-                <Input
+                <CurrencyInput
                   id="wdofut_cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
                   value={wdofutCost}
-                  onChange={(e) => setWdofutCost(parseFloat(e.target.value) || 0)}
-                  required
+                  onChange={setWdofutCost}
                 />
                 <p className="text-xs text-muted-foreground">
                   Custo total = R$ {wdofutCost.toFixed(2)} x contratos x 2 (entrada + saida)

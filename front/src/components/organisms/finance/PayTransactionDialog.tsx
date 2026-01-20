@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import {
   Select,
   SelectContent,
@@ -69,20 +70,6 @@ const themeConfig = {
   },
 };
 
-function formatCurrencyInput(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function parseCurrencyInput(value: string): number {
-  // Remove tudo exceto digitos e virgula
-  const cleaned = value.replace(/[^\d,]/g, '');
-  // Substitui virgula por ponto
-  const normalized = cleaned.replace(',', '.');
-  return parseFloat(normalized) || 0;
-}
 
 function getDateFromSelection(selection: DateSelection, customDate: string): string {
   const today = new Date();
@@ -116,7 +103,7 @@ export function PayTransactionDialog({
   onConfirm,
 }: PayTransactionDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [amountInput, setAmountInput] = useState('');
+  const [paidAmount, setPaidAmount] = useState(0);
   const [dateSelection, setDateSelection] = useState<DateSelection>('today');
   const [customDate, setCustomDate] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -125,7 +112,7 @@ export function PayTransactionDialog({
   // Reset state when transaction changes
   useEffect(() => {
     if (transaction && open) {
-      setAmountInput(formatCurrencyInput(transaction.amount));
+      setPaidAmount(transaction.amount);
       setDateSelection('today');
       setCustomDate(new Date().toISOString().split('T')[0]);
       setSelectedAccountId(transaction.account_id || '');
@@ -134,24 +121,9 @@ export function PayTransactionDialog({
 
   const theme = transaction?.type === 'RECEITA' ? themeConfig.RECEITA : themeConfig.DESPESA;
 
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    // Permite apenas digitos, virgula e ponto
-    const cleaned = value.replace(/[^\d.,]/g, '');
-    setAmountInput(cleaned);
-  };
-
-  const handleAmountBlur = () => {
-    const parsed = parseCurrencyInput(amountInput);
-    if (parsed > 0) {
-      setAmountInput(formatCurrencyInput(parsed));
-    }
-  };
-
   const handleConfirm = useCallback(async () => {
     if (!transaction) return;
 
-    const paidAmount = parseCurrencyInput(amountInput);
     if (paidAmount <= 0) return;
 
     const paymentDate = getDateFromSelection(dateSelection, customDate);
@@ -169,7 +141,7 @@ export function PayTransactionDialog({
     } finally {
       setLoading(false);
     }
-  }, [transaction, amountInput, dateSelection, customDate, selectedAccountId, onConfirm, onOpenChange]);
+  }, [transaction, paidAmount, dateSelection, customDate, selectedAccountId, onConfirm, onOpenChange]);
 
   const handleDateChipClick = (selection: DateSelection) => {
     if (selection === 'custom') {
@@ -192,7 +164,6 @@ export function PayTransactionDialog({
 
   if (!transaction) return null;
 
-  const paidAmount = parseCurrencyInput(amountInput);
   const isValid = paidAmount > 0 && selectedAccountId;
 
   // Filtrar apenas contas ativas
@@ -217,11 +188,10 @@ export function PayTransactionDialog({
               <Calendar className={cn('h-4 w-4', theme.iconColor)} />
             </div>
             <div className={cn('flex flex-1 items-center rounded-lg border px-3 py-2', theme.amountBorder)}>
-              <span className={cn('mr-1 text-base font-medium', theme.amountColor)}>R$</span>
-              <Input
-                value={amountInput}
-                onChange={handleAmountChange}
-                onBlur={handleAmountBlur}
+              <CurrencyInput
+                value={paidAmount}
+                onChange={setPaidAmount}
+                showPrefix
                 className={cn(
                   'flex-1 border-0 bg-transparent p-0 text-base font-medium shadow-none focus-visible:ring-0',
                   theme.amountColor
@@ -258,7 +228,7 @@ export function PayTransactionDialog({
               >
                 Ontem
               </button>
-              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen} modal={false}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"

@@ -8,7 +8,6 @@ import type {
   GoalsProgressReportData,
   RecurringAnalysisReportData,
   YoYComparisonReportData,
-  ReportPeriod,
 } from '../../../domain/report-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -21,29 +20,56 @@ import {
   getYoYComparisonReport,
 } from '../../../data/finance/report-repository.js';
 
-const VALID_PERIODS: ReportPeriod[] = ['3m', '6m', '12m'];
+function validateDateFormat(date: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date);
+}
+
+function getDefaultDateRange(): { startDate: string; endDate: string } {
+  const now = new Date();
+  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startDate = new Date(endDate);
+  startDate.setMonth(startDate.getMonth() - 6);
+  startDate.setDate(startDate.getDate() + 1);
+
+  return {
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
+  };
+}
 
 export async function reportsRoutes(app: FastifyInstance) {
   // GET /finance/reports/cash-flow - Cash flow report
   app.get<{
-    Querystring: { period?: string; include_pending?: string };
+    Querystring: { start_date?: string; end_date?: string; include_pending?: string };
     Reply: CashFlowReportData | ApiError;
   }>('/finance/reports/cash-flow', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
-    const { period = '6m', include_pending = 'true' } = request.query;
+    const { start_date, end_date, include_pending = 'true' } = request.query;
 
-    if (!VALID_PERIODS.includes(period as ReportPeriod)) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Periodo deve ser 3m, 6m ou 12m',
-        statusCode: 400,
-      });
+    let startDate: string;
+    let endDate: string;
+
+    if (start_date && end_date) {
+      if (!validateDateFormat(start_date) || !validateDateFormat(end_date)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Formato de data invalido. Use YYYY-MM-DD',
+          statusCode: 400,
+        });
+      }
+      startDate = start_date;
+      endDate = end_date;
+    } else {
+      const defaultRange = getDefaultDateRange();
+      startDate = defaultRange.startDate;
+      endDate = defaultRange.endDate;
     }
 
     try {
       const data = await getCashFlowReport(
         user.id,
-        period as ReportPeriod,
+        startDate,
+        endDate,
         include_pending === 'true',
         accessToken
       );
@@ -60,24 +86,36 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // GET /finance/reports/budget-analysis - Budget 50-30-20 analysis
   app.get<{
-    Querystring: { period?: string; include_pending?: string };
+    Querystring: { start_date?: string; end_date?: string; include_pending?: string };
     Reply: BudgetAnalysisReportData | ApiError;
   }>('/finance/reports/budget-analysis', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
-    const { period = '6m', include_pending = 'true' } = request.query;
+    const { start_date, end_date, include_pending = 'true' } = request.query;
 
-    if (!VALID_PERIODS.includes(period as ReportPeriod)) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Periodo deve ser 3m, 6m ou 12m',
-        statusCode: 400,
-      });
+    let startDate: string;
+    let endDate: string;
+
+    if (start_date && end_date) {
+      if (!validateDateFormat(start_date) || !validateDateFormat(end_date)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Formato de data invalido. Use YYYY-MM-DD',
+          statusCode: 400,
+        });
+      }
+      startDate = start_date;
+      endDate = end_date;
+    } else {
+      const defaultRange = getDefaultDateRange();
+      startDate = defaultRange.startDate;
+      endDate = defaultRange.endDate;
     }
 
     try {
       const data = await getBudgetAnalysisReport(
         user.id,
-        period as ReportPeriod,
+        startDate,
+        endDate,
         include_pending === 'true',
         accessToken
       );
@@ -94,24 +132,36 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // GET /finance/reports/category-breakdown - Expenses by category
   app.get<{
-    Querystring: { period?: string; include_pending?: string };
+    Querystring: { start_date?: string; end_date?: string; include_pending?: string };
     Reply: CategoryBreakdownReportData | ApiError;
   }>('/finance/reports/category-breakdown', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
-    const { period = '6m', include_pending = 'true' } = request.query;
+    const { start_date, end_date, include_pending = 'true' } = request.query;
 
-    if (!VALID_PERIODS.includes(period as ReportPeriod)) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Periodo deve ser 3m, 6m ou 12m',
-        statusCode: 400,
-      });
+    let startDate: string;
+    let endDate: string;
+
+    if (start_date && end_date) {
+      if (!validateDateFormat(start_date) || !validateDateFormat(end_date)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Formato de data invalido. Use YYYY-MM-DD',
+          statusCode: 400,
+        });
+      }
+      startDate = start_date;
+      endDate = end_date;
+    } else {
+      const defaultRange = getDefaultDateRange();
+      startDate = defaultRange.startDate;
+      endDate = defaultRange.endDate;
     }
 
     try {
       const data = await getCategoryBreakdownReport(
         user.id,
-        period as ReportPeriod,
+        startDate,
+        endDate,
         include_pending === 'true',
         accessToken
       );
@@ -128,24 +178,36 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // GET /finance/reports/payment-methods - Payment methods analysis
   app.get<{
-    Querystring: { period?: string; include_pending?: string };
+    Querystring: { start_date?: string; end_date?: string; include_pending?: string };
     Reply: PaymentMethodsReportData | ApiError;
   }>('/finance/reports/payment-methods', async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
-    const { period = '6m', include_pending = 'true' } = request.query;
+    const { start_date, end_date, include_pending = 'true' } = request.query;
 
-    if (!VALID_PERIODS.includes(period as ReportPeriod)) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Periodo deve ser 3m, 6m ou 12m',
-        statusCode: 400,
-      });
+    let startDate: string;
+    let endDate: string;
+
+    if (start_date && end_date) {
+      if (!validateDateFormat(start_date) || !validateDateFormat(end_date)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Formato de data invalido. Use YYYY-MM-DD',
+          statusCode: 400,
+        });
+      }
+      startDate = start_date;
+      endDate = end_date;
+    } else {
+      const defaultRange = getDefaultDateRange();
+      startDate = defaultRange.startDate;
+      endDate = defaultRange.endDate;
     }
 
     try {
       const data = await getPaymentMethodsReport(
         user.id,
-        period as ReportPeriod,
+        startDate,
+        endDate,
         include_pending === 'true',
         accessToken
       );

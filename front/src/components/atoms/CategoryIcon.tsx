@@ -391,6 +391,7 @@ export const DEFAULT_CATEGORY_ICONS: Record<FinanceCategoryType, string> = {
   SALARIO: 'Wallet',
   FREELANCE: 'Zap',
   DIVIDA: 'CreditCard',
+  BENEFICIO: 'Gift',
   OUTROS: 'Tag',
 };
 
@@ -519,7 +520,7 @@ export const ColorPicker = memo(function ColorPicker({ value, onChange }: ColorP
   }, []);
 
   return (
-    <Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
+    <Popover open={isPickerOpen} onOpenChange={setIsPickerOpen} modal={false}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -631,7 +632,7 @@ export const IconSelector = memo(function IconSelector({ value, onChange, color 
   const iconsToShow = filteredIcons || ICON_CATEGORIES[activeCategory].icons;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <button
           type="button"

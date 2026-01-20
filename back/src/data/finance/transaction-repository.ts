@@ -153,6 +153,7 @@ export async function createTransaction(
       category_id: transaction.category_id,
       account_id: transaction.account_id || null,
       credit_card_id: transaction.credit_card_id || null,
+      goal_id: transaction.goal_id || null,
       type: transaction.type,
       status: 'PENDENTE',
       description: transaction.description,
@@ -445,6 +446,291 @@ export async function cancelAllRecurrenceTransactions(
 
   if (error) {
     throw new Error(`Erro ao cancelar transacoes da recorrencia: ${error.message}`);
+  }
+}
+
+// Filtra campos editaveis baseado no status da transacao
+function filterEditableFields(
+  updates: UpdateTransactionDTO,
+  status: string
+): Partial<UpdateTransactionDTO> {
+  // Extrair tag_ids pois nao vai direto para o banco
+  const { tag_ids, ...dbUpdates } = updates;
+
+  if (status === 'PAGO') {
+    // Transacoes pagas so podem ter categoria, descricao e notas editados
+    return removeUndefinedFields({
+      category_id: dbUpdates.category_id,
+      description: dbUpdates.description,
+      notes: dbUpdates.notes,
+    });
+  }
+
+  return removeUndefinedFields(dbUpdates);
+}
+
+// Filtra campos editaveis para edicao em lote (nao permite due_date e description)
+function filterBatchEditableFields(
+  updates: UpdateTransactionDTO
+): Partial<UpdateTransactionDTO> {
+  // Extrair tag_ids e campos que nao podem ser editados em lote
+  const { tag_ids, due_date, description, ...dbUpdates } = updates;
+
+  return removeUndefinedFields(dbUpdates);
+}
+
+// Remove campos undefined do objeto para evitar sobrescrever com null
+function removeUndefinedFields<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {};
+  for (const key of Object.keys(obj) as Array<keyof T>) {
+    if (obj[key] !== undefined) {
+      result[key] = obj[key];
+    }
+  }
+  return result;
+}
+
+// Atualiza transacoes de uma recorrencia com opcoes de escopo
+export async function updateRecurrenceTransactions(
+  transactionId: string,
+  userId: string,
+  recurrenceId: string,
+  dueDate: string,
+  currentStatus: string,
+  updates: UpdateTransactionDTO,
+  option: 'only_this' | 'this_and_future' | 'all',
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  // Filtrar campos editaveis baseado no status da transacao atual
+  const safeUpdates = filterEditableFields(updates, currentStatus);
+  const { tag_ids } = updates;
+
+  switch (option) {
+    case 'only_this': {
+      // Atualizar apenas esta transacao
+      if (Object.keys(safeUpdates).length > 0) {
+        const { error } = await client
+          .from(TABLE)
+          .update(safeUpdates)
+          .eq('id', transactionId)
+          .eq('user_id', userId);
+
+        if (error) {
+          throw new Error(`Erro ao atualizar transacao: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags se fornecidas
+      if (tag_ids !== undefined) {
+        await setTransactionTags(transactionId, tag_ids, accessToken);
+      }
+      break;
+    }
+
+    case 'this_and_future': {
+      // Para editar em lote, nao permitir due_date e description (cada transacao tem sua propria)
+      const batchUpdates = filterBatchEditableFields(updates);
+
+      if (Object.keys(batchUpdates).length > 0) {
+        // Atualizar esta e futuras PENDENTES
+        const { error } = await client
+          .from(TABLE)
+          .update(batchUpdates)
+          .eq('recurrence_id', recurrenceId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE')
+          .gte('due_date', dueDate);
+
+        if (error) {
+          throw new Error(`Erro ao atualizar transacoes: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags em todas as afetadas
+      if (tag_ids !== undefined) {
+        const { data: affectedTransactions } = await client
+          .from(TABLE)
+          .select('id')
+          .eq('recurrence_id', recurrenceId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE')
+          .gte('due_date', dueDate);
+
+        if (affectedTransactions) {
+          await Promise.all(
+            affectedTransactions.map((tx) =>
+              setTransactionTags(tx.id, tag_ids, accessToken)
+            )
+          );
+        }
+      }
+      break;
+    }
+
+    case 'all': {
+      // Para editar em lote, nao permitir due_date e description (cada transacao tem sua propria)
+      const batchUpdates = filterBatchEditableFields(updates);
+
+      if (Object.keys(batchUpdates).length > 0) {
+        // Atualizar todas PENDENTES da recorrencia
+        const { error } = await client
+          .from(TABLE)
+          .update(batchUpdates)
+          .eq('recurrence_id', recurrenceId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE');
+
+        if (error) {
+          throw new Error(`Erro ao atualizar transacoes: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags em todas as afetadas
+      if (tag_ids !== undefined) {
+        const { data: affectedTransactions } = await client
+          .from(TABLE)
+          .select('id')
+          .eq('recurrence_id', recurrenceId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE');
+
+        if (affectedTransactions) {
+          await Promise.all(
+            affectedTransactions.map((tx) =>
+              setTransactionTags(tx.id, tag_ids, accessToken)
+            )
+          );
+        }
+      }
+      break;
+    }
+
+    default:
+      throw new Error('Opcao invalida');
+  }
+}
+
+// Atualiza transacoes de um parcelamento com opcoes de escopo
+export async function updateInstallmentTransactions(
+  transactionId: string,
+  userId: string,
+  installmentGroupId: string,
+  dueDate: string,
+  currentStatus: string,
+  updates: UpdateTransactionDTO,
+  option: 'only_this' | 'this_and_future' | 'all',
+  accessToken: string
+): Promise<void> {
+  const client = createUserClient(accessToken);
+
+  // Filtrar campos editaveis baseado no status da transacao atual
+  const safeUpdates = filterEditableFields(updates, currentStatus);
+  const { tag_ids } = updates;
+
+  switch (option) {
+    case 'only_this': {
+      // Atualizar apenas esta parcela
+      if (Object.keys(safeUpdates).length > 0) {
+        const { error } = await client
+          .from(TABLE)
+          .update(safeUpdates)
+          .eq('id', transactionId)
+          .eq('user_id', userId);
+
+        if (error) {
+          throw new Error(`Erro ao atualizar parcela: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags se fornecidas
+      if (tag_ids !== undefined) {
+        await setTransactionTags(transactionId, tag_ids, accessToken);
+      }
+      break;
+    }
+
+    case 'this_and_future': {
+      // Para editar em lote, nao permitir due_date e description (cada parcela tem sua propria)
+      const batchUpdates = filterBatchEditableFields(updates);
+
+      if (Object.keys(batchUpdates).length > 0) {
+        // Atualizar esta e futuras PENDENTES
+        const { error } = await client
+          .from(TABLE)
+          .update(batchUpdates)
+          .eq('installment_group_id', installmentGroupId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE')
+          .gte('due_date', dueDate);
+
+        if (error) {
+          throw new Error(`Erro ao atualizar parcelas: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags em todas as afetadas
+      if (tag_ids !== undefined) {
+        const { data: affectedTransactions } = await client
+          .from(TABLE)
+          .select('id')
+          .eq('installment_group_id', installmentGroupId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE')
+          .gte('due_date', dueDate);
+
+        if (affectedTransactions) {
+          await Promise.all(
+            affectedTransactions.map((tx) =>
+              setTransactionTags(tx.id, tag_ids, accessToken)
+            )
+          );
+        }
+      }
+      break;
+    }
+
+    case 'all': {
+      // Para editar em lote, nao permitir due_date e description (cada parcela tem sua propria)
+      const batchUpdates = filterBatchEditableFields(updates);
+
+      if (Object.keys(batchUpdates).length > 0) {
+        // Atualizar todas PENDENTES do parcelamento
+        const { error } = await client
+          .from(TABLE)
+          .update(batchUpdates)
+          .eq('installment_group_id', installmentGroupId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE');
+
+        if (error) {
+          throw new Error(`Erro ao atualizar parcelas: ${error.message}`);
+        }
+      }
+
+      // Atualizar tags em todas as afetadas
+      if (tag_ids !== undefined) {
+        const { data: affectedTransactions } = await client
+          .from(TABLE)
+          .select('id')
+          .eq('installment_group_id', installmentGroupId)
+          .eq('user_id', userId)
+          .eq('status', 'PENDENTE');
+
+        if (affectedTransactions) {
+          await Promise.all(
+            affectedTransactions.map((tx) =>
+              setTransactionTags(tx.id, tag_ids, accessToken)
+            )
+          );
+        }
+      }
+      break;
+    }
+
+    default:
+      throw new Error('Opcao invalida');
   }
 }
 

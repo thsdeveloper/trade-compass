@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -244,35 +245,28 @@ export function TradeDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="entry_price" className="text-[12px] font-medium">Preco de Entrada</Label>
-              <Input
+              <CurrencyInput
                 id="entry_price"
-                type="number"
-                step="0.01"
-                value={formData.entry_price || ''}
-                onChange={(e) =>
+                value={formData.entry_price}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    entry_price: parseFloat(e.target.value) || 0,
+                    entry_price: value,
                   })
                 }
                 className="h-9 text-[13px]"
-                required
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="exit_price" className="text-[12px] font-medium">Preco de Saida</Label>
-              <Input
+              <CurrencyInput
                 id="exit_price"
-                type="number"
-                step="0.01"
-                value={formData.exit_price ?? ''}
-                onChange={(e) =>
+                value={formData.exit_price ?? 0}
+                onChange={(value) =>
                   setFormData({
                     ...formData,
-                    exit_price: e.target.value
-                      ? parseFloat(e.target.value)
-                      : undefined,
+                    exit_price: value || undefined,
                   })
                 }
                 className="h-9 text-[13px]"
@@ -363,15 +357,13 @@ export function TradeDialog({
                 <Label htmlFor="stop_price" className="text-[11px] font-medium text-red-600">
                   Stop
                 </Label>
-                <Input
+                <CurrencyInput
                   id="stop_price"
-                  type="number"
-                  step="0.01"
-                  value={formData.stop_price ?? ''}
-                  onChange={(e) =>
+                  value={formData.stop_price ?? 0}
+                  onChange={(value) =>
                     setFormData({
                       ...formData,
-                      stop_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                      stop_price: value || undefined,
                     })
                   }
                   className="h-8 text-[12px]"
@@ -382,15 +374,13 @@ export function TradeDialog({
                 <Label htmlFor="partial_price" className="text-[11px] font-medium text-amber-600">
                   Parcial
                 </Label>
-                <Input
+                <CurrencyInput
                   id="partial_price"
-                  type="number"
-                  step="0.01"
-                  value={formData.partial_price ?? ''}
-                  onChange={(e) =>
+                  value={formData.partial_price ?? 0}
+                  onChange={(value) =>
                     setFormData({
                       ...formData,
-                      partial_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                      partial_price: value || undefined,
                     })
                   }
                   className="h-8 text-[12px]"
@@ -401,15 +391,13 @@ export function TradeDialog({
                 <Label htmlFor="target_price" className="text-[11px] font-medium text-emerald-600">
                   Alvo
                 </Label>
-                <Input
+                <CurrencyInput
                   id="target_price"
-                  type="number"
-                  step="0.01"
-                  value={formData.target_price ?? ''}
-                  onChange={(e) =>
+                  value={formData.target_price ?? 0}
+                  onChange={(value) =>
                     setFormData({
                       ...formData,
-                      target_price: e.target.value ? parseFloat(e.target.value) : undefined,
+                      target_price: value || undefined,
                     })
                   }
                   className="h-8 text-[12px]"

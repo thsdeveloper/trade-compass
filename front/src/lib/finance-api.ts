@@ -45,6 +45,9 @@ import type {
   FinanceGoalStatus,
   FinanceGoalCategory,
   FinanceGoalPriority,
+  FinanceGoalContribution,
+  GoalContributionFormData,
+  GoalContributionItem,
 } from '@/types/finance';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -353,6 +356,38 @@ class FinanceApiClient {
     );
   }
 
+  async updateRecurrenceTransaction(
+    transactionId: string,
+    data: Partial<TransactionFormData>,
+    option: 'only_this' | 'this_and_future' | 'all',
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(
+      `/finance/transactions/${transactionId}/recurrence`,
+      accessToken,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ ...data, option }),
+      }
+    );
+  }
+
+  async updateInstallmentTransaction(
+    transactionId: string,
+    data: Partial<TransactionFormData>,
+    option: 'only_this' | 'this_and_future' | 'all',
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(
+      `/finance/transactions/${transactionId}/installment`,
+      accessToken,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ ...data, option }),
+      }
+    );
+  }
+
   // Transfers
   async createTransfer(
     data: TransferFormData,
@@ -608,6 +643,10 @@ class FinanceApiClient {
     return this.authFetch('/finance/banks/popular', accessToken);
   }
 
+  async getBenefitProviders(accessToken: string): Promise<Bank[]> {
+    return this.authFetch('/finance/banks/benefit-providers', accessToken);
+  }
+
   async getBankById(id: string, accessToken: string): Promise<Bank> {
     return this.authFetch(`/finance/banks/${id}`, accessToken);
   }
@@ -677,14 +716,44 @@ class FinanceApiClient {
     return this.authFetch(`/finance/goals/${goalId}/contributions`, accessToken);
   }
 
+  async getGoalContributionHistory(
+    goalId: string,
+    accessToken: string
+  ): Promise<GoalContributionItem[]> {
+    return this.authFetch(`/finance/goals/${goalId}/contributions/history`, accessToken);
+  }
+
+  async createGoalContribution(
+    goalId: string,
+    data: GoalContributionFormData,
+    accessToken: string
+  ): Promise<FinanceGoalContribution> {
+    return this.authFetch(`/finance/goals/${goalId}/contributions`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGoalContribution(
+    goalId: string,
+    contributionId: string,
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(`/finance/goals/${goalId}/contributions/${contributionId}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
   // Reports
   async getCashFlowReport(
     accessToken: string,
-    period: string = '6m',
+    startDate: string,
+    endDate: string,
     includePending: boolean = true
   ): Promise<import('@/types/reports').CashFlowReportData> {
     const params = new URLSearchParams({
-      period,
+      start_date: startDate,
+      end_date: endDate,
       include_pending: String(includePending),
     });
     return this.authFetch(`/finance/reports/cash-flow?${params}`, accessToken);
@@ -692,11 +761,13 @@ class FinanceApiClient {
 
   async getBudgetAnalysisReport(
     accessToken: string,
-    period: string = '6m',
+    startDate: string,
+    endDate: string,
     includePending: boolean = true
   ): Promise<import('@/types/reports').BudgetAnalysisReportData> {
     const params = new URLSearchParams({
-      period,
+      start_date: startDate,
+      end_date: endDate,
       include_pending: String(includePending),
     });
     return this.authFetch(`/finance/reports/budget-analysis?${params}`, accessToken);
@@ -704,11 +775,13 @@ class FinanceApiClient {
 
   async getCategoryBreakdownReport(
     accessToken: string,
-    period: string = '6m',
+    startDate: string,
+    endDate: string,
     includePending: boolean = true
   ): Promise<import('@/types/reports').CategoryBreakdownReportData> {
     const params = new URLSearchParams({
-      period,
+      start_date: startDate,
+      end_date: endDate,
       include_pending: String(includePending),
     });
     return this.authFetch(`/finance/reports/category-breakdown?${params}`, accessToken);
@@ -716,11 +789,13 @@ class FinanceApiClient {
 
   async getPaymentMethodsReport(
     accessToken: string,
-    period: string = '6m',
+    startDate: string,
+    endDate: string,
     includePending: boolean = true
   ): Promise<import('@/types/reports').PaymentMethodsReportData> {
     const params = new URLSearchParams({
-      period,
+      start_date: startDate,
+      end_date: endDate,
       include_pending: String(includePending),
     });
     return this.authFetch(`/finance/reports/payment-methods?${params}`, accessToken);

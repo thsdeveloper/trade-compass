@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -176,16 +177,13 @@ export function DebtDialog({ open, onOpenChange, onSave, debt }: DebtDialogProps
                   <Label htmlFor="original_amount" className="text-xs font-medium">
                     Valor Original <span className="text-red-500">*</span>
                   </Label>
-                  <Input
+                  <CurrencyInput
                     id="original_amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.original_amount || ''}
-                    onChange={(e) =>
+                    value={formData.original_amount}
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        original_amount: parseFloat(e.target.value) || 0,
+                        original_amount: value,
                       })
                     }
                     placeholder="0,00"
@@ -197,16 +195,13 @@ export function DebtDialog({ open, onOpenChange, onSave, debt }: DebtDialogProps
                   <Label htmlFor="updated_amount" className="text-xs font-medium">
                     Valor Atualizado <span className="text-red-500">*</span>
                   </Label>
-                  <Input
+                  <CurrencyInput
                     id="updated_amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.updated_amount || ''}
-                    onChange={(e) =>
+                    value={formData.updated_amount}
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        updated_amount: parseFloat(e.target.value) || 0,
+                        updated_amount: value,
                       })
                     }
                     placeholder="0,00"

@@ -6,6 +6,7 @@ import {
   searchBanks,
   getBankById,
   getPopularBanks,
+  getBenefitProviders,
 } from '../../../data/finance/bank-repository.js';
 
 export async function bankRoutes(app: FastifyInstance) {
@@ -44,6 +45,23 @@ export async function bankRoutes(app: FastifyInstance) {
       return banksList;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao buscar bancos populares';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/banks/benefit-providers - Listar empresas de beneficios
+  app.get<{
+    Reply: Bank[] | ApiError;
+  }>('/finance/banks/benefit-providers', async (_request, reply) => {
+    try {
+      const providers = await getBenefitProviders();
+      return providers;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar empresas de beneficios';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

@@ -11,6 +11,43 @@ export type ReportType =
 
 export type ReportPeriod = '3m' | '6m' | '12m';
 
+// ==================== DATE PRESETS ====================
+
+export type DatePreset =
+  | 'today'
+  | '1w'
+  | '2w'
+  | '1m'
+  | '3m'
+  | '6m'
+  | '12m'
+  | 'ytd'
+  | 'custom';
+
+export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export interface ReportDateFilter {
+  preset: DatePreset | null;
+  customYear?: number;
+  dateRange: DateRange;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+}
+
+export const DATE_PRESET_CONFIG: { key: DatePreset; label: string; short: string }[] = [
+  { key: 'today', label: 'Hoje', short: 'Hoje' },
+  { key: '1w', label: '7 dias', short: '7d' },
+  { key: '2w', label: '15 dias', short: '15d' },
+  { key: '1m', label: '1 mes', short: '1m' },
+  { key: '3m', label: '3 meses', short: '3m' },
+  { key: '6m', label: '6 meses', short: '6m' },
+  { key: '12m', label: '12 meses', short: '12m' },
+  { key: 'ytd', label: 'YTD', short: 'YTD' },
+];
+
 // ==================== COMMON FILTERS ====================
 
 export interface ReportFilters {

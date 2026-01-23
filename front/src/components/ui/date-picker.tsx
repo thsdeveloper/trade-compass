@@ -21,6 +21,8 @@ export interface DatePickerProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  fromYear?: number;
+  toYear?: number;
 }
 
 function DatePicker({
@@ -30,6 +32,8 @@ function DatePicker({
   disabled = false,
   className,
   id,
+  fromYear,
+  toYear,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -77,6 +81,8 @@ function DatePicker({
           onSelect={handleSelect}
           locale={ptBR}
           initialFocus
+          fromYear={fromYear}
+          toYear={toYear}
         />
       </PopoverContent>
     </Popover>

@@ -10,6 +10,8 @@ import { tagRoutes } from './tags.js';
 import { bankRoutes } from './banks.js';
 import { goalRoutes } from './goals.js';
 import { reportsRoutes } from './reports.js';
+import { fixedIncomeRoutes } from './fixed-income.js';
+import { mortgageRoutes } from './mortgages.js';
 
 export async function financeRoutes(app: FastifyInstance) {
   // Apply auth middleware to all routes in this plugin
@@ -30,4 +32,6 @@ export async function financeRoutes(app: FastifyInstance) {
   await bankRoutes(app);
   await goalRoutes(app);
   await reportsRoutes(app);
+  await fixedIncomeRoutes(app);
+  await mortgageRoutes(app);
 }

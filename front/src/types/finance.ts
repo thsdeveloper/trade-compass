@@ -1,20 +1,6 @@
 // ==================== ENUMS ====================
 
-export type FinanceCategoryType =
-  | 'MORADIA'
-  | 'ALIMENTACAO'
-  | 'TRANSPORTE'
-  | 'SAUDE'
-  | 'LAZER'
-  | 'EDUCACAO'
-  | 'VESTUARIO'
-  | 'SERVICOS'
-  | 'INVESTIMENTOS'
-  | 'SALARIO'
-  | 'FREELANCE'
-  | 'DIVIDA'
-  | 'BENEFICIO'
-  | 'OUTROS';
+export type FinanceCategoryType = 'DESPESA' | 'RECEITA';
 
 export type FinanceAccountType =
   | 'CONTA_CORRENTE'
@@ -406,20 +392,8 @@ export interface YearSummary {
 // ==================== LABELS ====================
 
 export const CATEGORY_TYPE_LABELS: Record<FinanceCategoryType, string> = {
-  MORADIA: 'Moradia',
-  ALIMENTACAO: 'Alimentacao',
-  TRANSPORTE: 'Transporte',
-  SAUDE: 'Saude',
-  LAZER: 'Lazer',
-  EDUCACAO: 'Educacao',
-  VESTUARIO: 'Vestuario',
-  SERVICOS: 'Servicos',
-  INVESTIMENTOS: 'Investimentos',
-  SALARIO: 'Salario',
-  FREELANCE: 'Freelance',
-  DIVIDA: 'Divida',
-  BENEFICIO: 'Beneficio',
-  OUTROS: 'Outros',
+  DESPESA: 'Despesa',
+  RECEITA: 'Receita',
 };
 
 export const BUDGET_CATEGORY_LABELS: Record<BudgetCategory, string> = {
@@ -789,14 +763,14 @@ export interface GoalContributionFormData {
   description?: string;
 }
 
-// Item unificado do histórico (transação ou manual)
+// Item unificado do histórico (transação, manual ou investimento)
 export interface GoalContributionItem {
   id: string;
-  type: 'transaction' | 'manual';
+  type: 'transaction' | 'manual' | 'investment';
   amount: number;
   date: string;
   description: string;
-  status?: string; // Apenas para transações
+  status?: string; // Para transações e investimentos
 }
 
 // ==================== GOAL LABELS ====================
@@ -877,4 +851,797 @@ export function getPriorityColor(priority: FinanceGoalPriority): string {
     default:
       return 'text-gray-600';
   }
+}
+
+// ==================== PLANNING (50/30/20) TYPES ====================
+
+export type PlanningStatus = 'on_track' | 'at_risk' | 'over_budget' | 'under_budget';
+
+export type PlanningTrend = 'increasing' | 'stable' | 'decreasing';
+
+export type RecommendationType = 'warning' | 'suggestion' | 'achievement';
+
+export type RecommendationPriority = 'high' | 'medium' | 'low';
+
+export interface PlanningProjection {
+  category: BudgetCategory;
+  current_amount: number;
+  projected_end_of_month: number;
+  ideal_amount: number;
+  daily_average: number;
+  days_remaining: number;
+  trend: PlanningTrend;
+  status: PlanningStatus;
+}
+
+export interface PlanningRecommendation {
+  id: string;
+  category: BudgetCategory;
+  type: RecommendationType;
+  priority: RecommendationPriority;
+  title: string;
+  description: string;
+}
+
+export interface CategoryByBucket {
+  category: FinanceCategory;
+  amount: number;
+  percentage: number;
+}
+
+export interface BucketBreakdown {
+  budget_category: BudgetCategory;
+  total: number;
+  ideal: number;
+  percentage: number;
+  categories: CategoryByBucket[];
+  status: PlanningStatus;
+}
+
+// ==================== PLANNING LABELS ====================
+
+export const PLANNING_STATUS_LABELS: Record<PlanningStatus, string> = {
+  on_track: 'No limite',
+  at_risk: 'Em risco',
+  over_budget: 'Acima do limite',
+  under_budget: 'Abaixo do limite',
+};
+
+export const PLANNING_TREND_LABELS: Record<PlanningTrend, string> = {
+  increasing: 'Aumentando',
+  stable: 'Estavel',
+  decreasing: 'Diminuindo',
+};
+
+export const RECOMMENDATION_TYPE_LABELS: Record<RecommendationType, string> = {
+  warning: 'Alerta',
+  suggestion: 'Sugestao',
+  achievement: 'Conquista',
+};
+
+// ==================== PLANNING HELPERS ====================
+
+export function getPlanningStatusColor(status: PlanningStatus): string {
+  switch (status) {
+    case 'on_track':
+      return 'text-emerald-600';
+    case 'at_risk':
+      return 'text-amber-600';
+    case 'over_budget':
+      return 'text-red-600';
+    case 'under_budget':
+      return 'text-blue-600';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+export function getPlanningStatusBgColor(status: PlanningStatus): string {
+  switch (status) {
+    case 'on_track':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'at_risk':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'over_budget':
+      return 'bg-red-50 text-red-700 border-red-200';
+    case 'under_budget':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    default:
+      return 'bg-gray-50 text-gray-700 border-gray-200';
+  }
+}
+
+export function getRecommendationIcon(type: RecommendationType): string {
+  switch (type) {
+    case 'warning':
+      return 'AlertTriangle';
+    case 'suggestion':
+      return 'Lightbulb';
+    case 'achievement':
+      return 'Trophy';
+    default:
+      return 'Info';
+  }
+}
+
+export function getRecommendationColor(type: RecommendationType): string {
+  switch (type) {
+    case 'warning':
+      return 'text-amber-600';
+    case 'suggestion':
+      return 'text-blue-600';
+    case 'achievement':
+      return 'text-emerald-600';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+// ==================== FIXED INCOME TYPES ====================
+
+export type FixedIncomeType =
+  | 'CDB'
+  | 'LCI'
+  | 'LCA'
+  | 'TESOURO_SELIC'
+  | 'TESOURO_PREFIXADO'
+  | 'TESOURO_IPCA'
+  | 'DEBENTURE'
+  | 'CRI'
+  | 'CRA'
+  | 'LC'
+  | 'OUTROS';
+
+export type FixedIncomeRateType = 'PRE_FIXADO' | 'POS_FIXADO' | 'HIBRIDO';
+
+export type FixedIncomeRateIndex = 'CDI' | 'SELIC' | 'IPCA' | 'IGPM' | 'NENHUM';
+
+export type FixedIncomeLiquidity =
+  | 'NO_VENCIMENTO'
+  | 'DIARIA'
+  | 'D_PLUS_1'
+  | 'D_PLUS_30'
+  | 'D_PLUS_90'
+  | 'OUTROS';
+
+export type FixedIncomeStatus = 'ATIVO' | 'VENCIDO' | 'RESGATADO' | 'CANCELADO';
+
+export type FixedIncomeMarket = 'PRIMARIO' | 'SECUNDARIO';
+
+// ==================== FIXED INCOME ENTITIES ====================
+
+export interface FinanceFixedIncome {
+  id: string;
+  user_id: string;
+  investment_type: FixedIncomeType;
+  name: string;
+  issuer: string;
+  rate_type: FixedIncomeRateType;
+  rate_value: number;
+  rate_index: FixedIncomeRateIndex;
+  rate_spread: number;
+  amount_invested: number;
+  current_value: number | null;
+  minimum_investment: number | null;
+  purchase_date: string;
+  maturity_date: string;
+  liquidity_type: FixedIncomeLiquidity;
+  market: FixedIncomeMarket;
+  status: FixedIncomeStatus;
+  broker: string | null;
+  custody_account: string | null;
+  notes: string | null;
+  goal_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FixedIncomeWithYield extends FinanceFixedIncome {
+  days_to_maturity: number;
+  days_elapsed: number;
+  total_days: number;
+  gross_yield: number;
+  gross_yield_percentage: number;
+  estimated_final_value: number;
+  progress_percentage: number;
+}
+
+// ==================== FIXED INCOME FORM DATA ====================
+
+export interface FixedIncomeFormData {
+  investment_type: FixedIncomeType;
+  name: string;
+  issuer: string;
+  rate_type: FixedIncomeRateType;
+  rate_value: number;
+  rate_index?: FixedIncomeRateIndex;
+  rate_spread?: number;
+  amount_invested: number;
+  current_value?: number;
+  minimum_investment?: number;
+  purchase_date: string;
+  maturity_date: string;
+  liquidity_type?: FixedIncomeLiquidity;
+  market?: FixedIncomeMarket;
+  broker?: string;
+  custody_account?: string;
+  notes?: string;
+  goal_id?: string;
+}
+
+// ==================== FIXED INCOME RESPONSES ====================
+
+export interface FixedIncomeSummary {
+  total_invested: number;
+  total_current_value: number;
+  total_gross_yield: number;
+  total_yield_percentage: number;
+  active_investments: number;
+  by_type: {
+    type: FixedIncomeType;
+    count: number;
+    total_invested: number;
+    total_current_value: number;
+  }[];
+  by_rate_type: {
+    rate_type: FixedIncomeRateType;
+    count: number;
+    total_invested: number;
+  }[];
+  upcoming_maturities: {
+    id: string;
+    name: string;
+    maturity_date: string;
+    days_to_maturity: number;
+    amount_invested: number;
+    estimated_final_value: number;
+  }[];
+}
+
+// ==================== FIXED INCOME CONTRIBUTIONS ====================
+
+export interface FixedIncomeContribution {
+  id: string;
+  user_id: string;
+  fixed_income_id: string;
+  amount: number;
+  contribution_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FixedIncomeContributionFormData {
+  amount: number;
+  contribution_date: string;
+  description?: string;
+}
+
+export interface FixedIncomeWithContributions extends FixedIncomeWithYield {
+  contributions_count: number;
+  total_contributions: number;
+}
+
+// ==================== FIXED INCOME LABELS ====================
+
+export const FIXED_INCOME_TYPE_LABELS: Record<FixedIncomeType, string> = {
+  CDB: 'CDB',
+  LCI: 'LCI',
+  LCA: 'LCA',
+  TESOURO_SELIC: 'Tesouro Selic',
+  TESOURO_PREFIXADO: 'Tesouro Prefixado',
+  TESOURO_IPCA: 'Tesouro IPCA+',
+  DEBENTURE: 'Debenture',
+  CRI: 'CRI',
+  CRA: 'CRA',
+  LC: 'LC',
+  OUTROS: 'Outros',
+};
+
+export const FIXED_INCOME_RATE_TYPE_LABELS: Record<FixedIncomeRateType, string> = {
+  PRE_FIXADO: 'Pre-fixado',
+  POS_FIXADO: 'Pos-fixado',
+  HIBRIDO: 'Hibrido',
+};
+
+export const FIXED_INCOME_RATE_INDEX_LABELS: Record<FixedIncomeRateIndex, string> = {
+  CDI: 'CDI',
+  SELIC: 'Selic',
+  IPCA: 'IPCA',
+  IGPM: 'IGP-M',
+  NENHUM: 'Nenhum',
+};
+
+export const FIXED_INCOME_LIQUIDITY_LABELS: Record<FixedIncomeLiquidity, string> = {
+  NO_VENCIMENTO: 'No vencimento',
+  DIARIA: 'Liquidez diaria',
+  D_PLUS_1: 'D+1',
+  D_PLUS_30: 'D+30',
+  D_PLUS_90: 'D+90',
+  OUTROS: 'Outros',
+};
+
+export const FIXED_INCOME_STATUS_LABELS: Record<FixedIncomeStatus, string> = {
+  ATIVO: 'Ativo',
+  VENCIDO: 'Vencido',
+  RESGATADO: 'Resgatado',
+  CANCELADO: 'Cancelado',
+};
+
+export const FIXED_INCOME_MARKET_LABELS: Record<FixedIncomeMarket, string> = {
+  PRIMARIO: 'Primario',
+  SECUNDARIO: 'Secundario',
+};
+
+// ==================== FIXED INCOME HELPERS ====================
+
+export function getFixedIncomeStatusColor(status: FixedIncomeStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'text-emerald-600';
+    case 'VENCIDO':
+      return 'text-amber-600';
+    case 'RESGATADO':
+      return 'text-blue-600';
+    case 'CANCELADO':
+      return 'text-gray-400';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+export function getFixedIncomeStatusBgColor(status: FixedIncomeStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'VENCIDO':
+      return 'bg-amber-100 text-amber-800';
+    case 'RESGATADO':
+      return 'bg-blue-100 text-blue-800';
+    case 'CANCELADO':
+      return 'bg-gray-100 text-gray-500';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+export function formatRateDisplay(
+  rateType: FixedIncomeRateType,
+  rateValue: number,
+  rateIndex: FixedIncomeRateIndex,
+  rateSpread: number
+): string {
+  const formattedRate = rateValue.toFixed(2).replace('.', ',');
+
+  switch (rateType) {
+    case 'PRE_FIXADO':
+      return `${formattedRate}% a.a.`;
+    case 'POS_FIXADO':
+      return `${formattedRate}% do ${rateIndex}`;
+    case 'HIBRIDO':
+      const formattedSpread = rateSpread.toFixed(2).replace('.', ',');
+      return `${rateIndex} + ${formattedSpread}% a.a.`;
+    default:
+      return `${formattedRate}%`;
+  }
+}
+
+// ==================== MORTGAGE TYPES ====================
+
+export type MortgageAmortizationSystem = 'SAC' | 'PRICE' | 'SACRE';
+
+export type MortgageRateIndex = 'TR' | 'IPCA' | 'IGPM' | 'FIXO';
+
+export type MortgageModality = 'SFH' | 'SFI' | 'FGTS' | 'SBPE' | 'OUTROS';
+
+export type MortgageStatus = 'ATIVO' | 'QUITADO' | 'ATRASADO' | 'CANCELADO';
+
+export type MortgageInstallmentStatus = 'PENDENTE' | 'PAGA' | 'VENCIDA' | 'PARCIAL';
+
+export type MortgageExtraPaymentType = 'REDUCE_TERM' | 'REDUCE_INSTALLMENT';
+
+export type MortgageDocumentCategory =
+  | 'CONTRATO'
+  | 'MATRICULA'
+  | 'EXTRATO'
+  | 'COMPROVANTE'
+  | 'SEGURO'
+  | 'ESCRITURA'
+  | 'IPTU'
+  | 'OUTROS';
+
+// ==================== MORTGAGE ENTITIES ====================
+
+export interface FinanceMortgage {
+  id: string;
+  user_id: string;
+  contract_number: string;
+  institution_name: string;
+  institution_bank_id: string | null;
+  modality: MortgageModality;
+  amortization_system: MortgageAmortizationSystem;
+  property_value: number;
+  financed_amount: number;
+  down_payment: number;
+  current_balance: number | null;
+  base_annual_rate: number;
+  reduced_annual_rate: number | null;
+  rate_index: MortgageRateIndex;
+  is_reduced_rate_active: boolean;
+  total_installments: number;
+  paid_installments: number;
+  contract_start_date: string;
+  first_installment_date: string;
+  mip_rate: number | null;
+  dfi_rate: number | null;
+  admin_fee: number;
+  status: MortgageStatus;
+  alert_days_before: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MortgageWithBank extends FinanceMortgage {
+  institution_bank?: Bank | null;
+}
+
+export interface MortgageInstallment {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  installment_number: number;
+  due_date: string;
+  installment_type: string;
+  amortization_amount: number;
+  interest_amount: number;
+  mip_insurance: number;
+  dfi_insurance: number;
+  admin_fee: number;
+  government_subsidy: number;
+  interest_differential: number;
+  tr_adjustment: number;
+  fgts_amount: number;
+  mora_amount: number;
+  fine_amount: number;
+  total_amount: number;
+  balance_before: number;
+  balance_after: number;
+  status: MortgageInstallmentStatus;
+  payment_date: string | null;
+  paid_amount: number | null;
+  payment_difference: number;
+  days_late: number;
+  receipt_path: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MortgageExtraPayment {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  payment_date: string;
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+  balance_before: number;
+  balance_after: number;
+  remaining_installments_before: number;
+  remaining_installments_after: number;
+  installment_value_before: number;
+  installment_value_after: number;
+  interest_saved: number | null;
+  months_reduced: number | null;
+  receipt_path: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface MortgageDocument {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  category: MortgageDocumentCategory;
+  name: string;
+  file_path: string;
+  file_size: number | null;
+  mime_type: string | null;
+  reference_year: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TRRate {
+  id: string;
+  reference_date: string;
+  rate: number;
+  created_at: string;
+}
+
+// ==================== MORTGAGE WITH PROGRESS ====================
+
+export interface MortgageWithProgress extends MortgageWithBank {
+  remaining_installments: number;
+  progress_percentage: number;
+  next_installment?: MortgageInstallment | null;
+  total_paid: number;
+  total_interest_paid: number;
+  total_amortization_paid: number;
+}
+
+// ==================== MORTGAGE FORM DATA ====================
+
+export interface MortgageFormData {
+  contract_number: string;
+  institution_name: string;
+  institution_bank_id?: string;
+  modality: MortgageModality;
+  amortization_system: MortgageAmortizationSystem;
+  property_value: number;
+  financed_amount: number;
+  down_payment: number;
+  base_annual_rate: number;
+  reduced_annual_rate?: number;
+  rate_index: MortgageRateIndex;
+  is_reduced_rate_active: boolean;
+  total_installments: number;
+  contract_start_date: string;
+  first_installment_date: string;
+  mip_rate?: number;
+  dfi_rate?: number;
+  admin_fee: number;
+  alert_days_before: number;
+  notes?: string;
+}
+
+export interface PayInstallmentFormData {
+  paid_amount?: number;
+  payment_date?: string;
+  notes?: string;
+}
+
+export interface ExtraPaymentFormData {
+  payment_date: string;
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+  notes?: string;
+}
+
+export interface SimulateExtraPaymentFormData {
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+}
+
+export interface MortgageDocumentFormData {
+  category: MortgageDocumentCategory;
+  name: string;
+  file_path: string;
+  file_size?: number;
+  mime_type?: string;
+  reference_year?: number;
+  notes?: string;
+}
+
+// ==================== MORTGAGE RESPONSES ====================
+
+export interface MortgageSummary {
+  total_mortgages: number;
+  active_mortgages: number;
+  total_financed: number;
+  total_current_balance: number;
+  total_paid: number;
+  overall_progress: number;
+}
+
+export interface ExtraPaymentSimulation {
+  payment_type: MortgageExtraPaymentType;
+  amount: number;
+  current_balance: number;
+  new_balance: number;
+  current_remaining_installments: number;
+  new_remaining_installments: number;
+  current_installment_value: number;
+  new_installment_value: number;
+  interest_saved: number;
+  months_reduced: number;
+  total_saved: number;
+}
+
+export interface EarlyPayoffSimulation {
+  current_balance: number;
+  remaining_installments: number;
+  total_remaining_payments: number;
+  total_interest_remaining: number;
+  payoff_amount: number;
+  total_savings: number;
+}
+
+export interface AnnualMortgageReport {
+  year: number;
+  mortgage_id: string;
+  mortgage_name: string;
+  institution_name: string;
+  contract_number: string;
+  balance_start_of_year: number;
+  balance_end_of_year: number;
+  total_paid: number;
+  total_amortization: number;
+  total_interest: number;
+  total_insurance: number;
+  total_admin_fee: number;
+  extra_payments_total: number;
+  installments: MortgageInstallment[];
+  extra_payments: MortgageExtraPayment[];
+}
+
+// ==================== MORTGAGE LABELS ====================
+
+export const MORTGAGE_STATUS_LABELS: Record<MortgageStatus, string> = {
+  ATIVO: 'Ativo',
+  QUITADO: 'Quitado',
+  ATRASADO: 'Atrasado',
+  CANCELADO: 'Cancelado',
+};
+
+export const MORTGAGE_INSTALLMENT_STATUS_LABELS: Record<MortgageInstallmentStatus, string> = {
+  PENDENTE: 'Pendente',
+  PAGA: 'Paga',
+  VENCIDA: 'Vencida',
+  PARCIAL: 'Parcial',
+};
+
+export const MORTGAGE_AMORTIZATION_LABELS: Record<MortgageAmortizationSystem, string> = {
+  SAC: 'SAC',
+  PRICE: 'Price',
+  SACRE: 'SACRE',
+};
+
+export const MORTGAGE_RATE_INDEX_LABELS: Record<MortgageRateIndex, string> = {
+  TR: 'TR',
+  IPCA: 'IPCA',
+  IGPM: 'IGP-M',
+  FIXO: 'Fixo',
+};
+
+export const MORTGAGE_MODALITY_LABELS: Record<MortgageModality, string> = {
+  SFH: 'SFH',
+  SFI: 'SFI',
+  FGTS: 'FGTS',
+  SBPE: 'SBPE',
+  OUTROS: 'Outros',
+};
+
+export const MORTGAGE_EXTRA_PAYMENT_TYPE_LABELS: Record<MortgageExtraPaymentType, string> = {
+  REDUCE_TERM: 'Reduzir prazo',
+  REDUCE_INSTALLMENT: 'Reduzir parcela',
+};
+
+export const MORTGAGE_DOCUMENT_CATEGORY_LABELS: Record<MortgageDocumentCategory, string> = {
+  CONTRATO: 'Contrato',
+  MATRICULA: 'Matricula',
+  EXTRATO: 'Extrato',
+  COMPROVANTE: 'Comprovante',
+  SEGURO: 'Seguro',
+  ESCRITURA: 'Escritura',
+  IPTU: 'IPTU',
+  OUTROS: 'Outros',
+};
+
+// ==================== MORTGAGE HELPERS ====================
+
+export function getMortgageStatusColor(status: MortgageStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'text-blue-600';
+    case 'QUITADO':
+      return 'text-emerald-600';
+    case 'ATRASADO':
+      return 'text-red-600';
+    case 'CANCELADO':
+      return 'text-gray-400';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+export function getMortgageStatusBgColor(status: MortgageStatus): string {
+  switch (status) {
+    case 'ATIVO':
+      return 'bg-blue-100 text-blue-800';
+    case 'QUITADO':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'ATRASADO':
+      return 'bg-red-100 text-red-800';
+    case 'CANCELADO':
+      return 'bg-gray-100 text-gray-500';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+export function getMortgageInstallmentStatusColor(status: MortgageInstallmentStatus): string {
+  switch (status) {
+    case 'PAGA':
+      return 'text-emerald-600';
+    case 'PENDENTE':
+      return 'text-amber-600';
+    case 'VENCIDA':
+      return 'text-red-600';
+    case 'PARCIAL':
+      return 'text-blue-600';
+    default:
+      return 'text-gray-600';
+  }
+}
+
+export function getMortgageInstallmentStatusBgColor(status: MortgageInstallmentStatus): string {
+  switch (status) {
+    case 'PAGA':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'PENDENTE':
+      return 'bg-amber-100 text-amber-800';
+    case 'VENCIDA':
+      return 'bg-red-100 text-red-800';
+    case 'PARCIAL':
+      return 'bg-blue-100 text-blue-800';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+// ==================== AMORTIZATION SIMULATION ====================
+
+export interface ExtraPaymentConfig {
+  id: string;
+  type: 'ONE_TIME' | 'RECURRING';
+  amount: number;
+  start_month?: number;
+  end_month?: number | null;
+  payment_type: MortgageExtraPaymentType;
+}
+
+export interface AmortizationSimulationRequest {
+  extra_payments?: ExtraPaymentConfig[];
+  include_current_schedule?: boolean;
+}
+
+export interface CalculatedInstallment {
+  installment_number: number;
+  due_date: string;
+  amortization_amount: number;
+  interest_amount: number;
+  mip_insurance: number;
+  dfi_insurance: number;
+  admin_fee: number;
+  tr_adjustment: number;
+  total_amount: number;
+  balance_before: number;
+  balance_after: number;
+}
+
+export interface AmortizationScenarioSummary {
+  total_paid: number;
+  total_interest: number;
+  total_amortization: number;
+  final_installment_number: number;
+  estimated_end_date: string;
+}
+
+export interface AmortizationScenario {
+  name: string;
+  installments: CalculatedInstallment[];
+  summary: AmortizationScenarioSummary;
+}
+
+export interface AmortizationComparison {
+  interest_saved: number;
+  months_reduced: number;
+  total_saved: number;
+  roi_percentage: number;
+}
+
+export interface AmortizationSimulationResponse {
+  scenarios: AmortizationScenario[];
+  comparison?: AmortizationComparison;
 }

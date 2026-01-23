@@ -1,4 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TransactionType } from '@/types/finance';
 
 interface TransactionTypeToggleProps {
@@ -6,27 +8,34 @@ interface TransactionTypeToggleProps {
   onChange: (type: TransactionType) => void;
 }
 
-const EXPENSE_COLOR = '#dc2626';
-const INCOME_COLOR = '#059669';
-
 export function TransactionTypeToggle({
   value,
   onChange,
 }: TransactionTypeToggleProps) {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
   const isExpense = value === 'DESPESA';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderColor: colors.border }]}>
       <TouchableOpacity
         style={[
           styles.button,
           styles.leftButton,
-          isExpense && { backgroundColor: EXPENSE_COLOR },
+          {
+            backgroundColor: isExpense ? colors.danger : colors.surface,
+            borderRightColor: colors.border,
+          },
         ]}
         onPress={() => onChange('DESPESA')}
         activeOpacity={0.8}
       >
-        <Text style={[styles.text, isExpense && styles.activeText]}>
+        <Text
+          style={[
+            styles.text,
+            { color: isExpense ? '#fff' : colors.textSecondary },
+          ]}
+        >
           Despesa
         </Text>
       </TouchableOpacity>
@@ -35,12 +44,20 @@ export function TransactionTypeToggle({
         style={[
           styles.button,
           styles.rightButton,
-          !isExpense && { backgroundColor: INCOME_COLOR },
+          {
+            backgroundColor: !isExpense ? colors.success : colors.surface,
+            borderLeftColor: colors.border,
+          },
         ]}
         onPress={() => onChange('RECEITA')}
         activeOpacity={0.8}
       >
-        <Text style={[styles.text, !isExpense && styles.activeText]}>
+        <Text
+          style={[
+            styles.text,
+            { color: !isExpense ? '#fff' : colors.textSecondary },
+          ]}
+        >
           Receita
         </Text>
       </TouchableOpacity>
@@ -51,31 +68,23 @@ export function TransactionTypeToggle({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    borderRadius: 8,
+    borderRadius: BorderRadius.sm,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
   },
   leftButton: {
     borderRightWidth: 0.5,
-    borderRightColor: '#e5e7eb',
   },
   rightButton: {
     borderLeftWidth: 0.5,
-    borderLeftColor: '#e5e7eb',
   },
   text: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '600',
-    color: '#6b7280',
-  },
-  activeText: {
-    color: '#fff',
   },
 });

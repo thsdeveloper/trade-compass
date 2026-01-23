@@ -22,6 +22,7 @@ export type DatePreset =
   | '6m'
   | '12m'
   | 'ytd'
+  | 'current_month'
   | 'custom';
 
 export interface DateRange {
@@ -46,6 +47,7 @@ export const DATE_PRESET_CONFIG: { key: DatePreset; label: string; short: string
   { key: '6m', label: '6 meses', short: '6m' },
   { key: '12m', label: '12 meses', short: '12m' },
   { key: 'ytd', label: 'YTD', short: 'YTD' },
+  { key: 'current_month', label: 'Mes atual', short: 'Mes atual' },
 ];
 
 // ==================== COMMON FILTERS ====================

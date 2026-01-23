@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   formatCurrency,
@@ -19,7 +19,6 @@ export function BudgetProgressCard({
 }: BudgetProgressCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const isDark = colorScheme === 'dark';
 
   const categoryColor = BUDGET_CATEGORY_COLORS[allocation.category];
   const idealAmount = totalIncome * (allocation.ideal_percentage / 100);
@@ -28,35 +27,26 @@ export function BudgetProgressCard({
     100
   );
 
-  const getStatusColor = () => {
+  const getStatusColors = () => {
     switch (allocation.status) {
       case 'on_track':
-        return isDark ? '#10b981' : '#059669';
+        return { text: colors.success, bg: colors.successLight };
       case 'over_budget':
-        return isDark ? '#f87171' : '#dc2626';
+        return { text: colors.danger, bg: colors.dangerLight };
       case 'under_budget':
-        return isDark ? '#60a5fa' : '#3b82f6';
+        return { text: colors.info, bg: colors.infoLight };
     }
   };
 
-  const getStatusBgColor = () => {
-    switch (allocation.status) {
-      case 'on_track':
-        return isDark ? '#064e3b' : '#d1fae5';
-      case 'over_budget':
-        return isDark ? '#7f1d1d' : '#fee2e2';
-      case 'under_budget':
-        return isDark ? '#1e3a5f' : '#dbeafe';
-    }
-  };
+  const statusColors = getStatusColors();
 
   return (
     <View
       style={[
         styles.container,
         {
-          backgroundColor: isDark ? '#1f2937' : '#fff',
-          borderColor: isDark ? '#374151' : '#e5e7eb',
+          backgroundColor: colors.card,
+          borderColor: colors.border,
         },
       ]}
     >
@@ -68,9 +58,9 @@ export function BudgetProgressCard({
           </Text>
         </View>
         <View
-          style={[styles.statusBadge, { backgroundColor: getStatusBgColor() }]}
+          style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}
         >
-          <Text style={[styles.statusText, { color: getStatusColor() }]}>
+          <Text style={[styles.statusText, { color: statusColors.text }]}>
             {BUDGET_STATUS_LABELS[allocation.status]}
           </Text>
         </View>
@@ -80,7 +70,7 @@ export function BudgetProgressCard({
         <View
           style={[
             styles.progressBackground,
-            { backgroundColor: isDark ? '#374151' : '#e5e7eb' },
+            { backgroundColor: colors.border },
           ]}
         >
           <View
@@ -97,16 +87,16 @@ export function BudgetProgressCard({
 
       <View style={styles.valuesRow}>
         <View>
-          <Text style={[styles.valueLabel, { color: colors.icon }]}>Atual</Text>
+          <Text style={[styles.valueLabel, { color: colors.textSecondary }]}>Atual</Text>
           <Text style={[styles.valueAmount, { color: colors.text }]}>
             {formatCurrency(allocation.actual_amount)}
           </Text>
         </View>
         <View style={styles.idealContainer}>
-          <Text style={[styles.valueLabel, { color: colors.icon }]}>
+          <Text style={[styles.valueLabel, { color: colors.textSecondary }]}>
             Ideal ({allocation.ideal_percentage}%)
           </Text>
-          <Text style={[styles.valueAmount, { color: colors.icon }]}>
+          <Text style={[styles.valueAmount, { color: colors.textSecondary }]}>
             {formatCurrency(idealAmount)}
           </Text>
         </View>
@@ -117,21 +107,21 @@ export function BudgetProgressCard({
 
 const styles = StyleSheet.create({
   container: {
-    padding: 12,
-    borderRadius: 12,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
   },
   colorDot: {
     width: 12,
@@ -139,20 +129,20 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   label: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '600',
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
   },
   statusText: {
-    fontSize: 11,
+    fontSize: FontSize.xs,
     fontWeight: '600',
   },
   progressContainer: {
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   progressBackground: {
     height: 8,
@@ -171,12 +161,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   valueLabel: {
-    fontSize: 11,
+    fontSize: FontSize.xs,
     fontWeight: '500',
     marginBottom: 2,
   },
   valueAmount: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '600',
   },
 });

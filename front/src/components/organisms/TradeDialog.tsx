@@ -20,19 +20,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Upload, X, Image as ImageIcon } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Loader2, Upload, X, Image as ImageIcon, ListTree } from 'lucide-react';
+import { ExitPlanManager } from '@/components/molecules/ExitPlanManager';
 import type {
   DayTrade,
   DayTradeFormData,
   FuturesAsset,
   TradeDirection,
+  PlannedExitFormData,
+  PlannedExit,
+  DayTradeWithExits,
 } from '@/types/daytrade';
+
+export interface DayTradeFormDataWithExits extends DayTradeFormData {
+  planned_exits?: PlannedExitFormData[];
+}
 
 interface TradeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (data: DayTradeFormData) => Promise<void>;
-  trade?: DayTrade | null;
+  onSave: (data: DayTradeFormDataWithExits) => Promise<void>;
+  trade?: (DayTrade & { planned_exits?: PlannedExit[] }) | null;
   getImageUrl?: (path: string) => string;
 }
 
@@ -67,6 +76,8 @@ export function TradeDialog({
 }: TradeDialogProps) {
   const [loading, setLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [useAdvancedExits, setUseAdvancedExits] = useState(false);
+  const [plannedExits, setPlannedExits] = useState<PlannedExitFormData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<DayTradeFormData>({
     asset: 'WINFUT',
@@ -111,6 +122,22 @@ export function TradeDialog({
       } else {
         setImagePreview(null);
       }
+      // Load planned exits if available
+      if (trade.planned_exits && trade.planned_exits.length > 0) {
+        setUseAdvancedExits(true);
+        setPlannedExits(
+          trade.planned_exits.map((exit) => ({
+            order: exit.order,
+            exit_type: exit.exit_type,
+            price: exit.price,
+            contracts: exit.contracts,
+            notes: exit.notes ?? undefined,
+          }))
+        );
+      } else {
+        setUseAdvancedExits(false);
+        setPlannedExits([]);
+      }
     } else {
       setFormData({
         asset: 'WINFUT',
@@ -130,6 +157,8 @@ export function TradeDialog({
         image_file: undefined,
       });
       setImagePreview(null);
+      setUseAdvancedExits(false);
+      setPlannedExits([]);
     }
   }, [trade, open, getImageUrl]);
 
@@ -166,7 +195,11 @@ export function TradeDialog({
     e.preventDefault();
     setLoading(true);
     try {
-      await onSave(formData);
+      const dataToSave: DayTradeFormDataWithExits = {
+        ...formData,
+        planned_exits: useAdvancedExits ? plannedExits : undefined,
+      };
+      await onSave(dataToSave);
       onOpenChange(false);
     } finally {
       setLoading(false);
@@ -348,63 +381,87 @@ export function TradeDialog({
           </div>
 
           {/* Plano Operacional */}
-          <div className="space-y-2">
-            <Label className="text-[12px] font-medium text-muted-foreground">
-              Plano Operacional
-            </Label>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="stop_price" className="text-[11px] font-medium text-red-600">
-                  Stop
-                </Label>
-                <CurrencyInput
-                  id="stop_price"
-                  value={formData.stop_price ?? 0}
-                  onChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      stop_price: value || undefined,
-                    })
-                  }
-                  className="h-8 text-[12px]"
-                  placeholder="Preco"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="partial_price" className="text-[11px] font-medium text-amber-600">
-                  Parcial
-                </Label>
-                <CurrencyInput
-                  id="partial_price"
-                  value={formData.partial_price ?? 0}
-                  onChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      partial_price: value || undefined,
-                    })
-                  }
-                  className="h-8 text-[12px]"
-                  placeholder="Preco"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="target_price" className="text-[11px] font-medium text-emerald-600">
-                  Alvo
-                </Label>
-                <CurrencyInput
-                  id="target_price"
-                  value={formData.target_price ?? 0}
-                  onChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      target_price: value || undefined,
-                    })
-                  }
-                  className="h-8 text-[12px]"
-                  placeholder="Preco"
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-[12px] font-medium text-muted-foreground">
+                Plano Operacional
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  Saidas multiplas
+                </span>
+                <Switch
+                  checked={useAdvancedExits}
+                  onCheckedChange={setUseAdvancedExits}
+                  className="scale-75"
                 />
               </div>
             </div>
+
+            {useAdvancedExits ? (
+              <ExitPlanManager
+                exits={plannedExits}
+                onChange={setPlannedExits}
+                totalContracts={formData.contracts}
+                entryPrice={formData.entry_price}
+                direction={formData.direction}
+                asset={formData.asset}
+              />
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="stop_price" className="text-[11px] font-medium text-red-600">
+                    Stop
+                  </Label>
+                  <CurrencyInput
+                    id="stop_price"
+                    value={formData.stop_price ?? 0}
+                    onChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        stop_price: value || undefined,
+                      })
+                    }
+                    className="h-8 text-[12px]"
+                    placeholder="Preco"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="partial_price" className="text-[11px] font-medium text-amber-600">
+                    Parcial
+                  </Label>
+                  <CurrencyInput
+                    id="partial_price"
+                    value={formData.partial_price ?? 0}
+                    onChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        partial_price: value || undefined,
+                      })
+                    }
+                    className="h-8 text-[12px]"
+                    placeholder="Preco"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="target_price" className="text-[11px] font-medium text-emerald-600">
+                    Alvo
+                  </Label>
+                  <CurrencyInput
+                    id="target_price"
+                    value={formData.target_price ?? 0}
+                    onChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        target_price: value || undefined,
+                      })
+                    }
+                    className="h-8 text-[12px]"
+                    placeholder="Preco"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

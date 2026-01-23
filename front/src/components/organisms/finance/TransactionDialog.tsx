@@ -52,32 +52,13 @@ import {
 } from '@/types/finance';
 
 // Tipos de categoria para despesas
-const EXPENSE_CATEGORY_TYPES: FinanceCategoryType[] = [
-  'MORADIA',
-  'ALIMENTACAO',
-  'TRANSPORTE',
-  'SAUDE',
-  'LAZER',
-  'EDUCACAO',
-  'VESTUARIO',
-  'SERVICOS',
-  'DIVIDA',
-  'OUTROS',
-];
+const EXPENSE_CATEGORY_TYPES: FinanceCategoryType[] = ['DESPESA'];
 
 // Tipos de categoria para receitas
-const INCOME_CATEGORY_TYPES: FinanceCategoryType[] = [
-  'SALARIO',
-  'FREELANCE',
-  'INVESTIMENTOS',
-  'OUTROS',
-];
+const INCOME_CATEGORY_TYPES: FinanceCategoryType[] = ['RECEITA'];
 
-// Tipos de categoria para transferencias
-const TRANSFER_CATEGORY_TYPES: FinanceCategoryType[] = [
-  'INVESTIMENTOS',
-  'OUTROS',
-];
+// Tipos de categoria para transferencias (usa categorias de despesa)
+const TRANSFER_CATEGORY_TYPES: FinanceCategoryType[] = ['DESPESA'];
 
 interface TransactionDialogProps {
   open: boolean;

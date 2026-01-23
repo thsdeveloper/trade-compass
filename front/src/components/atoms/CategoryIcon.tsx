@@ -379,20 +379,8 @@ export const ICON_CATEGORIES = {
 
 // Icones padrao para cada tipo de categoria
 export const DEFAULT_CATEGORY_ICONS: Record<FinanceCategoryType, string> = {
-  MORADIA: 'Home',
-  ALIMENTACAO: 'ShoppingCart',
-  TRANSPORTE: 'Car',
-  SAUDE: 'Heart',
-  LAZER: 'Gamepad2',
-  EDUCACAO: 'GraduationCap',
-  VESTUARIO: 'Shirt',
-  SERVICOS: 'Wrench',
-  INVESTIMENTOS: 'TrendingUp',
-  SALARIO: 'Wallet',
-  FREELANCE: 'Zap',
-  DIVIDA: 'CreditCard',
-  BENEFICIO: 'Gift',
-  OUTROS: 'Tag',
+  DESPESA: 'Tag',
+  RECEITA: 'Wallet',
 };
 
 // Lista de todos icones disponiveis (flat)

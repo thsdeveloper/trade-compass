@@ -51,7 +51,7 @@ function SheetOverlay({
 
 const sheetContentVariants = cva(
   cn(
-    "fixed z-50 flex flex-col bg-sidebar shadow-lg outline-none",
+    "fixed z-50 flex flex-col bg-white shadow-lg outline-none p-6",
     "data-[state=open]:animate-in data-[state=closed]:animate-out",
     "data-[state=open]:duration-300 data-[state=closed]:duration-200"
   ),
@@ -59,19 +59,19 @@ const sheetContentVariants = cva(
     variants: {
       side: {
         left: cn(
-          "inset-y-0 left-0 h-full w-72 border-r border-sidebar-border",
+          "inset-y-0 left-0 h-full w-72 border-r border-slate-200",
           "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
         ),
         right: cn(
-          "inset-y-0 right-0 h-full w-72 border-l border-sidebar-border",
+          "inset-y-0 right-0 h-full w-72 border-l border-slate-200",
           "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
         ),
         top: cn(
-          "inset-x-0 top-0 w-full border-b border-sidebar-border",
+          "inset-x-0 top-0 w-full border-b border-slate-200",
           "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top"
         ),
         bottom: cn(
-          "inset-x-0 bottom-0 w-full border-t border-sidebar-border",
+          "inset-x-0 bottom-0 w-full border-t border-slate-200",
           "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
         ),
       },
@@ -109,7 +109,7 @@ function SheetContent({
             data-slot="sheet-close"
             className={cn(
               "absolute top-4 right-4 rounded-sm opacity-70 transition-opacity",
-              "hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-sidebar-ring focus:ring-offset-2",
+              "hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2",
               "disabled:pointer-events-none",
               "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
             )}
@@ -127,7 +127,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-2 p-4", className)}
+      className={cn("flex flex-col gap-1.5 pb-4", className)}
       {...props}
     />
   )
@@ -140,7 +140,7 @@ function SheetTitle({
   return (
     <DialogPrimitive.Title
       data-slot="sheet-title"
-      className={cn("text-lg font-semibold text-sidebar-foreground", className)}
+      className={cn("text-lg font-semibold text-slate-900", className)}
       {...props}
     />
   )
@@ -153,7 +153,17 @@ function SheetDescription({
   return (
     <DialogPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-sm text-sidebar-foreground/70", className)}
+      className={cn("text-sm text-slate-500", className)}
+      {...props}
+    />
+  )
+}
+
+function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="sheet-footer"
+      className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2 pt-4 mt-auto", className)}
       {...props}
     />
   )
@@ -164,6 +174,7 @@ export {
   SheetClose,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetOverlay,
   SheetPortal,

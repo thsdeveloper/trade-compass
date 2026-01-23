@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Loader2, Receipt, HandCoins, Calendar, ArrowUpRight, ArrowDownLeft, ArrowLeftRight } from 'lucide-react';
+import { Loader2, Receipt, HandCoins, Calendar, Landmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { financeApi } from '@/lib/finance-api';
 import { formatCurrency } from '@/types/finance';
@@ -73,13 +73,35 @@ export function GoalContributionsHistoryDialog({
             Pendente
           </span>
         );
+      case 'ATIVO':
+        return (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">
+            Ativo
+          </span>
+        );
+      case 'VENCIDO':
+        return (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600">
+            Vencido
+          </span>
+        );
+      case 'RESGATADO':
+        return (
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+            Resgatado
+          </span>
+        );
       default:
         return null;
     }
   };
 
   const totalAmount = contributions
-    .filter(c => c.type === 'manual' || c.status === 'PAGO')
+    .filter(c =>
+      c.type === 'manual' ||
+      c.status === 'PAGO' ||
+      (c.type === 'investment' && (c.status === 'ATIVO' || c.status === 'VENCIDO'))
+    )
     .reduce((sum, c) => sum + c.amount, 0);
 
   return (
@@ -137,6 +159,8 @@ export function GoalContributionsHistoryDialog({
                       'rounded-lg border p-3 transition-colors',
                       contribution.type === 'manual'
                         ? 'border-blue-100 bg-blue-50/30'
+                        : contribution.type === 'investment'
+                        ? 'border-amber-100 bg-amber-50/30'
                         : 'border-slate-100 bg-white'
                     )}
                   >
@@ -147,11 +171,15 @@ export function GoalContributionsHistoryDialog({
                             'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg',
                             contribution.type === 'manual'
                               ? 'bg-blue-100 text-blue-600'
+                              : contribution.type === 'investment'
+                              ? 'bg-amber-100 text-amber-600'
                               : 'bg-emerald-100 text-emerald-600'
                           )}
                         >
                           {contribution.type === 'manual' ? (
                             <HandCoins className="h-4 w-4" />
+                          ) : contribution.type === 'investment' ? (
+                            <Landmark className="h-4 w-4" />
                           ) : (
                             <Receipt className="h-4 w-4" />
                           )}
@@ -166,10 +194,16 @@ export function GoalContributionsHistoryDialog({
                                 'rounded px-1.5 py-0.5 font-medium',
                                 contribution.type === 'manual'
                                   ? 'bg-blue-100 text-blue-700'
+                                  : contribution.type === 'investment'
+                                  ? 'bg-amber-100 text-amber-700'
                                   : 'bg-slate-100 text-slate-600'
                               )}
                             >
-                              {contribution.type === 'manual' ? 'Manual' : 'Transacao'}
+                              {contribution.type === 'manual'
+                                ? 'Manual'
+                                : contribution.type === 'investment'
+                                ? 'Investimento'
+                                : 'Transacao'}
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
@@ -190,14 +224,18 @@ export function GoalContributionsHistoryDialog({
               </div>
 
               {/* Legend */}
-              <div className="mt-4 flex items-center justify-center gap-4 border-t border-slate-100 pt-3">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-4 border-t border-slate-100 pt-3">
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
                   <div className="h-3 w-3 rounded bg-blue-100" />
-                  <span>Contribuicao manual</span>
+                  <span>Manual</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
                   <div className="h-3 w-3 rounded bg-slate-100" />
-                  <span>Transacao vinculada</span>
+                  <span>Transacao</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <div className="h-3 w-3 rounded bg-amber-100" />
+                  <span>Investimento</span>
                 </div>
               </div>
             </>

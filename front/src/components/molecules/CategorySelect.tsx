@@ -28,13 +28,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { FinanceCategory, FinanceCategoryType, CategoryFormData, BudgetCategory } from '@/types/finance';
 import { CATEGORY_TYPE_LABELS } from '@/types/finance';
 import { CategoryIcon, IconSelector, ColorPicker, DEFAULT_CATEGORY_ICONS } from '@/components/atoms/CategoryIcon';
@@ -69,7 +62,7 @@ export function CategorySelect({
   const [creating, setCreating] = useState(false);
   const [newCategory, setNewCategory] = useState<CategoryFormData>({
     name: '',
-    type: 'OUTROS',
+    type: 'DESPESA',
     color: '#64748b',
     icon: 'Tag',
   });
@@ -98,7 +91,7 @@ export function CategorySelect({
   const handleCreateClick = useCallback(() => {
     setNewCategory({
       name: '',
-      type: 'OUTROS',
+      type: 'DESPESA',
       color: '#64748b',
       icon: 'Tag',
     });
@@ -281,28 +274,42 @@ export function CategorySelect({
             {/* Tipo */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-slate-600">Tipo</Label>
-              <Select
-                value={newCategory.type}
-                onValueChange={(value) => {
-                  const type = value as FinanceCategoryType;
-                  setNewCategory({
-                    ...newCategory,
-                    type,
-                    icon: DEFAULT_CATEGORY_ICONS[type] || 'Tag',
-                  });
-                }}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(CATEGORY_TYPE_LABELS).map(([type, label]) => (
-                    <SelectItem key={type} value={type} className="text-sm">
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex rounded-md border border-slate-200 p-1 gap-1 bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewCategory({
+                      ...newCategory,
+                      type: 'DESPESA',
+                      icon: DEFAULT_CATEGORY_ICONS['DESPESA'] || 'Tag',
+                    })
+                  }
+                  className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                    newCategory.type === 'DESPESA'
+                      ? 'bg-rose-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-rose-700 hover:bg-rose-50/80'
+                  }`}
+                >
+                  Despesa
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewCategory({
+                      ...newCategory,
+                      type: 'RECEITA',
+                      icon: DEFAULT_CATEGORY_ICONS['RECEITA'] || 'Wallet',
+                    })
+                  }
+                  className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                    newCategory.type === 'RECEITA'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50/80'
+                  }`}
+                >
+                  Receita
+                </button>
+              </div>
             </div>
 
             {/* Cor */}
@@ -325,7 +332,7 @@ export function CategorySelect({
             </div>
 
             {/* Budget Category - only for expense categories */}
-            {['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'OUTROS', 'DIVIDA'].includes(newCategory.type) && (
+            {newCategory.type === 'DESPESA' && (
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-slate-600">
                   Categoria 50-30-20

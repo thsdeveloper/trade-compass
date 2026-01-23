@@ -10,30 +10,17 @@ import { EditRecurrenceTransactionDialog, type EditRecurrenceOption } from '@/co
 import { EditInstallmentTransactionDialog, type EditInstallmentOption } from '@/components/organisms/finance/EditInstallmentTransactionDialog';
 import { PayTransactionDialog } from '@/components/organisms/finance/PayTransactionDialog';
 import { ExportTransactionsDialog } from '@/components/organisms/finance/ExportTransactionsDialog';
+import { TransactionFiltersSheet } from '@/components/organisms/finance/TransactionFiltersSheet';
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog';
-import { CategorySelect } from '@/components/molecules/CategorySelect';
-import { AccountSelect } from '@/components/molecules/AccountSelect';
+import { YearSelector } from '@/components/molecules/YearSelector';
+import { DataTable } from '@/components/molecules/DataTable';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import {
   AlertCircle,
-  Check,
-  X,
-  Pencil,
-  CreditCard,
   ChevronDown,
   ChevronRight,
-  ChevronLeft,
-  ArrowLeftRight,
+  CreditCard,
   Download,
 } from 'lucide-react';
 import { TransacoesPageSkeleton } from '@/components/organisms/skeletons/TransacoesPageSkeleton';
@@ -41,7 +28,9 @@ import { cn } from '@/lib/utils';
 import { financeApi } from '@/lib/finance-api';
 import { toast } from '@/lib/toast';
 import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
-import { CategoryIcon } from '@/components/atoms/CategoryIcon';
+import { useDebounce } from '@/hooks/useDebounce';
+import { TransactionsSummaryCards } from '@/components/molecules/TransactionsSummaryCards';
+import { getTransactionColumns } from './columns';
 import type {
   TransactionWithDetails,
   FinanceCategory,
@@ -57,11 +46,9 @@ import type {
   TransferFormData,
   PayTransactionData,
   GoalSelectItem,
+  FinanceSummary,
 } from '@/types/finance';
-import {
-  formatCurrency,
-  TRANSACTION_STATUS_LABELS,
-} from '@/types/finance';
+import { formatCurrency } from '@/types/finance';
 
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -79,7 +66,6 @@ function getInvoiceMonth(dueDate: string, closingDay: number): string {
   const date = new Date(dueDate + 'T12:00:00');
   const day = date.getDate();
 
-  // Se apos fechamento, vai para proxima fatura
   if (day > closingDay) {
     date.setMonth(date.getMonth() + 1);
   }
@@ -95,7 +81,7 @@ function formatMonthLabel(invoiceMonth: string): string {
 
 function getInvoiceDueDate(dueDate: string, closingDay: number, dueDay: number): string {
   const invoiceMonth = getInvoiceMonth(dueDate, closingDay);
-  const [year, month] = invoiceMonth.split('-');
+  const [, month] = invoiceMonth.split('-');
   return `${String(dueDay).padStart(2, '0')}/${month}`;
 }
 
@@ -105,6 +91,7 @@ function TransacoesPageContent() {
   const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Data states
@@ -114,6 +101,7 @@ function TransacoesPageContent() {
   const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
   const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
   const [goals, setGoals] = useState<GoalSelectItem[]>([]);
+  const [summary, setSummary] = useState<FinanceSummary | null>(null);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -181,6 +169,10 @@ function TransacoesPageContent() {
   const [urgentFilter, setUrgentFilter] = useState<boolean>(() => {
     return searchParams.get('urgent') === 'true';
   });
+  const [searchTerm, setSearchTerm] = useState<string>(() => {
+    return searchParams.get('search') || '';
+  });
+  const debouncedSearch = useDebounce(searchTerm, 400);
   const [groupCardTransactions, setGroupCardTransactions] = useState(() => {
     if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('finance:groupCardTransactions');
@@ -228,17 +220,38 @@ function TransacoesPageContent() {
     router.replace(newUrl, { scroll: false });
   }, [searchParams, router]);
 
+  // Sync search com URL
+  useEffect(() => {
+    const currentSearch = searchParams.get('search') || '';
+    const newSearch = debouncedSearch.trim();
+
+    if (currentSearch === newSearch) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (newSearch) {
+      params.set('search', newSearch);
+    } else {
+      params.delete('search');
+    }
+    const newUrl = params.toString() ? `?${params.toString()}` : '/financas/transacoes';
+    router.replace(newUrl, { scroll: false });
+  }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Count active filters
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'all') count++;
+    if (typeFilter !== 'all') count++;
+    if (categoryFilter !== 'all') count++;
+    if (tagFilter !== 'all') count++;
+    if (accountFilter !== 'all') count++;
+    if (urgentFilter) count++;
+    if (searchTerm.length > 0) count++;
+    return count;
+  }, [statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter, urgentFilter, searchTerm]);
+
   // Check if any filter is active
-  const hasActiveFilters = useMemo(() => {
-    return (
-      statusFilter !== 'all' ||
-      typeFilter !== 'all' ||
-      categoryFilter !== 'all' ||
-      tagFilter !== 'all' ||
-      accountFilter !== 'all' ||
-      urgentFilter
-    );
-  }, [statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter, urgentFilter]);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   // Clear all filters
   const handleClearFilters = useCallback(() => {
@@ -248,13 +261,14 @@ function TransacoesPageContent() {
     setTagFilter('all');
     setAccountFilter('all');
     setUrgentFilter(false);
+    setSearchTerm('');
     router.replace('/financas/transacoes', { scroll: false });
   }, [router]);
 
   // Accordion state
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
-  // Ref para rastrear os últimos filtros carregados (evitar reload desnecessário)
+  // Ref para rastrear os ultimos filtros carregados (evitar reload desnecessario)
   const lastLoadedFiltersRef = useRef<string | null>(null);
 
   const loadData = useCallback(async (forceReload = false) => {
@@ -268,9 +282,10 @@ function TransacoesPageContent() {
       categoryFilter,
       tagFilter,
       accountFilter,
+      search: debouncedSearch,
     });
 
-    // Se já carregou com esses filtros e não é forçado, não recarregar
+    // Se ja carregou com esses filtros e nao e forcado, nao recarregar
     if (!forceReload && lastLoadedFiltersRef.current === filtersKey) {
       return;
     }
@@ -282,9 +297,9 @@ function TransacoesPageContent() {
       // Build filters
       const filters: Record<string, string | number> = {};
 
-      // Filtrar pelo mês selecionado
-      // Expandir para incluir o mês anterior para pegar transações de cartão
-      // que pertencem à fatura do mês selecionado (ex: compra em 15/12 na fatura de Jan)
+      // Filtrar pelo mes selecionado
+      // Expandir para incluir o mes anterior para pegar transacoes de cartao
+      // que pertencem a fatura do mes selecionado (ex: compra em 15/12 na fatura de Jan)
       const [year, month] = selectedMonth.split('-').map(Number);
       filters.start_date = new Date(year, month - 2, 1).toISOString().split('T')[0];
       filters.end_date = new Date(year, month, 0).toISOString().split('T')[0];
@@ -309,7 +324,11 @@ function TransacoesPageContent() {
         filters.account_id = accountFilter;
       }
 
-      const [transactionsData, categoriesData, tagsData, accountsData, cardsData, goalsData] =
+      if (debouncedSearch.trim().length >= 2) {
+        filters.search = debouncedSearch.trim();
+      }
+
+      const [transactionsData, categoriesData, tagsData, accountsData, cardsData, goalsData, summaryData] =
         await Promise.all([
           financeApi.getTransactions(session.access_token, filters),
           financeApi.getCategories(session.access_token),
@@ -317,6 +336,7 @@ function TransacoesPageContent() {
           financeApi.getAccounts(session.access_token),
           financeApi.getCreditCards(session.access_token),
           financeApi.getGoalsForSelect(session.access_token),
+          financeApi.getDashboardSummary(session.access_token, selectedMonth),
         ]);
 
       setTransactions(transactionsData);
@@ -325,15 +345,17 @@ function TransacoesPageContent() {
       setAccounts(accountsData);
       setCreditCards(cardsData);
       setGoals(goalsData);
+      setSummary(summaryData);
 
       // Salvar os filtros carregados
       lastLoadedFiltersRef.current = filtersKey;
+      setIsInitialLoad(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
-  }, [session?.access_token, selectedMonth, statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter]);
+  }, [session?.access_token, selectedMonth, statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter, debouncedSearch]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -356,12 +378,12 @@ function TransacoesPageContent() {
     const accountTx: TransactionWithDetails[] = [];
     const cardTxMap = new Map<string, InvoiceGroup>();
 
-    // Período do mês selecionado para filtrar transações de conta
+    // Periodo do mes selecionado para filtrar transacoes de conta
     const [selYear, selMonth] = selectedMonth.split('-').map(Number);
     const monthStart = new Date(selYear, selMonth - 1, 1);
     const monthEnd = new Date(selYear, selMonth, 0);
 
-    // Para filtro urgente: calcular data limite (amanhã)
+    // Para filtro urgente: calcular data limite (amanha)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -378,9 +400,9 @@ function TransacoesPageContent() {
       if (tx.credit_card_id && tx.credit_card) {
         const invoiceMonth = getInvoiceMonth(tx.due_date, tx.credit_card.closing_day);
 
-        // Se agrupamento desativado, mostrar transações de cartão como linhas normais
+        // Se agrupamento desativado, mostrar transacoes de cartao como linhas normais
         if (!groupCardTransactions) {
-          // Filtrar apenas transações cuja fatura é do mês selecionado
+          // Filtrar apenas transacoes cuja fatura e do mes selecionado
           if (invoiceMonth === selectedMonth) {
             // Aplicar filtro urgente se ativo
             if (!urgentFilter || isUrgentTransaction(tx.due_date)) {
@@ -411,7 +433,7 @@ function TransacoesPageContent() {
           group.total += tx.amount;
         }
       } else {
-        // Transações de conta: filtrar apenas as do mês selecionado
+        // Transacoes de conta: filtrar apenas as do mes selecionado
         const txDate = new Date(tx.due_date + 'T12:00:00');
         if (txDate >= monthStart && txDate <= monthEnd) {
           // Aplicar filtro urgente se ativo
@@ -436,12 +458,12 @@ function TransacoesPageContent() {
       }
     }
 
-    // Filtrar apenas faturas do mês selecionado com transações e ordenar
+    // Filtrar apenas faturas do mes selecionado com transacoes e ordenar
     const groups = Array.from(cardTxMap.values())
       .filter(g => g.invoiceMonth === selectedMonth && g.transactions.length > 0)
       .sort((a, b) => b.invoiceMonth.localeCompare(a.invoiceMonth));
 
-    // Ordenar transações por data de vencimento
+    // Ordenar transacoes por data de vencimento
     accountTx.sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     return { accountTransactions: accountTx, invoiceGroups: groups };
@@ -459,11 +481,10 @@ function TransacoesPageContent() {
     });
   };
 
-  const handleYearChange = (delta: number) => {
-    const newYear = selectedYear + delta;
-    setSelectedYear(newYear);
+  const handleYearChange = (year: number) => {
+    setSelectedYear(year);
     const currentMonthNum = selectedMonth.split('-')[1];
-    setSelectedMonth(`${newYear}-${currentMonthNum}`);
+    setSelectedMonth(`${year}-${currentMonthNum}`);
   };
 
   const handleSaveTransaction = async (data: TransactionFormData) => {
@@ -486,7 +507,6 @@ function TransacoesPageContent() {
         session.access_token
       );
     } else if (editingTransaction && editingTransaction.recurrence_id && editRecurrenceOption) {
-      // Edicao de transacao recorrente com escopo
       await financeApi.updateRecurrenceTransaction(
         editingTransaction.id,
         {
@@ -506,7 +526,6 @@ function TransacoesPageContent() {
       setEditRecurrenceOption(null);
       setTransactionToEdit(null);
     } else if (editingTransaction && editingTransaction.installment_group_id && editInstallmentOption) {
-      // Edicao de transacao parcelada com escopo
       await financeApi.updateInstallmentTransaction(
         editingTransaction.id,
         {
@@ -529,6 +548,7 @@ function TransacoesPageContent() {
       await financeApi.updateTransaction(
         editingTransaction.id,
         {
+          type: data.type,
           category_id: data.category_id,
           account_id: data.account_id,
           credit_card_id: data.credit_card_id,
@@ -567,11 +587,10 @@ function TransacoesPageContent() {
     if (!session?.access_token) return;
 
     const created = await financeApi.createRecurrence(data, session.access_token);
-    // Se solicitado, gerar transacoes antecipadas
     if (generateCount && generateCount > 1) {
       await financeApi.generateRecurrenceOccurrences(
         created.id,
-        generateCount - 1, // -1 porque a primeira ja foi criada
+        generateCount - 1,
         session.access_token
       );
     }
@@ -632,14 +651,12 @@ function TransacoesPageContent() {
   const handleCancelTransaction = async (transaction: TransactionWithDetails) => {
     if (!session?.access_token) return;
 
-    // Se for transacao de recorrencia, abrir dialog com opcoes
     if (transaction.recurrence_id) {
       setTransactionToDelete(transaction);
       setDeleteRecurrenceDialogOpen(true);
       return;
     }
 
-    // Se for transferencia, cancelar via endpoint especifico
     if (transaction.transfer_id) {
       setConfirmDialogConfig({
         title: 'Cancelar transferencia',
@@ -658,7 +675,6 @@ function TransacoesPageContent() {
       return;
     }
 
-    // Transacao normal
     setConfirmDialogConfig({
       title: 'Cancelar transacao',
       description: `Deseja cancelar "${transaction.description}"?`,
@@ -688,21 +704,18 @@ function TransacoesPageContent() {
   };
 
   const openEditDialog = (transaction: TransactionWithDetails) => {
-    // Se for transacao de recorrencia, abrir modal de escopo primeiro
     if (transaction.recurrence_id) {
       setTransactionToEdit(transaction);
       setEditRecurrenceDialogOpen(true);
       return;
     }
 
-    // Se for transacao parcelada, abrir modal de escopo primeiro
     if (transaction.installment_group_id) {
       setInstallmentToEdit(transaction);
       setEditInstallmentDialogOpen(true);
       return;
     }
 
-    // Transacao normal - abrir direto o dialog de edicao
     setEditingTransaction(transaction);
     setDialogOpen(true);
   };
@@ -730,21 +743,6 @@ function TransacoesPageContent() {
     setDialogOpen(true);
   };
 
-  const getStatusStyles = (status: TransactionStatus) => {
-    switch (status) {
-      case 'PAGO':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'PENDENTE':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'VENCIDO':
-        return 'bg-red-50 text-red-700 border-red-200';
-      case 'CANCELADO':
-        return 'bg-slate-50 text-slate-500 border-slate-200';
-      default:
-        return 'bg-slate-50 text-slate-700 border-slate-200';
-    }
-  };
-
   const getInvoiceStatusStyles = (status: 'PENDENTE' | 'PAGO' | 'PARCIAL') => {
     switch (status) {
       case 'PAGO':
@@ -769,7 +767,19 @@ function TransacoesPageContent() {
     }
   };
 
-  if (authLoading || loading) {
+  // Get columns with handlers
+  const columns = useMemo(
+    () =>
+      getTransactionColumns({
+        onPay: handlePayTransaction,
+        onEdit: openEditDialog,
+        onCancel: handleCancelTransaction,
+        getInvoiceDueDate,
+      }),
+    []
+  );
+
+  if (authLoading || (loading && isInitialLoad)) {
     return <TransacoesPageSkeleton />;
   }
 
@@ -789,182 +799,19 @@ function TransacoesPageContent() {
     );
   }
 
-  const renderTransactionRow = (transaction: TransactionWithDetails, isNested = false) => (
-    <tr
-      key={transaction.id}
-      className={cn(
-        'transition-colors hover:bg-slate-50/50',
-        isNested && 'bg-slate-25'
-      )}
-    >
-      <td className={cn('px-4 py-3', isNested && 'pl-12')}>
-        <div>
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium text-slate-900">
-              {transaction.description}
-            </p>
-            {transaction.transfer_id && (
-              <span title={`Transferencia ${transaction.type === 'DESPESA' ? 'para' : 'de'} ${transaction.transfer_counterpart_account?.name || 'outra conta'}`}>
-                <ArrowLeftRight className="h-3.5 w-3.5 text-blue-500" />
-              </span>
-            )}
-            {transaction.credit_card_id && !isNested && (
-              <span title={transaction.credit_card?.name}>
-                <CreditCard className="h-3.5 w-3.5 text-slate-400" />
-              </span>
-            )}
-          </div>
-          {transaction.transfer_id && transaction.transfer_counterpart_account && (
-            <p className="text-xs text-blue-500">
-              {transaction.type === 'DESPESA' ? 'Para: ' : 'De: '}
-              {transaction.transfer_counterpart_account.name}
-            </p>
-          )}
-          {transaction.installment_number && (
-            <p className="text-xs text-slate-400">
-              Parcela {transaction.installment_number}/
-              {transaction.total_installments}
-            </p>
-          )}
-          {transaction.tags && transaction.tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {transaction.tags.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
-                  style={{
-                    backgroundColor: '#6366f115',
-                    color: '#6366f1',
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <CategoryIcon
-            icon={transaction.category?.icon}
-            color={transaction.category?.color}
-            size="xs"
-          />
-          <span className="text-sm text-slate-600">
-            {transaction.category?.name}
-          </span>
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          {transaction.credit_card && (
-            <CreditCard className="h-3.5 w-3.5 text-slate-400" />
-          )}
-          <span className="text-sm text-slate-600">
-            {transaction.credit_card?.name || transaction.account?.name || '-'}
-          </span>
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <span className="text-sm tabular-nums text-slate-600">
-          {new Date(transaction.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span
-          className={cn(
-            'text-sm font-medium tabular-nums',
-            transaction.type === 'RECEITA'
-              ? 'text-emerald-600'
-              : transaction.transfer_id
-                ? 'text-blue-600'
-                : 'text-slate-900'
-          )}
-        >
-          {transaction.type === 'RECEITA' ? '+' : '-'}
-          {formatCurrency(Math.abs(transaction.amount))}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <span
-          className={cn(
-            'inline-flex rounded-md border px-2 py-0.5 text-xs font-medium',
-            transaction.transfer_id
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : transaction.credit_card_id && transaction.status === 'PENDENTE'
-                ? 'border-blue-200 bg-blue-50 text-blue-700'
-                : getStatusStyles(transaction.status)
-          )}
-        >
-          {transaction.transfer_id
-            ? 'Transferencia'
-            : transaction.credit_card_id && transaction.credit_card && transaction.status === 'PENDENTE'
-              ? `Na fatura de ${getInvoiceDueDate(transaction.due_date, transaction.credit_card.closing_day, transaction.credit_card.due_day)}`
-              : TRANSACTION_STATUS_LABELS[transaction.status]}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center justify-end gap-1">
-          {transaction.status === 'PENDENTE' && !transaction.credit_card_id && !transaction.transfer_id && (
-            <button
-              onClick={() => handlePayTransaction(transaction)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
-              title="Marcar como pago"
-            >
-              <Check className="h-4 w-4" />
-            </button>
-          )}
-          {!transaction.transfer_id && (
-            <button
-              onClick={() => openEditDialog(transaction)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-              title="Editar"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {transaction.status !== 'CANCELADO' && (transaction.transfer_id || transaction.status !== 'PAGO') && (
-            <button
-              onClick={() => handleCancelTransaction(transaction)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-              title={transaction.transfer_id ? 'Cancelar transferencia' : 'Cancelar'}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-
   const hasNoData = accountTransactions.length === 0 && invoiceGroups.length === 0;
 
   return (
     <PageShell>
       <div className="space-y-6">
-        {/* Month Tabs */}
+        {/* Year Selector */}
         <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="flex items-center justify-between mb-2">
-            <button
-              onClick={() => handleYearChange(-1)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-semibold text-slate-700">{selectedYear}</span>
-            <button
-              onClick={() => handleYearChange(1)}
-              disabled={selectedYear >= new Date().getFullYear()}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                selectedYear >= new Date().getFullYear()
-                  ? "text-slate-200 cursor-not-allowed"
-                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              )}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="mb-3">
+            <YearSelector
+              selectedYear={selectedYear}
+              onYearChange={handleYearChange}
+              range={3}
+            />
           </div>
 
           <Tabs value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -994,225 +841,136 @@ function TransacoesPageContent() {
           </Tabs>
         </div>
 
-        {/* Other Filters */}
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-          <Select
-            value={typeFilter}
-            onValueChange={(value: TransactionType | 'all') => setTypeFilter(value)}
-          >
-            <SelectTrigger className="h-8 w-[150px] border-slate-200 bg-white text-sm">
-              <SelectValue placeholder="Tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-sm">Todos tipos</SelectItem>
-              <SelectItem value="DESPESA" className="text-sm">Despesa</SelectItem>
-              <SelectItem value="RECEITA" className="text-sm">Receita</SelectItem>
-              <SelectItem value="TRANSFERENCIA" className="text-sm">Transferencia</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Summary Cards */}
+        {summary && <TransactionsSummaryCards summary={summary} accounts={accounts} />}
 
-          <Select
-            value={statusFilter}
-            onValueChange={(value: TransactionStatus | 'all') => setStatusFilter(value)}
-          >
-            <SelectTrigger className="h-8 w-[130px] border-slate-200 bg-white text-sm">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-sm">Todos status</SelectItem>
-              <SelectItem value="PENDENTE" className="text-sm">Pendente</SelectItem>
-              <SelectItem value="PAGO" className="text-sm">Pago</SelectItem>
-              <SelectItem value="VENCIDO" className="text-sm">Vencido</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <CategorySelect
-            value={categoryFilter === 'all' ? '' : categoryFilter}
-            onChange={(value) => setCategoryFilter(value || 'all')}
+        {/* Filters and Export */}
+        <div className="flex items-center justify-between">
+          <TransactionFiltersSheet
+            searchTerm={searchTerm}
+            typeFilter={typeFilter}
+            statusFilter={statusFilter}
+            categoryFilter={categoryFilter}
+            tagFilter={tagFilter}
+            accountFilter={accountFilter}
+            urgentFilter={urgentFilter}
+            groupCardTransactions={groupCardTransactions}
+            onSearchChange={setSearchTerm}
+            onTypeChange={setTypeFilter}
+            onStatusChange={setStatusFilter}
+            onCategoryChange={setCategoryFilter}
+            onTagChange={setTagFilter}
+            onAccountChange={handleAccountFilterChange}
+            onUrgentChange={setUrgentFilter}
+            onGroupCardTransactionsChange={setGroupCardTransactions}
+            onClearFilters={handleClearFilters}
             categories={categories}
-            allowAll
-            placeholder="Categoria"
-            className="h-8 w-[180px]"
-          />
-
-          <Select
-            value={tagFilter}
-            onValueChange={(value) => setTagFilter(value)}
-          >
-            <SelectTrigger className="h-8 w-[150px] border-slate-200 bg-white text-sm">
-              <SelectValue placeholder="Tag" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-sm">Todas tags</SelectItem>
-              {tags.map((tag) => (
-                <SelectItem key={tag.id} value={tag.id} className="text-sm">
-                  {tag.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <AccountSelect
-            value={accountFilter}
-            onChange={handleAccountFilterChange}
+            tags={tags}
             accounts={accounts}
-            allowAll
-            placeholder="Conta"
+            hasActiveFilters={hasActiveFilters}
+            activeFiltersCount={activeFiltersCount}
           />
 
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              className="h-8 px-2 text-slate-500 hover:text-slate-700"
-            >
-              <X className="h-4 w-4 mr-1" />
-              Limpar
-            </Button>
-          )}
-
-          <div className="ml-auto flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="group-card-transactions"
-                checked={groupCardTransactions}
-                onCheckedChange={setGroupCardTransactions}
-              />
-              <Label
-                htmlFor="group-card-transactions"
-                className="text-sm text-slate-600 cursor-pointer"
-              >
-                Agrupar faturas
-              </Label>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setExportDialogOpen(true)}
-              disabled={hasNoData}
-              className="h-8 gap-1.5"
-            >
-              <Download className="h-4 w-4" />
-              Exportar
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setExportDialogOpen(true)}
+            disabled={hasNoData}
+            className="h-8 gap-1.5"
+          >
+            <Download className="h-4 w-4" />
+            Exportar
+          </Button>
         </div>
+
+        {/* Invoice Groups (Accordion) */}
+        {groupCardTransactions && invoiceGroups.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-2">
+              <h3 className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Faturas de Cartao
+              </h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {invoiceGroups.map((group) => {
+                const key = `${group.cardId}-${group.invoiceMonth}`;
+                const isExpanded = expandedInvoices.has(key);
+
+                return (
+                  <Fragment key={key}>
+                    <div
+                      className="cursor-pointer bg-white transition-colors hover:bg-slate-50/50"
+                      onClick={() => toggleInvoice(key)}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-slate-400" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-slate-400" />
+                          )}
+                          <div
+                            className="flex h-8 w-8 items-center justify-center rounded-md"
+                            style={{ backgroundColor: group.cardColor + '20' }}
+                          >
+                            <CreditCard
+                              className="h-4 w-4"
+                              style={{ color: group.cardColor }}
+                            />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              Fatura {group.cardName} - {formatMonthLabel(group.invoiceMonth)}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {group.transactions.length} transacao{group.transactions.length !== 1 && 'es'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span
+                            className={cn(
+                              'inline-flex rounded-md border px-2 py-0.5 text-xs font-medium',
+                              getInvoiceStatusStyles(group.status)
+                            )}
+                          >
+                            {getInvoiceStatusLabel(group.status)}
+                          </span>
+                          <span className="text-sm font-semibold tabular-nums text-red-600">
+                            -{formatCurrency(Math.abs(group.total))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="bg-slate-50/30 px-4 py-2">
+                        <DataTable
+                          columns={columns}
+                          data={group.transactions}
+                          enablePagination={false}
+                          enableSorting={true}
+                          emptyMessage="Nenhuma transacao nesta fatura"
+                        />
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Transactions Table */}
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Descricao
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Categoria
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Conta
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Vencimento
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Valor
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Acoes
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {hasNoData ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
-                    <p className="text-sm text-slate-400">
-                      Nenhuma transacao encontrada
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {/* Faturas de cartao (accordion) */}
-                  {invoiceGroups.map((group) => {
-                    const key = `${group.cardId}-${group.invoiceMonth}`;
-                    const isExpanded = expandedInvoices.has(key);
-
-                    return (
-                      <Fragment key={key}>
-                        {/* Linha da fatura (cabecalho do accordion) */}
-                        <tr
-                          className="cursor-pointer bg-slate-50/30 transition-colors hover:bg-slate-50"
-                          onClick={() => toggleInvoice(key)}
-                        >
-                          <td className="px-4 py-3" colSpan={3}>
-                            <div className="flex items-center gap-3">
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 text-slate-400" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-slate-400" />
-                              )}
-                              <div
-                                className="flex h-7 w-7 items-center justify-center rounded-md"
-                                style={{ backgroundColor: group.cardColor + '20' }}
-                              >
-                                <CreditCard
-                                  className="h-4 w-4"
-                                  style={{ color: group.cardColor }}
-                                />
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-slate-900">
-                                  Fatura {group.cardName} - {formatMonthLabel(group.invoiceMonth)}
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                  {group.transactions.length} transacao{group.transactions.length !== 1 && 'es'}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="text-sm text-slate-500">-</span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className="text-sm font-semibold tabular-nums text-slate-900">
-                              -{formatCurrency(Math.abs(group.total))}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={cn(
-                                'inline-flex rounded-md border px-2 py-0.5 text-xs font-medium',
-                                getInvoiceStatusStyles(group.status)
-                              )}
-                            >
-                              {getInvoiceStatusLabel(group.status)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {/* Acoes da fatura podem ser adicionadas aqui */}
-                          </td>
-                        </tr>
-
-                        {/* Transacoes da fatura (expandido) */}
-                        {isExpanded &&
-                          group.transactions.map((tx) => renderTransactionRow(tx, true))}
-                      </Fragment>
-                    );
-                  })}
-
-                  {/* Transacoes de conta */}
-                  {accountTransactions.map((transaction) => renderTransactionRow(transaction))}
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={accountTransactions}
+          enableSorting={true}
+          enablePagination={true}
+          pageSize={20}
+          isLoading={loading && !isInitialLoad}
+          emptyMessage="Nenhuma transacao encontrada"
+        />
       </div>
 
       {/* Transaction Dialog */}

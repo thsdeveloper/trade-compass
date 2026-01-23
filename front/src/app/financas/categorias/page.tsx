@@ -16,13 +16,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Plus,
   Loader2,
   AlertCircle,
@@ -41,10 +34,9 @@ import type {
   FinanceCategoryType,
   BudgetCategory,
 } from '@/types/finance';
-import { CATEGORY_TYPE_LABELS } from '@/types/finance';
 import { BudgetCategorySelect, BudgetCategoryBadge } from '@/components/molecules/BudgetCategorySelect';
-import { CategoryIcon, IconSelector, ColorPicker, DEFAULT_CATEGORY_ICONS } from '@/components/atoms/CategoryIcon';
-import { DeleteConfirm } from '@/components/molecules/ConfirmDialog';
+import { CategoryIcon, IconSelector, ColorPicker } from '@/components/atoms/CategoryIcon';
+import { DeleteConfirm, useAlert } from '@/components/molecules/ConfirmDialog';
 
 export default function CategoriasPage() {
   const { user, session, loading: authLoading } = useAuth();
@@ -60,9 +52,10 @@ export default function CategoriasPage() {
   const [saving, setSaving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<FinanceCategory | null>(null);
+  const { alert, AlertDialog: AlertDialogComponent } = useAlert();
   const [formData, setFormData] = useState<CategoryFormData>({
     name: '',
-    type: 'OUTROS',
+    type: 'DESPESA',
     color: '#64748b',
     icon: 'Tag',
   });
@@ -111,7 +104,7 @@ export default function CategoriasPage() {
     setEditingCategory(null);
     setFormData({
       name: '',
-      type: 'OUTROS',
+      type: 'DESPESA',
       color: '#64748b',
       icon: 'Tag',
     });
@@ -162,17 +155,22 @@ export default function CategoriasPage() {
   const handleDelete = async () => {
     if (!session?.access_token || !categoryToDelete) return;
 
-    await financeApi.deleteCategory(categoryToDelete.id, session.access_token);
-    loadData(true);
+    try {
+      await financeApi.deleteCategory(categoryToDelete.id, session.access_token);
+      loadData(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao excluir categoria';
+      alert({
+        title: 'Nao foi possivel excluir',
+        description: message,
+        variant: 'warning',
+      });
+    }
   };
 
   // Group categories by type
-  const expenseCategories = categories.filter((c) =>
-    ['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'DIVIDA', 'OUTROS'].includes(c.type)
-  );
-  const incomeCategories = categories.filter((c) =>
-    ['SALARIO', 'FREELANCE', 'INVESTIMENTOS'].includes(c.type)
-  );
+  const expenseCategories = categories.filter((c) => c.type === 'DESPESA');
+  const incomeCategories = categories.filter((c) => c.type === 'RECEITA');
 
   if (authLoading || loading) {
     return <CategoriasPageSkeleton />;
@@ -321,34 +319,45 @@ export default function CategoriasPage() {
               />
             </div>
 
-            {!editingCategory && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-slate-600">
-                  Tipo
-                </Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value: FinanceCategoryType) =>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-600">
+                Tipo
+              </Label>
+              <div className="flex rounded-md border border-slate-200 p-1 gap-1 bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() =>
                     setFormData({
                       ...formData,
-                      type: value,
-                      icon: DEFAULT_CATEGORY_ICONS[value] || 'Tag',
+                      type: 'DESPESA',
                     })
                   }
+                  className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                    formData.type === 'DESPESA'
+                      ? 'bg-rose-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-rose-700 hover:bg-rose-50/80'
+                  }`}
                 >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(CATEGORY_TYPE_LABELS).map(([key, label]) => (
-                      <SelectItem key={key} value={key} className="text-sm">
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  Despesa
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      type: 'RECEITA',
+                    })
+                  }
+                  className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                    formData.type === 'RECEITA'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50/80'
+                  }`}
+                >
+                  Receita
+                </button>
               </div>
-            )}
+            </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-slate-600">
@@ -372,7 +381,7 @@ export default function CategoriasPage() {
             </div>
 
             {/* Budget Category - only for expense categories */}
-            {['MORADIA', 'ALIMENTACAO', 'TRANSPORTE', 'SAUDE', 'LAZER', 'EDUCACAO', 'VESTUARIO', 'SERVICOS', 'OUTROS', 'DIVIDA'].includes(formData.type) && (
+            {formData.type === 'DESPESA' && (
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-slate-600">
                   Categoria 50-30-20
@@ -421,6 +430,8 @@ export default function CategoriasPage() {
         itemType="categoria"
         onConfirm={handleDelete}
       />
+
+      {AlertDialogComponent}
     </PageShell>
   );
 }

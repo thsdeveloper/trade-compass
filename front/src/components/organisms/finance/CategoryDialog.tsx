@@ -12,13 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import {
   ColorPicker,
@@ -32,7 +25,6 @@ import type {
   FinanceCategoryType,
   BudgetCategory,
 } from '@/types/finance';
-import { CATEGORY_TYPE_LABELS } from '@/types/finance';
 
 interface CategoryDialogProps {
   open: boolean;
@@ -41,22 +33,9 @@ interface CategoryDialogProps {
   category?: FinanceCategory | null;
 }
 
-const EXPENSE_TYPES: FinanceCategoryType[] = [
-  'MORADIA',
-  'ALIMENTACAO',
-  'TRANSPORTE',
-  'SAUDE',
-  'LAZER',
-  'EDUCACAO',
-  'VESTUARIO',
-  'SERVICOS',
-  'OUTROS',
-  'DIVIDA',
-];
-
 const initialFormData: CategoryFormData = {
   name: '',
-  type: 'OUTROS',
+  type: 'DESPESA',
   color: '#64748b',
   icon: 'Tag',
 };
@@ -100,7 +79,7 @@ export function CategoryDialog({
 
   const isEditing = !!category;
   const isValid = formData.name.trim();
-  const isExpenseType = EXPENSE_TYPES.includes(formData.type);
+  const isExpenseType = formData.type === 'DESPESA';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -132,34 +111,45 @@ export function CategoryDialog({
             />
           </div>
 
-          {!isEditing && (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-600">
-                Tipo
-              </Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value: FinanceCategoryType) =>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-slate-600">
+              Tipo
+            </Label>
+            <div className="flex rounded-md border border-slate-200 p-1 gap-1 bg-slate-50">
+              <button
+                type="button"
+                onClick={() =>
                   setFormData({
                     ...formData,
-                    type: value,
-                    icon: DEFAULT_CATEGORY_ICONS[value] || 'Tag',
+                    type: 'DESPESA',
                   })
                 }
+                className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                  formData.type === 'DESPESA'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-rose-700 hover:bg-rose-50/80'
+                }`}
               >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(CATEGORY_TYPE_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key} className="text-sm">
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                Despesa
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    type: 'RECEITA',
+                  })
+                }
+                className={`flex-1 rounded-[4px] px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                  formData.type === 'RECEITA'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50/80'
+                }`}
+              >
+                Receita
+              </button>
             </div>
-          )}
+          </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-slate-600">

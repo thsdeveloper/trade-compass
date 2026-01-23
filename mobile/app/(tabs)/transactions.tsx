@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
 import { MonthNavigator } from '@/components/finance/MonthNavigator';
@@ -28,7 +28,6 @@ export default function TransactionsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
-  const isDark = colorScheme === 'dark';
 
   const {
     transactions,
@@ -75,15 +74,15 @@ export default function TransactionsScreen() {
       <View
         style={[
           styles.sectionHeader,
-          { backgroundColor: isDark ? colors.background : '#f3f4f6' },
+          { backgroundColor: colors.surface },
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.icon }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
           {section.title}
         </Text>
       </View>
     ),
-    [colors, isDark]
+    [colors]
   );
 
   const renderItem = useCallback(
@@ -102,9 +101,9 @@ export default function TransactionsScreen() {
     () => (
       <View style={styles.emptyContainer}>
         {isLoading ? (
-          <ActivityIndicator size="large" color={colors.tint} />
+          <ActivityIndicator size="large" color={colors.primary} />
         ) : (
-          <Text style={[styles.emptyText, { color: colors.icon }]}>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             Nenhuma transacao neste mes
           </Text>
         )}
@@ -129,8 +128,8 @@ export default function TransactionsScreen() {
       />
 
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={[styles.errorContainer, { backgroundColor: colors.dangerLight }]}>
+          <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
         </View>
       )}
 
@@ -146,7 +145,7 @@ export default function TransactionsScreen() {
           <RefreshControl
             refreshing={isLoading}
             onRefresh={loadTransactions}
-            tintColor={colors.tint}
+            tintColor={colors.primary}
           />
         }
       />
@@ -159,20 +158,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: FontSize['3xl'],
     fontWeight: 'bold',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
   },
   listContent: {
     paddingBottom: 100,
   },
   sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '600',
     textTransform: 'capitalize',
   },
@@ -183,17 +182,15 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: FontSize.md,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
-    padding: 12,
-    marginHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 8,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.sm,
   },
   errorText: {
-    color: '#dc2626',
     textAlign: 'center',
   },
 });

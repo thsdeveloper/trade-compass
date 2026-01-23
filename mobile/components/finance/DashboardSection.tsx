@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface DashboardSectionProps {
@@ -15,15 +15,14 @@ export function DashboardSection({
 }: DashboardSectionProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const isDark = colorScheme === 'dark';
 
   return (
     <View
       style={[
         styles.container,
         {
-          backgroundColor: isDark ? '#1f2937' : '#fff',
-          borderColor: isDark ? '#374151' : '#e5e7eb',
+          backgroundColor: colors.card,
+          borderColor: colors.border,
         },
       ]}
     >
@@ -31,7 +30,7 @@ export function DashboardSection({
         <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
         {onSeeAll && (
           <TouchableOpacity onPress={onSeeAll}>
-            <Text style={[styles.seeAll, { color: colors.tint }]}>Ver tudo</Text>
+            <Text style={[styles.seeAll, { color: colors.primary }]}>Ver tudo</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -42,29 +41,29 @@ export function DashboardSection({
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 12,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
     overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
   title: {
-    fontSize: 16,
+    fontSize: FontSize.lg,
     fontWeight: '600',
   },
   seeAll: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '500',
   },
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
 });

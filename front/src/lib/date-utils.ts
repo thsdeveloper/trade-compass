@@ -1,4 +1,5 @@
 import type { DatePreset, DateRange, ReportDateFilter } from '@/types/reports';
+import type { DayTradeDatePreset } from '@/types/daytrade';
 
 /**
  * Calculates a date range from a preset
@@ -54,6 +55,12 @@ export function getDateRangeFromPreset(preset: DatePreset): DateRange {
     case 'ytd': {
       const from = new Date(now.getFullYear(), 0, 1);
       return { from, to: today };
+    }
+
+    case 'current_month': {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from, to };
     }
 
     case 'custom':
@@ -168,4 +175,87 @@ export function getDurationLabel(range: DateRange): string {
 export function getAvailableYears(): number[] {
   const currentYear = new Date().getFullYear();
   return [currentYear, currentYear - 1, currentYear - 2];
+}
+
+// ==================== DAYTRADE DATE UTILITIES ====================
+
+/**
+ * Calculates a date range from a DayTrade preset
+ */
+export function getDayTradeDateRange(
+  preset: DayTradeDatePreset,
+  customRange?: { from: Date; to: Date }
+): DateRange {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (preset) {
+    case 'today':
+      return { from: today, to: today };
+
+    case 'yesterday': {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return { from: yesterday, to: yesterday };
+    }
+
+    case '7d': {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 6);
+      return { from, to: today };
+    }
+
+    case '15d': {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 14);
+      return { from, to: today };
+    }
+
+    case '30d': {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 29);
+      return { from, to: today };
+    }
+
+    case 'this_week': {
+      // Domingo a Sabado da semana atual
+      const from = new Date(today);
+      from.setDate(today.getDate() - today.getDay());
+      return { from, to: today };
+    }
+
+    case 'last_week': {
+      // Domingo a Sabado da semana passada
+      const to = new Date(today);
+      to.setDate(today.getDate() - today.getDay() - 1);
+      const from = new Date(to);
+      from.setDate(to.getDate() - 6);
+      return { from, to };
+    }
+
+    case 'this_month': {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from, to: today };
+    }
+
+    case 'last_month': {
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const to = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { from, to };
+    }
+
+    case 'ytd': {
+      const from = new Date(now.getFullYear(), 0, 1);
+      return { from, to: today };
+    }
+
+    case 'custom':
+      if (customRange) {
+        return { from: customRange.from, to: customRange.to };
+      }
+      return { from: today, to: today };
+
+    default:
+      return { from: today, to: today };
+  }
 }

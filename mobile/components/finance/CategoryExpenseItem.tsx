@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatCurrency, type ExpensesByCategory } from '@/types/finance';
 
@@ -10,7 +10,6 @@ interface CategoryExpenseItemProps {
 export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const isDark = colorScheme === 'dark';
 
   return (
     <View style={styles.container}>
@@ -36,7 +35,7 @@ export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
             <View
               style={[
                 styles.progressBackground,
-                { backgroundColor: isDark ? '#374151' : '#e5e7eb' },
+                { backgroundColor: colors.border },
               ]}
             >
               <View
@@ -56,7 +55,7 @@ export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
         <Text style={[styles.amount, { color: colors.text }]}>
           {formatCurrency(item.total)}
         </Text>
-        <Text style={[styles.percentage, { color: colors.icon }]}>
+        <Text style={[styles.percentage, { color: colors.textSecondary }]}>
           {item.percentage.toFixed(1)}%
         </Text>
       </View>
@@ -69,21 +68,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: Spacing.md,
   },
   leftContent: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   iconContainer: {
     width: 36,
     height: 36,
-    borderRadius: 8,
+    borderRadius: BorderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   colorDot: {
     width: 16,
@@ -94,9 +93,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   categoryName: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '500',
-    marginBottom: 6,
+    marginBottom: Spacing.xs,
   },
   progressContainer: {
     width: '100%',
@@ -114,11 +113,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   amount: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '600',
     marginBottom: 2,
   },
   percentage: {
-    fontSize: 12,
+    fontSize: FontSize.xs,
   },
 });

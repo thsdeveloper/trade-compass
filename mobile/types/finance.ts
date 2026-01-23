@@ -1,19 +1,6 @@
 // ==================== ENUMS ====================
 
-export type FinanceCategoryType =
-  | 'MORADIA'
-  | 'ALIMENTACAO'
-  | 'TRANSPORTE'
-  | 'SAUDE'
-  | 'LAZER'
-  | 'EDUCACAO'
-  | 'VESTUARIO'
-  | 'SERVICOS'
-  | 'INVESTIMENTOS'
-  | 'SALARIO'
-  | 'FREELANCE'
-  | 'DIVIDA'
-  | 'OUTROS';
+export type FinanceCategoryType = 'DESPESA' | 'RECEITA';
 
 export type FinanceAccountType =
   | 'CONTA_CORRENTE'

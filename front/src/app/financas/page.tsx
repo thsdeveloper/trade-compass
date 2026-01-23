@@ -28,14 +28,11 @@ import type {
   FinanceCategory,
   AccountWithBank,
   FinanceCreditCard,
-  BudgetSummary,
   YearSummary,
   GoalWithProgress,
   GoalSummary,
 } from '@/types/finance';
 import { formatCurrency } from '@/types/finance';
-import { BudgetAllocationChart } from '@/components/molecules/BudgetAllocationChart';
-import { BudgetProgressCards } from '@/components/molecules/BudgetProgressCards';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
 import { AccountsCard, CreditCardsCard } from '@/components/molecules/DashboardCards';
 import { SummaryCard } from '@/components/molecules/SummaryCard';
@@ -58,7 +55,6 @@ export default function FinancasPage() {
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [accounts, setAccounts] = useState<AccountWithBank[]>([]);
   const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
-  const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
   const [yearSummary, setYearSummary] = useState<YearSummary | null>(null);
   const [goals, setGoals] = useState<GoalWithProgress[]>([]);
   const [goalSummary, setGoalSummary] = useState<GoalSummary | null>(null);
@@ -115,7 +111,6 @@ export default function FinancasPage() {
           categoriesData,
           accountsData,
           cardsData,
-          budgetData,
           goalsData,
           goalSummaryData,
         ] = await Promise.all([
@@ -125,7 +120,6 @@ export default function FinancasPage() {
           financeApi.getCategories(session.access_token),
           financeApi.getAccounts(session.access_token),
           financeApi.getCreditCards(session.access_token),
-          financeApi.getBudgetAllocation(session.access_token, selectedMonth),
           financeApi.getGoals(session.access_token, { status: 'ATIVO' }),
           financeApi.getGoalSummary(session.access_token),
         ]);
@@ -136,7 +130,6 @@ export default function FinancasPage() {
         setCategories(categoriesData);
         setAccounts(accountsData);
         setCreditCards(cardsData);
-        setBudgetSummary(budgetData);
         setGoals(goalsData);
         setGoalSummary(goalSummaryData);
       }
@@ -273,7 +266,7 @@ export default function FinancasPage() {
               <SummaryCard
                 title="Saldo Total"
                 value={summary?.total_balance ?? 0}
-                subtitle={`${accounts.filter(a => a.type !== 'BENEFICIO').length} conta${accounts.filter(a => a.type !== 'BENEFICIO').length !== 1 ? 's' : ''} ativa${accounts.filter(a => a.type !== 'BENEFICIO').length !== 1 ? 's' : ''}`}
+                subtitle="Exceto beneficios e investimentos"
                 icon={Wallet}
                 variant="default"
               />
@@ -291,7 +284,7 @@ export default function FinancasPage() {
               <SummaryCard
                 title="A Pagar"
                 value={summary?.total_pending_expenses ?? 0}
-                subtitle={`Despesas de ${MONTH_LABELS[parseInt(selectedMonth.split('-')[1]) - 1]}`}
+                subtitle="Despesas pendentes do mes"
                 icon={ArrowDownRight}
                 variant="danger"
               />
@@ -299,56 +292,19 @@ export default function FinancasPage() {
               <SummaryCard
                 title="A Receber"
                 value={summary?.total_pending_income ?? 0}
-                subtitle={`Receitas de ${MONTH_LABELS[parseInt(selectedMonth.split('-')[1]) - 1]}`}
+                subtitle="Receitas pendentes do mes"
                 icon={ArrowUpRight}
                 variant="success"
               />
 
               <SummaryCard
-                title="Resultado"
+                title="Resultado do mes"
                 value={summary?.month_result ?? 0}
-                subtitle="Receitas - Despesas"
+                subtitle="Receitas - Despesas (previsto)"
                 icon={TrendingUp}
                 variant={summary && summary.month_result >= 0 ? 'success' : 'danger'}
               />
             </div>
-
-        {/* Budget 50-30-20 Section */}
-        {budgetSummary && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-medium text-slate-900">
-                  Metodologia 50-30-20
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Acompanhe sua alocacao de despesas
-                </p>
-              </div>
-              <a
-                href="https://www.infomoney.com.br/minhas-financas/regra-50-30-20-conheca-um-metodo-para-organizar-suas-financas"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
-              >
-                Saiba mais
-              </a>
-            </div>
-            <BudgetProgressCards
-              allocations={budgetSummary.allocations}
-              totalIncome={budgetSummary.total_income}
-            />
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <h3 className="mb-4 text-sm font-medium text-slate-700">
-                Comparativo: Ideal vs Atual
-              </h3>
-              <BudgetAllocationChart
-                allocations={budgetSummary.allocations}
-                totalIncome={budgetSummary.total_income}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Main Content Grid */}
         <div className="grid gap-6 lg:grid-cols-2">

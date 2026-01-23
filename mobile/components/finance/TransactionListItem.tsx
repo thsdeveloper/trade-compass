@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TransactionWithDetails } from '@/types/finance';
 import {
@@ -17,7 +17,6 @@ interface TransactionListItemProps {
 export function TransactionListItem({ transaction }: TransactionListItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const isDark = colorScheme === 'dark';
 
   const typeColor = getTypeColor(transaction.type);
   const statusColor = getStatusColor(transaction.status);
@@ -29,7 +28,7 @@ export function TransactionListItem({ transaction }: TransactionListItemProps) {
     <View
       style={[
         styles.container,
-        { backgroundColor: isDark ? '#1f2937' : '#fff' },
+        { backgroundColor: colors.card },
       ]}
     >
       <View style={[styles.colorIndicator, { backgroundColor: transaction.category.color }]} />
@@ -69,7 +68,7 @@ export function TransactionListItem({ transaction }: TransactionListItemProps) {
         </View>
 
         {transaction.account && (
-          <Text style={[styles.accountText, { color: colors.icon }]}>
+          <Text style={[styles.accountText, { color: colors.textSecondary }]}>
             {transaction.account.name}
           </Text>
         )}
@@ -81,9 +80,9 @@ export function TransactionListItem({ transaction }: TransactionListItemProps) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 12,
+    marginHorizontal: Spacing.lg,
+    marginVertical: Spacing.xs,
+    borderRadius: BorderRadius.md,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -96,22 +95,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 12,
+    padding: Spacing.md,
   },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   description: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '500',
     flex: 1,
-    marginRight: 8,
+    marginRight: Spacing.sm,
   },
   amount: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '600',
   },
   bottomRow: {
@@ -121,29 +120,29 @@ const styles = StyleSheet.create({
   },
   categoryContainer: {
     flex: 1,
-    marginRight: 8,
+    marginRight: Spacing.sm,
   },
   categoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
     alignSelf: 'flex-start',
   },
   categoryText: {
-    fontSize: 12,
+    fontSize: FontSize.xs,
     fontWeight: '500',
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: FontSize.xs,
     fontWeight: '500',
   },
   accountText: {
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: FontSize.xs,
+    marginTop: Spacing.xs,
   },
 });

@@ -92,6 +92,27 @@ export async function updateAccount(
 ): Promise<FinanceAccount> {
   const client = createUserClient(accessToken);
 
+  // Se initial_balance está sendo atualizado, precisa ajustar current_balance também
+  if (updates.initial_balance !== undefined) {
+    // Buscar conta atual para calcular a diferença
+    const { data: currentAccount, error: fetchError } = await client
+      .from(TABLE)
+      .select('initial_balance, current_balance')
+      .eq('id', accountId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError) {
+      throw new Error(`Erro ao buscar conta: ${fetchError.message}`);
+    }
+
+    if (currentAccount) {
+      const diff = updates.initial_balance - currentAccount.initial_balance;
+      (updates as UpdateAccountDTO & { current_balance: number }).current_balance =
+        currentAccount.current_balance + diff;
+    }
+  }
+
   const { data, error } = await client
     .from(TABLE)
     .update(updates)

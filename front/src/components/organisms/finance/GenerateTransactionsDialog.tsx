@@ -59,9 +59,9 @@ export function GenerateTransactionsDialog({
 
   useEffect(() => {
     if (open) {
-      // Tentar encontrar categoria de divida como default, senao usa a primeira
-      const debtCategory = categories.find((c) => c.type === 'DIVIDA');
-      const defaultCategory = debtCategory || categories[0];
+      // Filtrar apenas categorias de despesa para dividas
+      const expenseCategories = categories.filter((c) => c.type === 'DESPESA');
+      const defaultCategory = expenseCategories[0] || categories[0];
 
       setFormData({
         category_id: defaultCategory?.id || '',

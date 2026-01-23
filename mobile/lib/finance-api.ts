@@ -57,8 +57,17 @@ async function authFetch<T>(
   console.log('[finance-api] Resposta recebida:', response.status);
 
   if (!response.ok) {
-    const error: ApiError = await response.json();
-    throw new Error(error.message);
+    let message = `Erro do servidor: ${response.status}`;
+    try {
+      const text = await response.text();
+      if (text) {
+        const error: ApiError = JSON.parse(text);
+        message = error.message || message;
+      }
+    } catch {
+      // Resposta não é JSON válido, usar mensagem padrão
+    }
+    throw new Error(message);
   }
 
   const text = await response.text();

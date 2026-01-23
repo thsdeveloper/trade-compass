@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Spacing, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface MonthNavigatorProps {
@@ -42,7 +42,7 @@ export function MonthNavigator({
         style={styles.button}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <IconSymbol name="chevron.left" size={24} color={colors.tint} />
+        <IconSymbol name="chevron.left" size={24} color={colors.primary} />
       </TouchableOpacity>
 
       <Text style={[styles.text, { color: colors.text }]}>
@@ -54,7 +54,7 @@ export function MonthNavigator({
         style={styles.button}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <IconSymbol name="chevron.right" size={24} color={colors.tint} />
+        <IconSymbol name="chevron.right" size={24} color={colors.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -65,14 +65,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 24,
+    paddingVertical: Spacing.lg,
+    gap: Spacing['2xl'],
   },
   button: {
-    padding: 8,
+    padding: Spacing.sm,
   },
   text: {
-    fontSize: 18,
+    fontSize: FontSize.lg,
     fontWeight: '600',
     minWidth: 150,
     textAlign: 'center',

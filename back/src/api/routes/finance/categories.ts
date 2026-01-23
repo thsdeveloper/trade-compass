@@ -12,7 +12,9 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  getOrCreateAdjustmentCategory,
 } from '../../../data/finance/category-repository.js';
+import type { FinanceCategoryType } from '../../../domain/finance-types.js';
 
 export async function categoryRoutes(app: FastifyInstance) {
   // GET /finance/categories - List user categories
@@ -130,6 +132,38 @@ export async function categoryRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao remover categoria';
+      // Retorna 400 para erros de validacao de negocio (transacoes vinculadas)
+      const isBusinessError = message.includes('transacao');
+      const status = isBusinessError ? 400 : 500;
+      return reply.status(status).send({
+        error: isBusinessError ? 'Bad Request' : 'Internal Server Error',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
+  // GET /finance/categories/system/adjustment/:type - Get or create adjustment category
+  app.get<{
+    Params: { type: FinanceCategoryType };
+    Reply: FinanceCategory | ApiError;
+  }>('/finance/categories/system/adjustment/:type', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { type } = request.params;
+
+    if (type !== 'RECEITA' && type !== 'DESPESA') {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Tipo deve ser RECEITA ou DESPESA',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const category = await getOrCreateAdjustmentCategory(user.id, type, accessToken);
+      return category;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao obter categoria de ajuste';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

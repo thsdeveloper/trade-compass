@@ -12,20 +12,8 @@ const TABLE = 'finance_categories';
 // Mapeamento automatico de tipo de categoria para budget category (50-30-20)
 export function getDefaultBudgetCategory(type: FinanceCategoryType): BudgetCategory | null {
   const mapping: Record<FinanceCategoryType, BudgetCategory | null> = {
-    MORADIA: 'ESSENCIAL',
-    ALIMENTACAO: 'ESSENCIAL',
-    TRANSPORTE: 'ESSENCIAL',
-    SAUDE: 'ESSENCIAL',
-    LAZER: 'ESTILO_VIDA',
-    VESTUARIO: 'ESTILO_VIDA',
-    SERVICOS: 'ESTILO_VIDA',
-    EDUCACAO: 'ESTILO_VIDA',
-    OUTROS: 'ESTILO_VIDA',
-    INVESTIMENTOS: 'INVESTIMENTO',
-    DIVIDA: 'ESSENCIAL',
-    SALARIO: null,
-    FREELANCE: null,
-    BENEFICIO: null,
+    DESPESA: 'ESTILO_VIDA', // Padrao para despesas, usuario pode alterar
+    RECEITA: null, // Receitas nao tem budget category
   };
   return mapping[type];
 }
@@ -88,7 +76,7 @@ export async function createCategory(
       color: category.color || '#6366f1',
       icon: category.icon || 'Tag',
       is_system: false,
-      budget_category: getDefaultBudgetCategory(category.type),
+      budget_category: category.budget_category ?? getDefaultBudgetCategory(category.type),
     })
     .select()
     .single();
@@ -134,6 +122,21 @@ export async function deleteCategory(
 ): Promise<void> {
   const client = createUserClient(accessToken);
 
+  // Verifica se existem transacoes vinculadas a esta categoria
+  const { count, error: countError } = await client
+    .from('finance_transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('category_id', categoryId)
+    .eq('user_id', userId);
+
+  if (countError) {
+    throw new Error(`Erro ao verificar transacoes: ${countError.message}`);
+  }
+
+  if (count && count > 0) {
+    throw new Error(`Nao e possivel excluir esta categoria pois existem ${count} transacao(oes) vinculada(s)`);
+  }
+
   // Soft delete - apenas desativa
   const { error } = await client
     .from(TABLE)
@@ -145,4 +148,43 @@ export async function deleteCategory(
   if (error) {
     throw new Error(`Erro ao remover categoria: ${error.message}`);
   }
+}
+
+export async function getOrCreateAdjustmentCategory(
+  userId: string,
+  type: FinanceCategoryType,
+  accessToken: string
+): Promise<FinanceCategory> {
+  const client = createUserClient(accessToken);
+  const name = type === 'RECEITA' ? 'Ajuste de Saldo (Entrada)' : 'Ajuste de Saldo (Saida)';
+
+  // Buscar categoria existente
+  const { data: existing } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('user_id', userId)
+    .eq('name', name)
+    .eq('type', type)
+    .eq('is_system', true)
+    .single();
+
+  if (existing) return existing;
+
+  // Criar categoria de sistema
+  const { data, error } = await client
+    .from(TABLE)
+    .insert({
+      user_id: userId,
+      name,
+      type,
+      color: '#8b5cf6',
+      icon: 'RefreshCw',
+      is_system: true,
+      budget_category: null,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`Erro ao criar categoria de ajuste: ${error.message}`);
+  return data;
 }

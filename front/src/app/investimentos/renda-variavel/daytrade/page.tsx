@@ -5,12 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { PageShell } from '@/components/organisms/PageShell';
-import { TradeDialog } from '@/components/organisms/TradeDialog';
+import { TradeDialog, type DayTradeFormDataWithExits } from '@/components/organisms/TradeDialog';
 import { CostsConfigDialog } from '@/components/organisms/CostsConfigDialog';
 import { ImportTradesDialog, type TradeToImport } from '@/components/organisms/ImportTradesDialog';
+import { ExitExecutionDialog } from '@/components/organisms/ExitExecutionDialog';
 import { DayTradeEvolutionChart } from '@/components/molecules/DayTradeEvolutionChart';
 import { MepMenChart } from '@/components/molecules/MepMenChart';
 import { TradePlanChart } from '@/components/molecules/TradePlanChart';
+import { DayTradeFilterBar } from '@/components/molecules/DayTradeFilterBar';
+import { ExitTimeline } from '@/components/molecules/ExitTimeline';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -21,17 +24,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Plus,
   Trash2,
   Edit2,
-  Loader2,
   Settings,
   ArrowUpDown,
   ArrowUp,
@@ -41,6 +36,8 @@ import {
   Image as ImageIcon,
   X,
   Upload,
+  LogOut,
+  ListTree,
 } from 'lucide-react';
 import { DaytradePageSkeleton } from '@/components/organisms/skeletons/DaytradePageSkeleton';
 import {
@@ -48,19 +45,38 @@ import {
   DialogContent,
   DialogTitle,
   DialogDescription,
+  DialogHeader,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import type {
   DayTrade,
   DayTradeFormData,
-  FuturesAsset,
   CostsConfig,
+  DayTradeFilters,
+  PlannedExit,
+  ActualExit,
+  DayTradeWithExits,
+  ActualExitFormData,
+  TradeStatus,
 } from '@/types/daytrade';
-import { calculateTradeResult, calculateTradeCosts } from '@/types/daytrade';
+import {
+  calculateTradeResult,
+  calculateTradeCosts,
+  DEFAULT_DAYTRADE_FILTERS,
+  calculateExitResult,
+  calculateTradeExitMetrics,
+} from '@/types/daytrade';
+import { getDayTradeDateRange } from '@/lib/date-utils';
 
-type DateFilter = 'today' | 'week' | 'month' | 'all';
 type SortColumn = 'entry_time' | 'asset' | 'direction' | 'contracts' | 'entry_price' | 'exit_price' | 'mep_men' | 'result';
 type SortDirection = 'asc' | 'desc';
+
+// Extended trade type with exits
+type TradeWithExits = DayTrade & {
+  planned_exits: PlannedExit[];
+  actual_exits: ActualExit[];
+  status: TradeStatus;
+};
 
 export default function DayTradePage() {
   const { user, loading: authLoading } = useAuth();
@@ -68,15 +84,18 @@ export default function DayTradePage() {
   const supabaseRef = useRef(createClient());
   const supabase = supabaseRef.current;
 
-  const [trades, setTrades] = useState<DayTrade[]>([]);
+  const [trades, setTrades] = useState<TradeWithExits[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCostsDialogOpen, setIsCostsDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [editingTrade, setEditingTrade] = useState<DayTrade | null>(null);
-  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
-  const [assetFilter, setAssetFilter] = useState<FuturesAsset | 'all'>('all');
+  const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
+  const [isExitTimelineOpen, setIsExitTimelineOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<TradeWithExits | null>(null);
+  const [exitingTrade, setExitingTrade] = useState<TradeWithExits | null>(null);
+  const [viewingTimelineTrade, setViewingTimelineTrade] = useState<TradeWithExits | null>(null);
+  const [filters, setFilters] = useState<DayTradeFilters>(DEFAULT_DAYTRADE_FILTERS);
   const [costsConfig, setCostsConfig] = useState<CostsConfig | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('entry_time');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -112,29 +131,71 @@ export default function DayTradePage() {
         .select('*')
         .order('entry_time', { ascending: false });
 
-      const now = new Date();
-      if (dateFilter === 'today') {
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
-        query = query.gte('entry_time', startOfDay.toISOString());
-      } else if (dateFilter === 'week') {
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
-        query = query.gte('entry_time', startOfWeek.toISOString());
-      } else if (dateFilter === 'month') {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        query = query.gte('entry_time', startOfMonth.toISOString());
+      // Apply date range filter
+      const dateRange = getDayTradeDateRange(filters.datePreset, filters.customDateRange);
+      const startDate = new Date(dateRange.from);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(dateRange.to);
+      endDate.setHours(23, 59, 59, 999);
+
+      query = query
+        .gte('entry_time', startDate.toISOString())
+        .lte('entry_time', endDate.toISOString());
+
+      // Apply asset filter
+      if (filters.asset !== 'all') {
+        query = query.eq('asset', filters.asset);
       }
 
-      if (assetFilter !== 'all') {
-        query = query.eq('asset', assetFilter);
+      // Apply direction filter
+      if (filters.direction !== 'all') {
+        query = query.eq('direction', filters.direction);
       }
 
-      const { data, error: queryError } = await query;
+      // Apply result filter (positive/negative)
+      if (filters.result === 'positive') {
+        query = query.gt('result', 0);
+      } else if (filters.result === 'negative') {
+        query = query.lt('result', 0);
+      }
+
+      const { data: tradesData, error: queryError } = await query;
 
       if (queryError) throw queryError;
-      setTrades(data || []);
+
+      // Load exits for all trades
+      const tradeIds = (tradesData || []).map((t) => t.id);
+
+      let plannedExits: PlannedExit[] = [];
+      let actualExits: ActualExit[] = [];
+
+      if (tradeIds.length > 0) {
+        const [plannedRes, actualRes] = await Promise.all([
+          supabase
+            .from('daytrade_planned_exits')
+            .select('*')
+            .in('trade_id', tradeIds)
+            .order('order', { ascending: true }),
+          supabase
+            .from('daytrade_actual_exits')
+            .select('*')
+            .in('trade_id', tradeIds)
+            .order('exit_time', { ascending: true }),
+        ]);
+
+        plannedExits = plannedRes.data || [];
+        actualExits = actualRes.data || [];
+      }
+
+      // Map exits to trades
+      const tradesWithExits: TradeWithExits[] = (tradesData || []).map((trade) => ({
+        ...trade,
+        planned_exits: plannedExits.filter((e) => e.trade_id === trade.id),
+        actual_exits: actualExits.filter((e) => e.trade_id === trade.id),
+        status: (trade.status || 'OPEN') as TradeStatus,
+      }));
+
+      setTrades(tradesWithExits);
       setError(null);
       hasLoadedRef.current = true;
     } catch (err) {
@@ -142,7 +203,7 @@ export default function DayTradePage() {
     } finally {
       setInitialLoading(false);
     }
-  }, [user, dateFilter, assetFilter]);
+  }, [user, filters, supabase]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -154,9 +215,9 @@ export default function DayTradePage() {
 
     loadCostsConfig();
     loadTrades();
-  }, [user, authLoading, router, dateFilter, assetFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, authLoading, router, filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSaveTrade = async (data: DayTradeFormData) => {
+  const handleSaveTrade = async (data: DayTradeFormDataWithExits) => {
     if (!user) return;
 
     const costs = calculateTradeCosts(data.asset, data.contracts, costsConfig ?? undefined);
@@ -202,6 +263,12 @@ export default function DayTradePage() {
       imagePath = null;
     }
 
+    // Determine status based on exits
+    let status: TradeStatus = 'OPEN';
+    if (data.exit_price !== undefined) {
+      status = 'CLOSED';
+    }
+
     const tradeData = {
       user_id: user.id,
       asset: data.asset,
@@ -220,7 +287,10 @@ export default function DayTradePage() {
       target_price: data.target_price ?? null,
       notes: data.notes || null,
       image_path: imagePath,
+      status,
     };
+
+    let tradeId: string;
 
     if (editingTrade) {
       const { error } = await supabase
@@ -229,16 +299,144 @@ export default function DayTradePage() {
         .eq('id', editingTrade.id);
 
       if (error) throw error;
+      tradeId = editingTrade.id;
+
+      // Delete existing planned exits if we have new ones
+      if (data.planned_exits) {
+        await supabase
+          .from('daytrade_planned_exits')
+          .delete()
+          .eq('trade_id', editingTrade.id);
+      }
     } else {
-      const { error } = await supabase
+      const { data: insertedTrade, error } = await supabase
         .from('daytrade_trades')
-        .insert(tradeData);
+        .insert(tradeData)
+        .select('id')
+        .single();
 
       if (error) throw error;
+      tradeId = insertedTrade.id;
+    }
+
+    // Insert planned exits if provided
+    if (data.planned_exits && data.planned_exits.length > 0) {
+      const plannedExitsData = data.planned_exits.map((exit) => ({
+        trade_id: tradeId,
+        user_id: user.id,
+        order: exit.order,
+        exit_type: exit.exit_type,
+        price: exit.price,
+        contracts: exit.contracts,
+        notes: exit.notes || null,
+      }));
+
+      const { error: exitsError } = await supabase
+        .from('daytrade_planned_exits')
+        .insert(plannedExitsData);
+
+      if (exitsError) {
+        console.error('Erro ao salvar saidas planejadas:', exitsError);
+      }
     }
 
     setEditingTrade(null);
     await loadTrades();
+  };
+
+  // Handle registering actual exit
+  const handleRegisterExit = async (data: ActualExitFormData) => {
+    if (!user || !exitingTrade) return;
+
+    const exitResult = calculateExitResult(
+      exitingTrade.asset,
+      exitingTrade.direction,
+      data.contracts,
+      exitingTrade.entry_price,
+      data.price,
+      costsConfig ?? undefined
+    );
+
+    const actualExitData = {
+      trade_id: exitingTrade.id,
+      user_id: user.id,
+      planned_exit_id: data.planned_exit_id || null,
+      exit_type: data.exit_type,
+      price: data.price,
+      contracts: data.contracts,
+      exit_time: new Date(data.exit_time).toISOString(),
+      result: exitResult.result,
+      points: exitResult.points,
+      notes: data.notes || null,
+    };
+
+    const { error } = await supabase
+      .from('daytrade_actual_exits')
+      .insert(actualExitData);
+
+    if (error) throw error;
+
+    // Calculate new totals
+    const totalExitedContracts =
+      exitingTrade.actual_exits.reduce((sum, e) => sum + e.contracts, 0) +
+      data.contracts;
+    const remainingAfterExit = exitingTrade.contracts - totalExitedContracts;
+
+    // Update trade status and result
+    let newStatus: TradeStatus = 'PARTIAL';
+    if (remainingAfterExit <= 0) {
+      newStatus = 'CLOSED';
+    }
+
+    // Calculate total result from all exits
+    const totalResult =
+      exitingTrade.actual_exits.reduce((sum, e) => sum + e.result, 0) +
+      exitResult.result;
+
+    // Calculate weighted average exit price
+    const totalContracts = totalExitedContracts;
+    const avgExitPrice =
+      (exitingTrade.actual_exits.reduce((sum, e) => sum + e.price * e.contracts, 0) +
+        data.price * data.contracts) /
+      totalContracts;
+
+    // Update trade with new values
+    const updateData: Record<string, unknown> = {
+      status: newStatus,
+      result: totalResult,
+    };
+
+    // If fully closed, set exit_price and exit_time
+    if (newStatus === 'CLOSED') {
+      updateData.exit_price = avgExitPrice;
+      updateData.exit_time = new Date(data.exit_time).toISOString();
+    }
+
+    await supabase
+      .from('daytrade_trades')
+      .update(updateData)
+      .eq('id', exitingTrade.id);
+
+    setExitingTrade(null);
+    await loadTrades();
+  };
+
+  // Calculate remaining contracts for a trade
+  const getRemainingContracts = (trade: TradeWithExits): number => {
+    const totalExited = trade.actual_exits.reduce((sum, e) => sum + e.contracts, 0);
+    return trade.contracts - totalExited;
+  };
+
+  // Open exit dialog
+  const handleOpenExitDialog = (trade: TradeWithExits) => {
+    setExitingTrade(trade);
+    setIsExitDialogOpen(true);
+  };
+
+  // Open timeline dialog
+  const handleOpenTimeline = (trade: TradeWithExits) => {
+    setViewingTimelineTrade(trade);
+    setIsExitTimelineOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -257,7 +455,7 @@ export default function DayTradePage() {
     }
   };
 
-  const handleEdit = (trade: DayTrade) => {
+  const handleEdit = (trade: TradeWithExits) => {
     setEditingTrade(trade);
     setIsDialogOpen(true);
   };
@@ -390,8 +588,19 @@ export default function DayTradePage() {
   // Metricas de aderencia ao plano operacional
   const planStats = useMemo(() => {
     const completedTrades = trades.filter((t) => t.result !== null);
-    const tradesComPlano = completedTrades.filter(
+
+    // Trades com plano (legado ou novo sistema)
+    const tradesComPlanoLegado = completedTrades.filter(
       (t) => t.stop_price !== null || t.target_price !== null
+    );
+    const tradesComPlanoNovo = completedTrades.filter(
+      (t) => t.planned_exits.length > 0
+    );
+    const tradesComPlano = completedTrades.filter(
+      (t) =>
+        t.stop_price !== null ||
+        t.target_price !== null ||
+        t.planned_exits.length > 0
     );
 
     if (tradesComPlano.length === 0) {
@@ -401,11 +610,13 @@ export default function DayTradePage() {
         aderenciaStop: 0,
         aderenciaAlvo: 0,
         rrPlanejado: 0,
+        tradesComMultiplasExits: 0,
+        avgPlanAdherence: 0,
       };
     }
 
-    // Aderencia ao Stop (trades perdedores que respeitaram o stop)
-    const tradesPerdedoresComStop = tradesComPlano.filter(
+    // Aderencia ao Stop (trades perdedores que respeitaram o stop) - LEGADO
+    const tradesPerdedoresComStop = tradesComPlanoLegado.filter(
       (t) => t.stop_price !== null && t.result !== null && t.result < 0 && t.exit_price !== null
     );
     let aderenciaStop = 0;
@@ -418,8 +629,8 @@ export default function DayTradePage() {
       aderenciaStop = (respeitouStop.length / tradesPerdedoresComStop.length) * 100;
     }
 
-    // Aderencia ao Alvo (trades vencedores que atingiram o alvo)
-    const tradesVencedoresComAlvo = tradesComPlano.filter(
+    // Aderencia ao Alvo (trades vencedores que atingiram o alvo) - LEGADO
+    const tradesVencedoresComAlvo = tradesComPlanoLegado.filter(
       (t) => t.target_price !== null && t.result !== null && t.result > 0 && t.exit_price !== null
     );
     let aderenciaAlvo = 0;
@@ -434,8 +645,8 @@ export default function DayTradePage() {
       aderenciaAlvo = (atingiuAlvo.length / tradesVencedoresComAlvo.length) * 100;
     }
 
-    // R:R Planejado medio
-    const tradesComRR = tradesComPlano.filter(
+    // R:R Planejado medio - LEGADO
+    const tradesComRR = tradesComPlanoLegado.filter(
       (t) => t.stop_price !== null && t.target_price !== null
     );
     let rrPlanejado = 0;
@@ -448,17 +659,79 @@ export default function DayTradePage() {
       rrPlanejado = rrValues.reduce((a, b) => a + b, 0) / rrValues.length;
     }
 
+    // Metricas do novo sistema de exits
+    const tradesComMultiplasExits = tradesComPlanoNovo.filter(
+      (t) => t.actual_exits.length > 1
+    ).length;
+
+    // Aderencia media ao plano (para trades com novo sistema)
+    let avgPlanAdherence = 0;
+    if (tradesComPlanoNovo.length > 0) {
+      const adherenceScores = tradesComPlanoNovo.map((t) => {
+        if (t.planned_exits.length === 0) return 100;
+        const matchedExits = t.actual_exits.filter((ae) => ae.planned_exit_id !== null);
+        return (matchedExits.length / t.planned_exits.length) * 100;
+      });
+      avgPlanAdherence = adherenceScores.reduce((a, b) => a + b, 0) / tradesComPlanoNovo.length;
+    }
+
     return {
       tradesComPlano: tradesComPlano.length,
       totalTrades: completedTrades.length,
       aderenciaStop,
       aderenciaAlvo,
       rrPlanejado,
+      tradesComMultiplasExits,
+      avgPlanAdherence,
     };
   }, [trades]);
 
+  // Apply client-side filtering for planAdherence (complex logic)
+  const filteredTrades = useMemo(() => {
+    if (filters.planAdherence === 'all') return trades;
+
+    return trades.filter((trade) => {
+      const hasPlan = trade.stop_price !== null || trade.target_price !== null;
+
+      switch (filters.planAdherence) {
+        case 'with_plan':
+          return hasPlan;
+        case 'without_plan':
+          return !hasPlan;
+        case 'respected_stop':
+          // Trade perdedor que respeitou o stop (saiu dentro da tolerancia)
+          if (trade.stop_price === null || trade.result === null || trade.result >= 0 || trade.exit_price === null) {
+            return false;
+          }
+          const stopDistance = Math.abs(trade.entry_price - trade.stop_price);
+          const exitDistance = Math.abs(trade.entry_price - trade.exit_price);
+          return exitDistance <= stopDistance * 1.1; // 10% tolerancia
+        case 'hit_target':
+          // Trade vencedor que atingiu o alvo
+          if (trade.target_price === null || trade.result === null || trade.result <= 0 || trade.exit_price === null) {
+            return false;
+          }
+          if (trade.direction === 'BUY') {
+            return trade.exit_price >= trade.target_price * 0.95;
+          } else {
+            return trade.exit_price <= trade.target_price * 1.05;
+          }
+        case 'exceeded_stop':
+          // Trade perdedor que estourou o stop
+          if (trade.stop_price === null || trade.result === null || trade.result >= 0 || trade.exit_price === null) {
+            return false;
+          }
+          const stopDist = Math.abs(trade.entry_price - trade.stop_price);
+          const exitDist = Math.abs(trade.entry_price - trade.exit_price);
+          return exitDist > stopDist * 1.1;
+        default:
+          return true;
+      }
+    });
+  }, [trades, filters.planAdherence]);
+
   const sortedTrades = useMemo(() => {
-    return [...trades].sort((a, b) => {
+    return [...filteredTrades].sort((a, b) => {
       let comparison = 0;
 
       switch (sortColumn) {
@@ -490,7 +763,7 @@ export default function DayTradePage() {
 
       return sortDirection === 'asc' ? comparison : -comparison;
     });
-  }, [trades, sortColumn, sortDirection]);
+  }, [filteredTrades, sortColumn, sortDirection]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -571,42 +844,8 @@ export default function DayTradePage() {
           </div>
         </div>
 
-        {/* Filters - Isolated controls with container treatment */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Periodo</span>
-            <Select
-              value={dateFilter}
-              onValueChange={(value: DateFilter) => setDateFilter(value)}
-            >
-              <SelectTrigger className="h-7 w-[120px] border-0 bg-transparent px-2 text-[13px] focus:ring-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Hoje</SelectItem>
-                <SelectItem value="week">Semana</SelectItem>
-                <SelectItem value="month">Mes</SelectItem>
-                <SelectItem value="all">Todos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Ativo</span>
-            <Select
-              value={assetFilter}
-              onValueChange={(value: FuturesAsset | 'all') => setAssetFilter(value)}
-            >
-              <SelectTrigger className="h-7 w-[110px] border-0 bg-transparent px-2 text-[13px] focus:ring-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="WINFUT">WINFUT</SelectItem>
-                <SelectItem value="WDOFUT">WDOFUT</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        {/* Filters */}
+        <DayTradeFilterBar filters={filters} onFiltersChange={setFilters} />
 
         {error && (
           <div className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
@@ -740,30 +979,34 @@ export default function DayTradePage() {
         {/* Charts */}
         <div className="grid gap-4 lg:grid-cols-2">
           <DayTradeEvolutionChart trades={trades} />
-          <MepMenChart trades={trades} assetFilter={assetFilter} />
+          <MepMenChart trades={trades} assetFilter={filters.asset} />
         </div>
 
         {/* Grafico de Plano vs Execucao */}
         <div className="grid gap-4 lg:grid-cols-2">
-          <TradePlanChart trades={trades} assetFilter={assetFilter} />
+          <TradePlanChart trades={trades} assetFilter={filters.asset} />
         </div>
 
         {/* Table */}
-        {trades.length === 0 ? (
+        {filteredTrades.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border bg-card py-16 text-center">
             <p className="text-[13px] font-medium text-muted-foreground">
-              Nenhum trade registrado
+              {trades.length === 0 ? 'Nenhum trade registrado' : 'Nenhum trade encontrado com os filtros atuais'}
             </p>
             <p className="mt-1 text-[12px] text-muted-foreground/70">
-              Adicione seus trades para acompanhar seu desempenho.
+              {trades.length === 0
+                ? 'Adicione seus trades para acompanhar seu desempenho.'
+                : 'Tente ajustar os filtros para ver mais resultados.'}
             </p>
-            <Button
-              size="sm"
-              className="mt-4 h-8 px-3 text-[13px]"
-              onClick={handleNewTrade}
-            >
-              Registrar Trade
-            </Button>
+            {trades.length === 0 && (
+              <Button
+                size="sm"
+                className="mt-4 h-8 px-3 text-[13px]"
+                onClick={handleNewTrade}
+              >
+                Registrar Trade
+              </Button>
+            )}
           </div>
         ) : (
           <div className="rounded-lg border bg-card">
@@ -926,6 +1169,30 @@ export default function DayTradePage() {
                     </TableCell>
                     <TableCell className="py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Exit info - show exits count or remaining */}
+                        {(trade.actual_exits.length > 0 || trade.planned_exits.length > 0) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary/70 hover:text-primary"
+                            onClick={() => handleOpenTimeline(trade)}
+                            title={`${trade.actual_exits.length} saidas | ${trade.planned_exits.length} planejadas`}
+                          >
+                            <ListTree className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* Register exit button for open/partial trades */}
+                        {trade.status !== 'CLOSED' && getRemainingContracts(trade) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-amber-600 hover:text-amber-700"
+                            onClick={() => handleOpenExitDialog(trade)}
+                            title={`Registrar saida (${getRemainingContracts(trade)} cts restantes)`}
+                          >
+                            <LogOut className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         {/* Image icon - always visible when trade has image */}
                         {trade.image_path && (
                           <Button
@@ -1013,6 +1280,49 @@ export default function DayTradePage() {
               />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exit Execution Dialog */}
+      {exitingTrade && (
+        <ExitExecutionDialog
+          open={isExitDialogOpen}
+          onOpenChange={(open) => {
+            setIsExitDialogOpen(open);
+            if (!open) setExitingTrade(null);
+          }}
+          onSave={handleRegisterExit}
+          trade={exitingTrade as DayTradeWithExits}
+          remainingContracts={getRemainingContracts(exitingTrade)}
+        />
+      )}
+
+      {/* Exit Timeline Dialog */}
+      <Dialog
+        open={isExitTimelineOpen}
+        onOpenChange={(open) => {
+          setIsExitTimelineOpen(open);
+          if (!open) setViewingTimelineTrade(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold tracking-tight">
+              Historico de Saidas
+            </DialogTitle>
+            <DialogDescription className="text-[13px]">
+              {viewingTimelineTrade && (
+                <>
+                  {viewingTimelineTrade.asset} -{' '}
+                  {viewingTimelineTrade.direction === 'BUY' ? 'Compra' : 'Venda'} x
+                  {viewingTimelineTrade.contracts}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {viewingTimelineTrade && (
+            <ExitTimeline trade={viewingTimelineTrade as DayTradeWithExits} />
+          )}
         </DialogContent>
       </Dialog>
     </PageShell>

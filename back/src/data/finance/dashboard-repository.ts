@@ -28,70 +28,111 @@ export async function getFinanceSummary(
     .toISOString()
     .split('T')[0];
 
-  // Buscar saldo total das contas (separando beneficios)
+  // Buscar saldo total das contas (separando beneficios e investimentos)
   const { data: accounts } = await client
     .from('finance_accounts')
-    .select('current_balance, type')
+    .select('id, current_balance, type')
     .eq('user_id', userId)
     .eq('is_active', true);
 
   let totalBalance = 0;
   let benefitBalance = 0;
+  const excludedAccountIds: string[] = [];
+
   for (const acc of accounts || []) {
     const balance = Number(acc.current_balance);
-    if (acc.type === 'BENEFICIO') {
-      benefitBalance += balance;
+    if (acc.type === 'BENEFICIO' || acc.type === 'INVESTIMENTO') {
+      if (acc.type === 'BENEFICIO') {
+        benefitBalance += balance;
+      }
+      excludedAccountIds.push(acc.id);
     } else {
       totalBalance += balance;
     }
   }
 
-  // Buscar transacoes pendentes do mes (despesas)
-  const { data: pendingExpenses } = await client
+  // Buscar transacoes pendentes do mes (despesas) - excluir transferencias e contas excluidas
+  let pendingExpensesQuery = client
     .from('finance_transactions')
     .select('amount')
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
     .eq('status', 'PENDENTE')
+    .is('transfer_id', null)
     .gte('due_date', startDate)
     .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    pendingExpensesQuery = pendingExpensesQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: pendingExpenses } = await pendingExpensesQuery;
 
   const totalPendingExpenses =
     pendingExpenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-  // Buscar transacoes pendentes do mes (receitas)
-  const { data: pendingIncome } = await client
+  // Buscar transacoes pendentes do mes (receitas) - excluir transferencias e contas excluidas
+  let pendingIncomeQuery = client
     .from('finance_transactions')
     .select('amount')
     .eq('user_id', userId)
     .eq('type', 'RECEITA')
     .eq('status', 'PENDENTE')
+    .is('transfer_id', null)
     .gte('due_date', startDate)
     .lte('due_date', endDate);
 
+  if (excludedAccountIds.length > 0) {
+    pendingIncomeQuery = pendingIncomeQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: pendingIncome } = await pendingIncomeQuery;
+
   const totalPendingIncome = pendingIncome?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-  // Buscar transacoes do mes (despesas pagas)
-  const { data: monthExpenses } = await client
+  // Buscar transacoes do mes (despesas) - por due_date, excluir transferencias, canceladas e contas excluidas
+  let monthExpensesQuery = client
     .from('finance_transactions')
     .select('amount')
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
-    .eq('status', 'PAGO')
-    .gte('payment_date', startDate)
-    .lte('payment_date', endDate);
+    .in('status', ['PAGO', 'PENDENTE', 'VENCIDO'])
+    .is('transfer_id', null)
+    .gte('due_date', startDate)
+    .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    monthExpensesQuery = monthExpensesQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: monthExpenses } = await monthExpensesQuery;
 
   const monthExpensesTotal = monthExpenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-  // Buscar transacoes do mes (receitas pagas)
-  const { data: monthIncome } = await client
+  // Buscar transacoes do mes (receitas) - por due_date, excluir transferencias, canceladas e contas excluidas
+  let monthIncomeQuery = client
     .from('finance_transactions')
     .select('amount')
     .eq('user_id', userId)
     .eq('type', 'RECEITA')
-    .eq('status', 'PAGO')
-    .gte('payment_date', startDate)
-    .lte('payment_date', endDate);
+    .in('status', ['PAGO', 'PENDENTE', 'VENCIDO'])
+    .is('transfer_id', null)
+    .gte('due_date', startDate)
+    .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    monthIncomeQuery = monthIncomeQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: monthIncome } = await monthIncomeQuery;
 
   const monthIncomeTotal = monthIncome?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
@@ -118,8 +159,17 @@ export async function getExpensesByCategory(
     .toISOString()
     .split('T')[0];
 
-  // Buscar transacoes de despesa do mes com categoria
-  const { data: transactions } = await client
+  // Buscar contas de INVESTIMENTO e BENEFICIO para excluir suas transacoes
+  const { data: excludedAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .in('type', ['INVESTIMENTO', 'BENEFICIO']);
+
+  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+
+  // Buscar transacoes de despesa do mes com categoria - excluir transferencias e contas excluidas
+  let query = client
     .from('finance_transactions')
     .select(`
       amount,
@@ -127,9 +177,18 @@ export async function getExpensesByCategory(
     `)
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
+    .is('transfer_id', null)
     .in('status', ['PAGO', 'PENDENTE'])
     .gte('due_date', startDate)
     .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    query = query.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: transactions } = await query;
 
   if (!transactions || transactions.length === 0) {
     return [];
@@ -181,6 +240,15 @@ export async function getCashFlow(
 ): Promise<CashFlowPoint[]> {
   const client = createUserClient(accessToken);
 
+  // Buscar contas de INVESTIMENTO e BENEFICIO para excluir suas transacoes
+  const { data: excludedAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .in('type', ['INVESTIMENTO', 'BENEFICIO']);
+
+  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+
   const result: CashFlowPoint[] = [];
   const now = new Date();
 
@@ -192,27 +260,45 @@ export async function getCashFlow(
       .toISOString()
       .split('T')[0];
 
-    // Receitas do mes
-    const { data: income } = await client
+    // Receitas do mes - excluir transferencias e contas excluidas
+    let incomeQuery = client
       .from('finance_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('type', 'RECEITA')
+      .is('transfer_id', null)
       .in('status', ['PAGO', 'PENDENTE'])
       .gte('due_date', startDate)
       .lte('due_date', endDate);
 
+    if (excludedAccountIds.length > 0) {
+      incomeQuery = incomeQuery.or(
+        `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+      );
+    }
+
+    const { data: income } = await incomeQuery;
+
     const incomeTotal = income?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-    // Despesas do mes
-    const { data: expenses } = await client
+    // Despesas do mes - excluir transferencias e contas excluidas
+    let expenseQuery = client
       .from('finance_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('type', 'DESPESA')
+      .is('transfer_id', null)
       .in('status', ['PAGO', 'PENDENTE'])
       .gte('due_date', startDate)
       .lte('due_date', endDate);
+
+    if (excludedAccountIds.length > 0) {
+      expenseQuery = expenseQuery.or(
+        `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+      );
+    }
+
+    const { data: expenses } = await expenseQuery;
 
     const expensesTotal = expenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
@@ -363,20 +449,38 @@ export async function getBudgetAllocation(
   const prevYear = monthNum === 1 ? year - 1 : year;
   const expandedStartDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
 
-  // Buscar receitas do mes
-  const { data: incomeTransactions } = await client
+  // Buscar contas de INVESTIMENTO e BENEFICIO para excluir suas transacoes
+  const { data: excludedAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .in('type', ['INVESTIMENTO', 'BENEFICIO']);
+
+  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+
+  // Buscar receitas do mes - excluir transferencias e contas excluidas
+  let incomeQuery = client
     .from('finance_transactions')
     .select('amount')
     .eq('user_id', userId)
     .eq('type', 'RECEITA')
     .in('status', ['PAGO', 'PENDENTE'])
+    .is('transfer_id', null)
     .gte('due_date', startDate)
     .lte('due_date', endDate);
 
+  if (excludedAccountIds.length > 0) {
+    incomeQuery = incomeQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: incomeTransactions } = await incomeQuery;
+
   const totalIncome = incomeTransactions?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-  // Buscar despesas de CONTA (sem cartao) do mes calendario
-  const { data: accountExpenses } = await client
+  // Buscar despesas de CONTA (sem cartao) do mes calendario - excluir transferencias e contas excluidas
+  let accountExpensesQuery = client
     .from('finance_transactions')
     .select(`
       amount,
@@ -386,11 +490,21 @@ export async function getBudgetAllocation(
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
     .is('credit_card_id', null)
+    .is('transfer_id', null)
     .in('status', ['PAGO', 'PENDENTE'])
     .gte('due_date', startDate)
     .lte('due_date', endDate);
 
+  if (excludedAccountIds.length > 0) {
+    accountExpensesQuery = accountExpensesQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: accountExpenses } = await accountExpensesQuery;
+
   // Buscar despesas de CARTAO (mes atual + anterior para pegar periodo da fatura)
+  // Cartao nao tem account_id entao nao precisa filtrar por contas excluidas, apenas transferencias
   const { data: cardExpenses } = await client
     .from('finance_transactions')
     .select(`
@@ -403,6 +517,7 @@ export async function getBudgetAllocation(
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
     .not('credit_card_id', 'is', null)
+    .is('transfer_id', null)
     .in('status', ['PAGO', 'PENDENTE'])
     .gte('due_date', expandedStartDate)
     .lte('due_date', endDate);
@@ -502,17 +617,21 @@ export async function getYearSummary(
 ): Promise<YearSummary> {
   const client = createUserClient(accessToken);
 
-  // Buscar saldo total das contas (separando beneficios)
+  // Buscar saldo total das contas (separando beneficios e investimentos)
   const { data: accounts } = await client
     .from('finance_accounts')
-    .select('current_balance, type')
+    .select('id, current_balance, type')
     .eq('user_id', userId)
     .eq('is_active', true);
 
   let totalBalance = 0;
+  const excludedAccountIds: string[] = [];
+
   for (const acc of accounts || []) {
-    // Nao incluir saldo de contas BENEFICIO no total
-    if (acc.type !== 'BENEFICIO') {
+    // Nao incluir saldo de contas BENEFICIO e INVESTIMENTO no total
+    if (acc.type === 'BENEFICIO' || acc.type === 'INVESTIMENTO') {
+      excludedAccountIds.push(acc.id);
+    } else {
       totalBalance += Number(acc.current_balance);
     }
   }
@@ -520,14 +639,23 @@ export async function getYearSummary(
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
-  // Buscar todas as transacoes do ano
-  const { data: transactions } = await client
+  // Buscar todas as transacoes do ano - excluir transferencias e contas excluidas
+  let query = client
     .from('finance_transactions')
     .select('type, status, amount, due_date')
     .eq('user_id', userId)
+    .is('transfer_id', null)
     .in('status', ['PAGO', 'PENDENTE'])
     .gte('due_date', startDate)
     .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    query = query.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: transactions } = await query;
 
   // Inicializar dados mensais
   const monthlyData: Record<string, { income: number; expenses: number }> = {};

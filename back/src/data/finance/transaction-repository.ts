@@ -90,6 +90,10 @@ export async function getTransactionsByUser(
     query = query.eq('status', filters.status);
   }
 
+  if (filters.search && filters.search.trim().length >= 2) {
+    query = query.ilike('description', `%${filters.search.trim()}%`);
+  }
+
   query = query.order('due_date', { ascending: false });
 
   if (filters.limit) {

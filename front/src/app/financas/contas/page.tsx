@@ -35,6 +35,7 @@ import {
   PiggyBank,
   Eye,
   Gift,
+  RefreshCw,
 } from 'lucide-react';
 import { ContasPageSkeleton } from '@/components/organisms/skeletons/ContasPageSkeleton';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,7 @@ import {
 } from '@/types/finance';
 import { BankSelect, BankLogo } from '@/components/molecules/BankSelect';
 import { ColorPicker } from '@/components/atoms/CategoryIcon';
+import { CurrencyInput } from '@/components/ui/currency-input';
 
 const getAccountIcon = (type: FinanceAccountType) => {
   switch (type) {
@@ -94,6 +96,14 @@ export default function ContasPage() {
     icon: 'Wallet',
     bank_id: '',
   });
+
+  // Balance Adjustment Dialog state
+  const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
+  const [adjustingAccount, setAdjustingAccount] = useState<AccountWithBank | null>(null);
+  const [adjustmentType, setAdjustmentType] = useState<'transaction' | 'initial_balance'>('transaction');
+  const [newBalance, setNewBalance] = useState<number>(0);
+  const [adjustmentDescription, setAdjustmentDescription] = useState('Ajuste de saldo');
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
 
   // Ref para evitar reload desnecessário
   const hasLoadedRef = useRef(false);
@@ -213,7 +223,68 @@ export default function ContasPage() {
     }
   };
 
-  const regularAccounts = accounts.filter((acc) => acc.type !== 'BENEFICIO');
+  const openBalanceAdjustmentDialog = (account: AccountWithBank) => {
+    setAdjustingAccount(account);
+    setNewBalance(account.current_balance);
+    setAdjustmentType('transaction');
+    setAdjustmentDescription('Ajuste de saldo');
+    setAdjustmentDialogOpen(true);
+  };
+
+  const handleSaveAdjustment = async () => {
+    if (!adjustingAccount || !session?.access_token) return;
+
+    const diff = newBalance - adjustingAccount.current_balance;
+
+    if (diff === 0) {
+      toast.info('O saldo ja esta correto');
+      setAdjustmentDialogOpen(false);
+      return;
+    }
+
+    setSavingAdjustment(true);
+    try {
+      if (adjustmentType === 'transaction') {
+        // Buscar categoria de ajuste apropriada
+        const type = diff > 0 ? 'RECEITA' : 'DESPESA';
+        const category = await financeApi.getAdjustmentCategory(type, session.access_token);
+
+        // Criar transação de ajuste já paga
+        const transaction = await financeApi.createTransaction({
+          category_id: category.id,
+          account_id: adjustingAccount.id,
+          type,
+          description: adjustmentDescription || 'Ajuste de saldo',
+          amount: Math.abs(diff),
+          due_date: new Date().toISOString().split('T')[0],
+        }, session.access_token);
+
+        // Pagar transação imediatamente
+        await financeApi.payTransaction(transaction.id, {
+          paid_amount: Math.abs(diff),
+          payment_date: new Date().toISOString().split('T')[0],
+        }, session.access_token);
+      } else {
+        // Modificar saldo inicial
+        const newInitialBalance = adjustingAccount.initial_balance + diff;
+        await financeApi.updateAccount(
+          adjustingAccount.id,
+          { initial_balance: newInitialBalance },
+          session.access_token
+        );
+      }
+
+      toast.success('Saldo ajustado com sucesso');
+      setAdjustmentDialogOpen(false);
+      loadData(true);
+    } catch (err) {
+      toast.apiError(err);
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
+
+  const regularAccounts = accounts.filter((acc) => acc.type !== 'BENEFICIO' && acc.type !== 'INVESTIMENTO');
   const benefitAccounts = accounts.filter((acc) => acc.type === 'BENEFICIO');
   const totalBalance = regularAccounts.reduce((sum, acc) => sum + acc.current_balance, 0);
   const benefitBalance = benefitAccounts.reduce((sum, acc) => sum + acc.current_balance, 0);
@@ -309,6 +380,13 @@ export default function ContasPage() {
                 title="Ver transacoes"
               >
                 <Eye className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => openBalanceAdjustmentDialog(account)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-purple-50 hover:text-purple-600"
+                title="Reajuste de saldo"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => openEditDialog(account)}
@@ -518,11 +596,13 @@ export default function ContasPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(ACCOUNT_TYPE_LABELS).map(([key, label]) => (
-                      <SelectItem key={key} value={key} className="text-sm">
-                        {label}
-                      </SelectItem>
-                    ))}
+                    {Object.entries(ACCOUNT_TYPE_LABELS)
+                      .filter(([key]) => key !== 'INVESTIMENTO')
+                      .map(([key, label]) => (
+                        <SelectItem key={key} value={key} className="text-sm">
+                          {label}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -607,6 +687,157 @@ export default function ContasPage() {
             >
               {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               {editingAccount ? 'Salvar' : 'Criar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Balance Adjustment Dialog */}
+      <Dialog open={adjustmentDialogOpen} onOpenChange={setAdjustmentDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">
+              Reajuste de saldo
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              Ajuste o saldo da conta {adjustingAccount?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Saldo atual em destaque */}
+            <div className="rounded-lg bg-purple-50 p-4">
+              <p className="text-xs font-medium text-purple-600 uppercase tracking-wider mb-1">
+                Saldo atual
+              </p>
+              <p className="text-2xl font-bold text-purple-700 tabular-nums">
+                {formatCurrency(adjustingAccount?.current_balance || 0)}
+              </p>
+            </div>
+
+            {/* Saldo inicial da conta */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Saldo inicial da conta</span>
+              <span className="font-medium text-slate-700 tabular-nums">
+                {formatCurrency(adjustingAccount?.initial_balance || 0)}
+              </span>
+            </div>
+
+            {/* Novo saldo */}
+            <div className="space-y-1.5">
+              <Label htmlFor="new_balance" className="text-xs font-medium text-slate-600">
+                Novo saldo
+              </Label>
+              <CurrencyInput
+                id="new_balance"
+                value={newBalance}
+                onChange={setNewBalance}
+                showPrefix
+                allowNegative
+                className="h-9 text-sm"
+              />
+              {newBalance !== adjustingAccount?.current_balance && (
+                <p className={cn(
+                  'text-xs font-medium',
+                  (newBalance - (adjustingAccount?.current_balance || 0)) > 0
+                    ? 'text-emerald-600'
+                    : 'text-red-600'
+                )}>
+                  Diferenca: {(newBalance - (adjustingAccount?.current_balance || 0)) > 0 ? '+' : ''}
+                  {formatCurrency(newBalance - (adjustingAccount?.current_balance || 0))}
+                </p>
+              )}
+            </div>
+
+            {/* Opcoes */}
+            <div className="space-y-2">
+              <p className="text-sm text-slate-600">Voce gostaria de...</p>
+
+              {/* Opcao 1: Criar transacao */}
+              <button
+                type="button"
+                onClick={() => setAdjustmentType('transaction')}
+                className={cn(
+                  'w-full rounded-lg border-2 p-3 text-left transition-all',
+                  adjustmentType === 'transaction'
+                    ? 'border-purple-500 bg-purple-50'
+                    : 'border-slate-200 hover:border-slate-300'
+                )}
+              >
+                <p className={cn(
+                  'text-sm font-medium',
+                  adjustmentType === 'transaction' ? 'text-purple-700' : 'text-slate-700'
+                )}>
+                  Criar transacao de ajuste
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cria uma transacao de {(newBalance - (adjustingAccount?.current_balance || 0)) > 0 ? 'receita' : 'despesa'} para balancear o saldo
+                </p>
+              </button>
+
+              {/* Opcao 2: Modificar saldo inicial */}
+              <button
+                type="button"
+                onClick={() => setAdjustmentType('initial_balance')}
+                className={cn(
+                  'w-full rounded-lg border-2 p-3 text-left transition-all',
+                  adjustmentType === 'initial_balance'
+                    ? 'border-purple-500 bg-purple-50'
+                    : 'border-slate-200 hover:border-slate-300'
+                )}
+              >
+                <p className={cn(
+                  'text-sm font-medium',
+                  adjustmentType === 'initial_balance' ? 'text-purple-700' : 'text-slate-700'
+                )}>
+                  Modificar saldo inicial
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Altera o saldo inicial da conta de{' '}
+                  <span className="font-medium">{formatCurrency(adjustingAccount?.initial_balance || 0)}</span>
+                  {' '}para{' '}
+                  <span className="font-medium">
+                    {formatCurrency((adjustingAccount?.initial_balance || 0) + (newBalance - (adjustingAccount?.current_balance || 0)))}
+                  </span>
+                </p>
+              </button>
+            </div>
+
+            {/* Descricao (apenas para transacao) */}
+            {adjustmentType === 'transaction' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="adjustment_description" className="text-xs font-medium text-slate-600">
+                  Descricao da transacao
+                </Label>
+                <Input
+                  id="adjustment_description"
+                  value={adjustmentDescription}
+                  onChange={(e) => setAdjustmentDescription(e.target.value)}
+                  placeholder="Ex: Ajuste de saldo"
+                  className="h-9 text-sm"
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAdjustmentDialogOpen(false)}
+              disabled={savingAdjustment}
+              className="h-8"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveAdjustment}
+              disabled={savingAdjustment || newBalance === adjustingAccount?.current_balance}
+              className="h-8 bg-purple-600 hover:bg-purple-700"
+            >
+              {savingAdjustment && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Salvar
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -48,6 +48,37 @@ import type {
   FinanceGoalContribution,
   GoalContributionFormData,
   GoalContributionItem,
+  FinanceFixedIncome,
+  FixedIncomeWithYield,
+  FixedIncomeFormData,
+  FixedIncomeSummary,
+  FixedIncomeType,
+  FixedIncomeStatus,
+  FixedIncomeRateType,
+  FixedIncomeContribution,
+  FixedIncomeContributionFormData,
+  FixedIncomeWithContributions,
+  // Mortgage types
+  FinanceMortgage,
+  MortgageWithBank,
+  MortgageWithProgress,
+  MortgageInstallment,
+  MortgageExtraPayment,
+  MortgageDocument,
+  MortgageFormData,
+  PayInstallmentFormData,
+  ExtraPaymentFormData,
+  SimulateExtraPaymentFormData,
+  MortgageDocumentFormData,
+  MortgageSummary,
+  MortgageStatus,
+  MortgageInstallmentStatus,
+  ExtraPaymentSimulation,
+  EarlyPayoffSimulation,
+  AnnualMortgageReport,
+  TRRate,
+  AmortizationSimulationRequest,
+  AmortizationSimulationResponse,
 } from '@/types/finance';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -251,6 +282,7 @@ class FinanceApiClient {
       tag_id?: string;
       type?: string;
       status?: string;
+      search?: string;
       limit?: number;
     }
   ): Promise<TransactionWithDetails[]> {
@@ -744,6 +776,17 @@ class FinanceApiClient {
     });
   }
 
+  // System Categories
+  async getAdjustmentCategory(
+    type: 'RECEITA' | 'DESPESA',
+    accessToken: string
+  ): Promise<FinanceCategory> {
+    return this.authFetch(
+      `/finance/categories/system/adjustment/${type}`,
+      accessToken
+    );
+  }
+
   // Reports
   async getCashFlowReport(
     accessToken: string,
@@ -821,6 +864,314 @@ class FinanceApiClient {
       years: years.join(','),
     });
     return this.authFetch(`/finance/reports/yoy-comparison?${params}`, accessToken);
+  }
+
+  // Fixed Income
+  async getFixedIncomes(
+    accessToken: string,
+    filters?: {
+      investment_type?: FixedIncomeType;
+      status?: FixedIncomeStatus;
+      rate_type?: FixedIncomeRateType;
+      search?: string;
+      limit?: number;
+    }
+  ): Promise<FixedIncomeWithContributions[]> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined) {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString();
+    return this.authFetch(`/finance/fixed-income${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  async getFixedIncome(id: string, accessToken: string): Promise<FixedIncomeWithYield> {
+    return this.authFetch(`/finance/fixed-income/${id}`, accessToken);
+  }
+
+  async getFixedIncomeSummary(accessToken: string): Promise<FixedIncomeSummary> {
+    return this.authFetch('/finance/fixed-income/summary', accessToken);
+  }
+
+  async createFixedIncome(
+    data: FixedIncomeFormData,
+    accessToken: string
+  ): Promise<FinanceFixedIncome> {
+    return this.authFetch('/finance/fixed-income', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateFixedIncome(
+    id: string,
+    data: Partial<FixedIncomeFormData> & { status?: FixedIncomeStatus },
+    accessToken: string
+  ): Promise<FinanceFixedIncome> {
+    return this.authFetch(`/finance/fixed-income/${id}`, accessToken, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteFixedIncome(id: string, accessToken: string): Promise<void> {
+    await this.authFetch(`/finance/fixed-income/${id}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fixed Income Contributions
+  async getFixedIncomeContributions(
+    fixedIncomeId: string,
+    accessToken: string
+  ): Promise<FixedIncomeContribution[]> {
+    return this.authFetch(`/finance/fixed-income/${fixedIncomeId}/contributions`, accessToken);
+  }
+
+  async createFixedIncomeContribution(
+    fixedIncomeId: string,
+    data: FixedIncomeContributionFormData,
+    accessToken: string
+  ): Promise<FixedIncomeContribution> {
+    return this.authFetch(`/finance/fixed-income/${fixedIncomeId}/contributions`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteFixedIncomeContribution(
+    fixedIncomeId: string,
+    contributionId: string,
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(
+      `/finance/fixed-income/${fixedIncomeId}/contributions/${contributionId}`,
+      accessToken,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  // ==================== MORTGAGES ====================
+
+  async getMortgages(
+    accessToken: string,
+    filters?: {
+      status?: MortgageStatus;
+      limit?: number;
+    }
+  ): Promise<MortgageWithBank[]> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined) {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString();
+    return this.authFetch(`/finance/mortgages${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  async getMortgage(id: string, accessToken: string): Promise<MortgageWithProgress> {
+    return this.authFetch(`/finance/mortgages/${id}`, accessToken);
+  }
+
+  async getMortgageSummary(accessToken: string): Promise<MortgageSummary> {
+    return this.authFetch('/finance/mortgages/summary', accessToken);
+  }
+
+  async createMortgage(
+    data: MortgageFormData,
+    accessToken: string
+  ): Promise<FinanceMortgage> {
+    return this.authFetch('/finance/mortgages', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMortgage(
+    id: string,
+    data: Partial<MortgageFormData> & { status?: MortgageStatus },
+    accessToken: string
+  ): Promise<FinanceMortgage> {
+    return this.authFetch(`/finance/mortgages/${id}`, accessToken, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMortgage(id: string, accessToken: string): Promise<void> {
+    await this.authFetch(`/finance/mortgages/${id}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
+  // Mortgage Installments
+  async getMortgageInstallments(
+    mortgageId: string,
+    accessToken: string,
+    filters?: {
+      status?: MortgageInstallmentStatus;
+      start_date?: string;
+      end_date?: string;
+      limit?: number;
+    }
+  ): Promise<MortgageInstallment[]> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined) {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString();
+    return this.authFetch(
+      `/finance/mortgages/${mortgageId}/installments${query ? `?${query}` : ''}`,
+      accessToken
+    );
+  }
+
+  async generateMortgageInstallments(
+    mortgageId: string,
+    accessToken: string
+  ): Promise<MortgageInstallment[]> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/installments/generate`, accessToken, {
+      method: 'POST',
+    });
+  }
+
+  async payMortgageInstallment(
+    mortgageId: string,
+    installmentNumber: number,
+    data: PayInstallmentFormData,
+    accessToken: string
+  ): Promise<MortgageInstallment> {
+    return this.authFetch(
+      `/finance/mortgages/${mortgageId}/installments/${installmentNumber}/pay`,
+      accessToken,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }
+    );
+  }
+
+  // Extra Payments
+  async getMortgageExtraPayments(
+    mortgageId: string,
+    accessToken: string
+  ): Promise<MortgageExtraPayment[]> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/extra-payments`, accessToken);
+  }
+
+  async createMortgageExtraPayment(
+    mortgageId: string,
+    data: ExtraPaymentFormData,
+    accessToken: string
+  ): Promise<MortgageExtraPayment> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/extra-payments`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async simulateMortgageExtraPayment(
+    mortgageId: string,
+    data: SimulateExtraPaymentFormData,
+    accessToken: string
+  ): Promise<ExtraPaymentSimulation> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/extra-payments/simulate`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async simulateMortgageEarlyPayoff(
+    mortgageId: string,
+    accessToken: string
+  ): Promise<EarlyPayoffSimulation> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/simulations/early-payoff`, accessToken, {
+      method: 'POST',
+    });
+  }
+
+  async simulateMortgageAmortization(
+    mortgageId: string,
+    data: AmortizationSimulationRequest,
+    accessToken: string
+  ): Promise<AmortizationSimulationResponse> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/simulations/amortization`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Documents
+  async getMortgageDocuments(
+    mortgageId: string,
+    accessToken: string
+  ): Promise<MortgageDocument[]> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/documents`, accessToken);
+  }
+
+  async createMortgageDocument(
+    mortgageId: string,
+    data: MortgageDocumentFormData,
+    accessToken: string
+  ): Promise<MortgageDocument> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/documents`, accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMortgageDocument(
+    mortgageId: string,
+    documentId: string,
+    accessToken: string
+  ): Promise<void> {
+    await this.authFetch(`/finance/mortgages/${mortgageId}/documents/${documentId}`, accessToken, {
+      method: 'DELETE',
+    });
+  }
+
+  // Reports
+  async getMortgageAnnualReport(
+    mortgageId: string,
+    year: number,
+    accessToken: string
+  ): Promise<AnnualMortgageReport> {
+    return this.authFetch(`/finance/mortgages/${mortgageId}/reports/annual/${year}`, accessToken);
+  }
+
+  // TR Rates
+  async getTRRates(
+    accessToken: string,
+    params?: { start_date?: string; end_date?: string }
+  ): Promise<TRRate[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.start_date) searchParams.append('start_date', params.start_date);
+    if (params?.end_date) searchParams.append('end_date', params.end_date);
+    const query = searchParams.toString();
+    return this.authFetch(`/finance/tr-rates${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  async syncTRRates(
+    accessToken: string,
+    params?: { start_date?: string; end_date?: string }
+  ): Promise<{ synced: number }> {
+    return this.authFetch('/finance/tr-rates/sync', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    });
   }
 }
 

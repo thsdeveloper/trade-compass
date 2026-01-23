@@ -1,20 +1,6 @@
 // ==================== ENUMS ====================
 
-export type FinanceCategoryType =
-  | 'MORADIA'
-  | 'ALIMENTACAO'
-  | 'TRANSPORTE'
-  | 'SAUDE'
-  | 'LAZER'
-  | 'EDUCACAO'
-  | 'VESTUARIO'
-  | 'SERVICOS'
-  | 'INVESTIMENTOS'
-  | 'SALARIO'
-  | 'FREELANCE'
-  | 'DIVIDA'
-  | 'BENEFICIO'
-  | 'OUTROS';
+export type FinanceCategoryType = 'DESPESA' | 'RECEITA';
 
 export type FinanceAccountType =
   | 'CONTA_CORRENTE'
@@ -256,6 +242,7 @@ export interface UpdateAccountDTO {
   color?: string;
   icon?: string;
   is_active?: boolean;
+  initial_balance?: number;
 }
 
 // Credit Card DTOs
@@ -306,6 +293,7 @@ export interface CreateInstallmentTransactionDTO {
 }
 
 export interface UpdateTransactionDTO {
+  type?: TransactionType;
   category_id?: string;
   account_id?: string;
   credit_card_id?: string;
@@ -386,6 +374,7 @@ export interface TransactionFilters {
   tag_id?: string;
   type?: TransactionType;
   status?: TransactionStatus;
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -768,12 +757,525 @@ export interface UpdateGoalContributionDTO {
   description?: string;
 }
 
-// Item unificado do histórico (transação ou manual)
+// Item unificado do histórico (transação, manual ou investimento)
 export interface GoalContributionItem {
   id: string;
-  type: 'transaction' | 'manual';
+  type: 'transaction' | 'manual' | 'investment';
   amount: number;
   date: string;
   description: string;
-  status?: string; // Apenas para transações
+  status?: string; // Para transações e investimentos
+}
+
+// ==================== FIXED INCOME ENUMS ====================
+
+export type FixedIncomeType =
+  | 'CDB'
+  | 'LCI'
+  | 'LCA'
+  | 'TESOURO_SELIC'
+  | 'TESOURO_PREFIXADO'
+  | 'TESOURO_IPCA'
+  | 'DEBENTURE'
+  | 'CRI'
+  | 'CRA'
+  | 'LC'
+  | 'OUTROS';
+
+export type FixedIncomeRateType = 'PRE_FIXADO' | 'POS_FIXADO' | 'HIBRIDO';
+
+export type FixedIncomeRateIndex = 'CDI' | 'SELIC' | 'IPCA' | 'IGPM' | 'NENHUM';
+
+export type FixedIncomeLiquidity =
+  | 'NO_VENCIMENTO'
+  | 'DIARIA'
+  | 'D_PLUS_1'
+  | 'D_PLUS_30'
+  | 'D_PLUS_90'
+  | 'OUTROS';
+
+export type FixedIncomeStatus = 'ATIVO' | 'VENCIDO' | 'RESGATADO' | 'CANCELADO';
+
+export type FixedIncomeMarket = 'PRIMARIO' | 'SECUNDARIO';
+
+// ==================== FIXED INCOME ENTITIES ====================
+
+export interface FinanceFixedIncome {
+  id: string;
+  user_id: string;
+  investment_type: FixedIncomeType;
+  name: string;
+  issuer: string;
+  rate_type: FixedIncomeRateType;
+  rate_value: number;
+  rate_index: FixedIncomeRateIndex;
+  rate_spread: number;
+  amount_invested: number;
+  current_value: number | null;
+  minimum_investment: number | null;
+  purchase_date: string;
+  maturity_date: string;
+  liquidity_type: FixedIncomeLiquidity;
+  market: FixedIncomeMarket;
+  status: FixedIncomeStatus;
+  broker: string | null;
+  custody_account: string | null;
+  notes: string | null;
+  goal_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FixedIncomeWithYield extends FinanceFixedIncome {
+  days_to_maturity: number;
+  days_elapsed: number;
+  total_days: number;
+  gross_yield: number;
+  gross_yield_percentage: number;
+  estimated_final_value: number;
+  progress_percentage: number;
+}
+
+// ==================== FIXED INCOME DTOs ====================
+
+export interface CreateFixedIncomeDTO {
+  investment_type: FixedIncomeType;
+  name: string;
+  issuer: string;
+  rate_type: FixedIncomeRateType;
+  rate_value: number;
+  rate_index?: FixedIncomeRateIndex;
+  rate_spread?: number;
+  amount_invested: number;
+  current_value?: number;
+  minimum_investment?: number;
+  purchase_date: string;
+  maturity_date: string;
+  liquidity_type?: FixedIncomeLiquidity;
+  market?: FixedIncomeMarket;
+  broker?: string;
+  custody_account?: string;
+  notes?: string;
+  goal_id?: string;
+}
+
+export interface UpdateFixedIncomeDTO {
+  investment_type?: FixedIncomeType;
+  name?: string;
+  issuer?: string;
+  rate_type?: FixedIncomeRateType;
+  rate_value?: number;
+  rate_index?: FixedIncomeRateIndex;
+  rate_spread?: number;
+  amount_invested?: number;
+  current_value?: number;
+  minimum_investment?: number;
+  purchase_date?: string;
+  maturity_date?: string;
+  liquidity_type?: FixedIncomeLiquidity;
+  market?: FixedIncomeMarket;
+  status?: FixedIncomeStatus;
+  broker?: string;
+  custody_account?: string;
+  notes?: string;
+  goal_id?: string | null;
+}
+
+// ==================== FIXED INCOME FILTERS ====================
+
+export interface FixedIncomeFilters {
+  investment_type?: FixedIncomeType;
+  status?: FixedIncomeStatus;
+  rate_type?: FixedIncomeRateType;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ==================== FIXED INCOME RESPONSES ====================
+
+export interface FixedIncomeSummary {
+  total_invested: number;
+  total_current_value: number;
+  total_gross_yield: number;
+  total_yield_percentage: number;
+  active_investments: number;
+  by_type: {
+    type: FixedIncomeType;
+    count: number;
+    total_invested: number;
+    total_current_value: number;
+  }[];
+  by_rate_type: {
+    rate_type: FixedIncomeRateType;
+    count: number;
+    total_invested: number;
+  }[];
+  upcoming_maturities: {
+    id: string;
+    name: string;
+    maturity_date: string;
+    days_to_maturity: number;
+    amount_invested: number;
+    estimated_final_value: number;
+  }[];
+}
+
+// ==================== FIXED INCOME CONTRIBUTIONS ====================
+
+export interface FixedIncomeContribution {
+  id: string;
+  user_id: string;
+  fixed_income_id: string;
+  amount: number;
+  contribution_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateFixedIncomeContributionDTO {
+  amount: number;
+  contribution_date: string;
+  description?: string;
+}
+
+export interface UpdateFixedIncomeContributionDTO {
+  amount?: number;
+  contribution_date?: string;
+  description?: string;
+}
+
+export interface FixedIncomeWithContributions extends FixedIncomeWithYield {
+  contributions_count: number;
+  total_contributions: number;
+}
+
+// ==================== MORTGAGE ENUMS ====================
+
+export type MortgageAmortizationSystem = 'SAC' | 'PRICE' | 'SACRE';
+
+export type MortgageRateIndex = 'TR' | 'IPCA' | 'IGPM' | 'FIXO';
+
+export type MortgageModality = 'SFH' | 'SFI' | 'FGTS' | 'SBPE' | 'OUTROS';
+
+export type MortgageStatus = 'ATIVO' | 'QUITADO' | 'ATRASADO' | 'CANCELADO';
+
+export type MortgageInstallmentStatus = 'PENDENTE' | 'PAGA' | 'VENCIDA' | 'PARCIAL';
+
+export type MortgageExtraPaymentType = 'REDUCE_TERM' | 'REDUCE_INSTALLMENT';
+
+export type MortgageDocumentCategory =
+  | 'CONTRATO'
+  | 'MATRICULA'
+  | 'EXTRATO'
+  | 'COMPROVANTE'
+  | 'SEGURO'
+  | 'ESCRITURA'
+  | 'IPTU'
+  | 'OUTROS';
+
+// ==================== MORTGAGE ENTITIES ====================
+
+export interface FinanceMortgage {
+  id: string;
+  user_id: string;
+  contract_number: string;
+  institution_name: string;
+  institution_bank_id: string | null;
+  modality: MortgageModality;
+  amortization_system: MortgageAmortizationSystem;
+  property_value: number;
+  financed_amount: number;
+  down_payment: number;
+  current_balance: number | null;
+  base_annual_rate: number;
+  reduced_annual_rate: number | null;
+  rate_index: MortgageRateIndex;
+  is_reduced_rate_active: boolean;
+  total_installments: number;
+  paid_installments: number;
+  contract_start_date: string;
+  first_installment_date: string;
+  mip_rate: number | null;
+  dfi_rate: number | null;
+  admin_fee: number;
+  status: MortgageStatus;
+  alert_days_before: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MortgageWithBank extends FinanceMortgage {
+  institution_bank?: Bank | null;
+}
+
+export interface MortgageInstallment {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  installment_number: number;
+  due_date: string;
+  amortization_amount: number;
+  interest_amount: number;
+  mip_insurance: number;
+  dfi_insurance: number;
+  admin_fee: number;
+  tr_adjustment: number;
+  total_amount: number;
+  balance_before: number;
+  balance_after: number;
+  status: MortgageInstallmentStatus;
+  payment_date: string | null;
+  paid_amount: number | null;
+  receipt_path: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MortgageExtraPayment {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  payment_date: string;
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+  balance_before: number;
+  balance_after: number;
+  remaining_installments_before: number;
+  remaining_installments_after: number;
+  installment_value_before: number;
+  installment_value_after: number;
+  interest_saved: number | null;
+  months_reduced: number | null;
+  receipt_path: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface MortgageDocument {
+  id: string;
+  user_id: string;
+  mortgage_id: string;
+  category: MortgageDocumentCategory;
+  name: string;
+  file_path: string;
+  file_size: number | null;
+  mime_type: string | null;
+  reference_year: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TRRate {
+  id: string;
+  reference_date: string;
+  rate: number;
+  created_at: string;
+}
+
+// ==================== MORTGAGE DTOs ====================
+
+export interface CreateMortgageDTO {
+  contract_number: string;
+  institution_name: string;
+  institution_bank_id?: string;
+  modality?: MortgageModality;
+  amortization_system?: MortgageAmortizationSystem;
+  property_value: number;
+  financed_amount: number;
+  down_payment?: number;
+  base_annual_rate: number;
+  reduced_annual_rate?: number;
+  rate_index?: MortgageRateIndex;
+  is_reduced_rate_active?: boolean;
+  total_installments: number;
+  contract_start_date: string;
+  first_installment_date: string;
+  mip_rate?: number;
+  dfi_rate?: number;
+  admin_fee?: number;
+  alert_days_before?: number;
+  notes?: string;
+}
+
+export interface UpdateMortgageDTO {
+  contract_number?: string;
+  institution_name?: string;
+  institution_bank_id?: string | null;
+  modality?: MortgageModality;
+  base_annual_rate?: number;
+  reduced_annual_rate?: number | null;
+  is_reduced_rate_active?: boolean;
+  mip_rate?: number | null;
+  dfi_rate?: number | null;
+  admin_fee?: number;
+  status?: MortgageStatus;
+  alert_days_before?: number;
+  notes?: string | null;
+}
+
+export interface PayInstallmentDTO {
+  paid_amount?: number;
+  payment_date?: string;
+  notes?: string;
+}
+
+export interface CreateExtraPaymentDTO {
+  payment_date: string;
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+  notes?: string;
+}
+
+export interface SimulateExtraPaymentDTO {
+  amount: number;
+  payment_type: MortgageExtraPaymentType;
+}
+
+export interface CreateMortgageDocumentDTO {
+  category: MortgageDocumentCategory;
+  name: string;
+  file_path: string;
+  file_size?: number;
+  mime_type?: string;
+  reference_year?: number;
+  notes?: string;
+}
+
+// ==================== MORTGAGE FILTERS ====================
+
+export interface MortgageFilters {
+  status?: MortgageStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MortgageInstallmentFilters {
+  status?: MortgageInstallmentStatus;
+  start_date?: string;
+  end_date?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ==================== MORTGAGE RESPONSES ====================
+
+export interface MortgageWithProgress extends MortgageWithBank {
+  remaining_installments: number;
+  progress_percentage: number;
+  next_installment?: MortgageInstallment | null;
+  total_paid: number;
+  total_interest_paid: number;
+  total_amortization_paid: number;
+}
+
+export interface MortgageSummary {
+  total_mortgages: number;
+  active_mortgages: number;
+  total_financed: number;
+  total_current_balance: number;
+  total_paid: number;
+  overall_progress: number;
+}
+
+export interface ExtraPaymentSimulation {
+  payment_type: MortgageExtraPaymentType;
+  amount: number;
+  current_balance: number;
+  new_balance: number;
+  current_remaining_installments: number;
+  new_remaining_installments: number;
+  current_installment_value: number;
+  new_installment_value: number;
+  interest_saved: number;
+  months_reduced: number;
+  total_saved: number;
+}
+
+export interface EarlyPayoffSimulation {
+  current_balance: number;
+  remaining_installments: number;
+  total_remaining_payments: number;
+  total_interest_remaining: number;
+  payoff_amount: number;
+  total_savings: number;
+}
+
+export interface AnnualMortgageReport {
+  year: number;
+  mortgage_id: string;
+  mortgage_name: string;
+  institution_name: string;
+  contract_number: string;
+  balance_start_of_year: number;
+  balance_end_of_year: number;
+  total_paid: number;
+  total_amortization: number;
+  total_interest: number;
+  total_insurance: number;
+  total_admin_fee: number;
+  extra_payments_total: number;
+  installments: MortgageInstallment[];
+  extra_payments: MortgageExtraPayment[];
+}
+
+// ==================== INSTALLMENT CALCULATION ====================
+
+export interface CalculatedInstallment {
+  installment_number: number;
+  due_date: string;
+  amortization_amount: number;
+  interest_amount: number;
+  mip_insurance: number;
+  dfi_insurance: number;
+  admin_fee: number;
+  tr_adjustment: number;
+  total_amount: number;
+  balance_before: number;
+  balance_after: number;
+}
+
+// ==================== AMORTIZATION SIMULATION ====================
+
+export interface ExtraPaymentConfig {
+  id: string;
+  type: 'ONE_TIME' | 'RECURRING';
+  amount: number;
+  start_month?: number;
+  end_month?: number | null;
+  payment_type: MortgageExtraPaymentType;
+}
+
+export interface AmortizationSimulationRequest {
+  extra_payments?: ExtraPaymentConfig[];
+  include_current_schedule?: boolean;
+}
+
+export interface AmortizationScenarioSummary {
+  total_paid: number;
+  total_interest: number;
+  total_amortization: number;
+  final_installment_number: number;
+  estimated_end_date: string;
+}
+
+export interface AmortizationScenario {
+  name: string;
+  installments: CalculatedInstallment[];
+  summary: AmortizationScenarioSummary;
+}
+
+export interface AmortizationComparison {
+  interest_saved: number;
+  months_reduced: number;
+  total_saved: number;
+  roi_percentage: number;
+}
+
+export interface AmortizationSimulationResponse {
+  scenarios: AmortizationScenario[];
+  comparison?: AmortizationComparison;
 }

@@ -159,9 +159,31 @@ async function getGoalContributions(
     manualContributions?.reduce((sum, c) => sum + Number(c.amount), 0) || 0;
   const manualCount = manualContributions?.length || 0;
 
+  // Buscar investimentos de renda fixa vinculados ao objetivo (ATIVO ou VENCIDO)
+  // RESGATADO e CANCELADO não contam para evitar duplicidade se resgate virar transação
+  const { data: investments } = await client
+    .from('finance_fixed_income')
+    .select('current_value, amount_invested, status')
+    .eq('goal_id', goalId)
+    .eq('user_id', userId)
+    .in('status', ['ATIVO', 'VENCIDO']);
+
+  let investmentAmount = 0;
+  let investmentCount = 0;
+  if (investments) {
+    for (const inv of investments) {
+      // Usa current_value se disponível, senão amount_invested
+      const value = inv.current_value !== null
+        ? Number(inv.current_value)
+        : Number(inv.amount_invested);
+      investmentAmount += value;
+      investmentCount++;
+    }
+  }
+
   return {
-    current_amount: transactionAmount + manualAmount,
-    contributions_count: transactionCount + manualCount,
+    current_amount: transactionAmount + manualAmount + investmentAmount,
+    contributions_count: transactionCount + manualCount + investmentCount,
   };
 }
 
@@ -382,6 +404,14 @@ export async function getGoalContributionHistory(
     .eq('goal_id', goalId)
     .eq('user_id', userId);
 
+  // Buscar investimentos de renda fixa vinculados ao objetivo
+  const { data: investments } = await client
+    .from('finance_fixed_income')
+    .select('id, name, current_value, amount_invested, purchase_date, status')
+    .eq('goal_id', goalId)
+    .eq('user_id', userId)
+    .neq('status', 'CANCELADO');
+
   const items: GoalContributionItem[] = [];
 
   // Adicionar transações (filtrando lado DESPESA de transferências)
@@ -410,6 +440,25 @@ export async function getGoalContributionHistory(
         amount: Number(c.amount),
         date: c.contribution_date,
         description: c.description || 'Contribuicao manual',
+      });
+    }
+  }
+
+  // Adicionar investimentos de renda fixa
+  if (investments) {
+    for (const inv of investments) {
+      // Usa current_value se disponível, senão amount_invested
+      const value = inv.current_value !== null
+        ? Number(inv.current_value)
+        : Number(inv.amount_invested);
+
+      items.push({
+        id: inv.id,
+        type: 'investment',
+        amount: value,
+        date: inv.purchase_date,
+        description: inv.name,
+        status: inv.status,
       });
     }
   }

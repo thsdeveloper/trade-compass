@@ -1,8 +1,9 @@
 [build]
 builder = "nixpacks"
+buildCommand = "pnpm install --frozen-lockfile && pnpm --filter back build"
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "pnpm --filter back start"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"

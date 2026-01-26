@@ -120,6 +120,9 @@ importers:
       '@types/d3-time-format':
         specifier: ^4.0.3
         version: 4.0.3
+      back:
+        specifier: workspace:*
+        version: link:../back
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

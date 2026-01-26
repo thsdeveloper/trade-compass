@@ -2,6 +2,9 @@
   "name": "back",
   "version": "0.1.0",
   "type": "module",
+  "exports": {
+    "./trpc": "./src/trpc/index.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",

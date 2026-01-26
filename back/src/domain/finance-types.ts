@@ -206,6 +206,7 @@ export interface CreateCategoryDTO {
   type: FinanceCategoryType;
   color?: string;
   icon?: string;
+  budget_category?: BudgetCategory;
 }
 
 export interface UpdateCategoryDTO {
@@ -259,6 +260,7 @@ export interface UpdateCreditCardDTO {
   name?: string;
   brand?: CreditCardBrand;
   total_limit?: number;
+  available_limit?: number;
   closing_day?: number;
   due_day?: number;
   color?: string;

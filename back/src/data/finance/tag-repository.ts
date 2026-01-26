@@ -139,8 +139,11 @@ export async function getTagsForTransaction(
   }
 
   return (data || [])
-    .map(item => item.tag)
-    .filter((tag): tag is FinanceTag => tag !== null && tag.is_active);
+    .map(item => {
+      const tagData = item.tag;
+      return Array.isArray(tagData) ? tagData[0] : tagData;
+    })
+    .filter((tag): tag is FinanceTag => tag !== null && tag !== undefined && tag.is_active);
 }
 
 export async function setTransactionTags(

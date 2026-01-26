@@ -228,6 +228,7 @@ export async function generateNextOccurrences(
       debt_id: null,
       debt_negotiation_id: null,
       transfer_id: null,
+      goal_id: null,
       type: recurrence.type,
       status: 'PENDENTE',
       description: recurrence.description,

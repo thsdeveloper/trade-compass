@@ -219,6 +219,7 @@ export async function createInstallmentTransactions(
       debt_id: null,
       debt_negotiation_id: null,
       transfer_id: null,
+      goal_id: null,
       type: data.type,
       status: 'PENDENTE',
       description: `${data.description} (${i + 1}/${data.total_installments})`,

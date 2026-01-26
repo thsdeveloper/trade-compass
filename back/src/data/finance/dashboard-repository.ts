@@ -203,7 +203,8 @@ export async function getExpensesByCategory(
   let grandTotal = 0;
 
   for (const t of transactions) {
-    const cat = t.category as { id: string; name: string; color: string; icon: string };
+    const catData = t.category as { id: string; name: string; color: string; icon: string } | { id: string; name: string; color: string; icon: string }[] | null;
+    const cat = Array.isArray(catData) ? catData[0] : catData;
     if (!cat) continue;
 
     const amount = Number(t.amount);
@@ -348,6 +349,10 @@ export async function getUpcomingPayments(
   return transactions.map((t) => {
     const dueDate = new Date(t.due_date);
     const daysUntilDue = Math.ceil((dueDate.getTime() - todayTime) / (1000 * 60 * 60 * 24));
+    const catData = t.category;
+    const category = Array.isArray(catData) ? catData[0] : catData;
+    const cardData = t.credit_card;
+    const credit_card = Array.isArray(cardData) ? cardData[0] : cardData;
 
     return {
       id: t.id,
@@ -355,8 +360,8 @@ export async function getUpcomingPayments(
       amount: Number(t.amount),
       due_date: t.due_date,
       days_until_due: daysUntilDue,
-      category: t.category,
-      credit_card: t.credit_card || undefined,
+      category,
+      credit_card: credit_card || undefined,
     };
   });
 }
@@ -403,6 +408,10 @@ export async function getUpcomingPaymentsByMonth(
     const daysUntilDue = Math.ceil(
       (dueDate.getTime() - todayTime) / (1000 * 60 * 60 * 24)
     );
+    const catData = t.category;
+    const category = Array.isArray(catData) ? catData[0] : catData;
+    const cardData = t.credit_card;
+    const credit_card = Array.isArray(cardData) ? cardData[0] : cardData;
 
     return {
       id: t.id,
@@ -410,8 +419,8 @@ export async function getUpcomingPaymentsByMonth(
       amount: Number(t.amount),
       due_date: t.due_date,
       days_until_due: daysUntilDue,
-      category: t.category,
-      credit_card: t.credit_card || undefined,
+      category,
+      credit_card: credit_card || undefined,
     };
   });
 }

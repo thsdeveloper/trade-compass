@@ -44,7 +44,7 @@ export async function fetchTRRatesFromBCB(
       throw new Error(`Erro ao buscar TR do BCB: ${response.status}`);
     }
 
-    const data: BCBTRResponse[] = await response.json();
+    const data = (await response.json()) as BCBTRResponse[];
 
     return data.map((item) => {
       // Converter DD/MM/YYYY para YYYY-MM-DD

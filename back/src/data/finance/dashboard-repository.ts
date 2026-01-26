@@ -71,7 +71,7 @@ export async function getFinanceSummary(
   const { data: pendingExpenses } = await pendingExpensesQuery;
 
   const totalPendingExpenses =
-    pendingExpenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    pendingExpenses?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
   // Buscar transacoes pendentes do mes (receitas) - excluir transferencias e contas excluidas
   let pendingIncomeQuery = client
@@ -92,7 +92,7 @@ export async function getFinanceSummary(
 
   const { data: pendingIncome } = await pendingIncomeQuery;
 
-  const totalPendingIncome = pendingIncome?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const totalPendingIncome = pendingIncome?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
   // Buscar transacoes do mes (despesas) - por due_date, excluir transferencias, canceladas e contas excluidas
   let monthExpensesQuery = client
@@ -113,7 +113,7 @@ export async function getFinanceSummary(
 
   const { data: monthExpenses } = await monthExpensesQuery;
 
-  const monthExpensesTotal = monthExpenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const monthExpensesTotal = monthExpenses?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
   // Buscar transacoes do mes (receitas) - por due_date, excluir transferencias, canceladas e contas excluidas
   let monthIncomeQuery = client
@@ -134,7 +134,7 @@ export async function getFinanceSummary(
 
   const { data: monthIncome } = await monthIncomeQuery;
 
-  const monthIncomeTotal = monthIncome?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const monthIncomeTotal = monthIncome?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
   return {
     total_balance: totalBalance,
@@ -280,7 +280,7 @@ export async function getCashFlow(
 
     const { data: income } = await incomeQuery;
 
-    const incomeTotal = income?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const incomeTotal = income?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
     // Despesas do mes - excluir transferencias e contas excluidas
     let expenseQuery = client
@@ -301,7 +301,7 @@ export async function getCashFlow(
 
     const { data: expenses } = await expenseQuery;
 
-    const expensesTotal = expenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const expensesTotal = expenses?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
     result.push({
       month,
@@ -486,7 +486,7 @@ export async function getBudgetAllocation(
 
   const { data: incomeTransactions } = await incomeQuery;
 
-  const totalIncome = incomeTransactions?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const totalIncome = incomeTransactions?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
 
   // Buscar despesas de CONTA (sem cartao) do mes calendario - excluir transferencias e contas excluidas
   let accountExpensesQuery = client

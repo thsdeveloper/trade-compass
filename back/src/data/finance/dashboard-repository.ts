@@ -346,7 +346,7 @@ export async function getUpcomingPayments(
 
   const todayTime = today.getTime();
 
-  return transactions.map((t) => {
+  return transactions.map((t: { id: string; description: string; amount: unknown; due_date: string; category: unknown; credit_card: unknown }) => {
     const dueDate = new Date(t.due_date);
     const daysUntilDue = Math.ceil((dueDate.getTime() - todayTime) / (1000 * 60 * 60 * 24));
     const catData = t.category;
@@ -403,7 +403,7 @@ export async function getUpcomingPaymentsByMonth(
 
   const todayTime = today.getTime();
 
-  return transactions.map((t) => {
+  return transactions.map((t: { id: string; description: string; amount: unknown; due_date: string; category: unknown; credit_card: unknown }) => {
     const dueDate = new Date(t.due_date);
     const daysUntilDue = Math.ceil(
       (dueDate.getTime() - todayTime) / (1000 * 60 * 60 * 24)

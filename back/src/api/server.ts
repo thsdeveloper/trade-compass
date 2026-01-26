@@ -1,5 +1,9 @@
 import Fastify, { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
+import {
+  fastifyTRPCPlugin,
+  type FastifyTRPCPluginOptions,
+} from '@trpc/server/adapters/fastify';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { assetsRoutes } from './routes/assets.js';
@@ -10,22 +14,26 @@ import { watchlistRoutes } from './routes/watchlist.js';
 import { signalsRoutes } from './routes/signals.js';
 import { backtestRoutes } from './routes/backtest.js';
 import { financeRoutes } from './routes/finance/index.js';
+import { appRouter, createContext, type AppRouter } from '../trpc/index.js';
 
 const isTest = process.env.NODE_ENV === 'test';
+const isProd = process.env.NODE_ENV === 'production';
 
 export async function buildServer() {
   const app = Fastify({
     logger: isTest
       ? false
-      : {
-          level: 'info',
-          transport: {
-            target: 'pino-pretty',
-            options: {
-              colorize: true,
+      : isProd
+        ? { level: 'info' }
+        : {
+            level: 'info',
+            transport: {
+              target: 'pino-pretty',
+              options: {
+                colorize: true,
+              },
             },
           },
-        },
   });
 
   // CORS
@@ -34,7 +42,16 @@ export async function buildServer() {
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
-  // Routes
+  // tRPC
+  await app.register(fastifyTRPCPlugin, {
+    prefix: '/trpc',
+    trpcOptions: {
+      router: appRouter,
+      createContext,
+    } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
+  });
+
+  // Routes (legacy REST - will be deprecated)
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(assetsRoutes);

@@ -3,7 +3,7 @@
 import { ColumnDef } from '@tanstack/react-table';
 import { Check, CreditCard, Pencil, X, ArrowLeftRight } from 'lucide-react';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
-import { DataTableColumnHeader } from '@/components/molecules/DataTable';
+import { DataTableColumnHeader, createSelectColumn } from '@/components/molecules/DataTable';
 import { cn } from '@/lib/utils';
 import type { TransactionWithDetails, TransactionStatus } from '@/types/finance';
 import { formatCurrency, TRANSACTION_STATUS_LABELS } from '@/types/finance';
@@ -13,6 +13,7 @@ interface ColumnOptions {
   onEdit?: (transaction: TransactionWithDetails) => void;
   onCancel?: (transaction: TransactionWithDetails) => void;
   getInvoiceDueDate?: (dueDate: string, closingDay: number, dueDay: number) => string;
+  enableSelection?: boolean;
 }
 
 const getStatusStyles = (status: TransactionStatus) => {
@@ -33,9 +34,15 @@ const getStatusStyles = (status: TransactionStatus) => {
 export function getTransactionColumns(
   options: ColumnOptions = {}
 ): ColumnDef<TransactionWithDetails>[] {
-  const { onPay, onEdit, onCancel, getInvoiceDueDate } = options;
+  const { onPay, onEdit, onCancel, getInvoiceDueDate, enableSelection } = options;
 
-  return [
+  const columns: ColumnDef<TransactionWithDetails>[] = [];
+
+  if (enableSelection) {
+    columns.push(createSelectColumn<TransactionWithDetails>());
+  }
+
+  columns.push(
     {
       accessorKey: 'description',
       header: ({ column }) => (
@@ -240,6 +247,8 @@ export function getTransactionColumns(
       meta: {
         className: 'text-right',
       },
-    },
-  ];
+    }
+  );
+
+  return columns;
 }

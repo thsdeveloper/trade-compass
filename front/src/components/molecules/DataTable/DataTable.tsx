@@ -2,6 +2,7 @@
 
 import {
   ColumnDef,
+  RowSelectionState,
   SortingState,
   flexRender,
   getCoreRowModel,
@@ -30,6 +31,10 @@ interface DataTableProps<TData, TValue> {
   isLoading?: boolean;
   emptyMessage?: string;
   className?: string;
+  enableRowSelection?: boolean;
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: (selection: RowSelectionState) => void;
+  getRowId?: (row: TData) => string;
 }
 
 export function DataTable<TData, TValue>({
@@ -41,6 +46,10 @@ export function DataTable<TData, TValue>({
   isLoading = false,
   emptyMessage = 'Nenhum resultado encontrado',
   className,
+  enableRowSelection = false,
+  rowSelection,
+  onRowSelectionChange,
+  getRowId,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -53,14 +62,27 @@ export function DataTable<TData, TValue>({
       onSortingChange: setSorting,
       getSortedRowModel: getSortedRowModel(),
     }),
+    ...(enableRowSelection && {
+      enableRowSelection: true,
+      onRowSelectionChange: (updater) => {
+        if (onRowSelectionChange) {
+          const newSelection = typeof updater === 'function'
+            ? updater(rowSelection || {})
+            : updater;
+          onRowSelectionChange(newSelection);
+        }
+      },
+    }),
     state: {
       sorting: enableSorting ? sorting : [],
+      ...(enableRowSelection && { rowSelection: rowSelection || {} }),
     },
     initialState: {
       pagination: {
         pageSize,
       },
     },
+    ...(getRowId && { getRowId }),
   });
 
   return (

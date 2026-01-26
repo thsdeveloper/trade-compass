@@ -230,7 +230,7 @@ export interface UpdateTagDTO {
 export interface CreateAccountDTO {
   name: string;
   type: FinanceAccountType;
-  bank_id: string;
+  bank_id?: string;
   initial_balance?: number;
   color?: string;
   icon?: string;

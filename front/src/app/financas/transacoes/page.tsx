@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, Fragment, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import type { RowSelectionState } from '@tanstack/react-table';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
 import { TransactionDialog } from '@/components/organisms/finance/TransactionDialog';
@@ -14,6 +15,7 @@ import { TransactionFiltersSheet } from '@/components/organisms/finance/Transact
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog';
 import { YearSelector } from '@/components/molecules/YearSelector';
 import { DataTable } from '@/components/molecules/DataTable';
+import { SelectionSummaryBar } from '@/components/molecules/SelectionSummaryBar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -127,6 +129,9 @@ function TransacoesPageContent() {
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
+  // Row selection state
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   // Confirm dialog state
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -469,6 +474,36 @@ function TransacoesPageContent() {
     return { accountTransactions: accountTx, invoiceGroups: groups };
   }, [transactions, selectedMonth, groupCardTransactions, urgentFilter]);
 
+  // Calculate selection summary
+  const selectionSummary = useMemo(() => {
+    const selectedIds = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (const id of selectedIds) {
+      const tx = accountTransactions.find((t) => t.id === id);
+      if (tx && tx.status !== 'CANCELADO') {
+        if (tx.type === 'RECEITA') {
+          totalIncome += tx.amount;
+        } else if (tx.type === 'DESPESA') {
+          totalExpense += tx.amount;
+        }
+      }
+    }
+
+    return {
+      count: selectedIds.length,
+      totalIncome,
+      totalExpense,
+      netAmount: totalIncome - totalExpense,
+    };
+  }, [rowSelection, accountTransactions]);
+
+  // Clear row selection when filters change
+  useEffect(() => {
+    setRowSelection({});
+  }, [selectedMonth, statusFilter, typeFilter, categoryFilter, tagFilter, accountFilter, urgentFilter, debouncedSearch]);
+
   const toggleInvoice = (key: string) => {
     setExpandedInvoices(prev => {
       const newSet = new Set(prev);
@@ -775,6 +810,7 @@ function TransacoesPageContent() {
         onEdit: openEditDialog,
         onCancel: handleCancelTransaction,
         getInvoiceDueDate,
+        enableSelection: true,
       }),
     []
   );
@@ -970,6 +1006,16 @@ function TransacoesPageContent() {
           pageSize={20}
           isLoading={loading && !isInitialLoad}
           emptyMessage="Nenhuma transacao encontrada"
+          enableRowSelection={true}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          getRowId={(row) => row.id}
+        />
+
+        {/* Selection Summary Bar */}
+        <SelectionSummaryBar
+          summary={selectionSummary}
+          onClear={() => setRowSelection({})}
         />
       </div>
 

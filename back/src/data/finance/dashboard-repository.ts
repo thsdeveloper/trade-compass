@@ -166,7 +166,7 @@ export async function getExpensesByCategory(
     .eq('user_id', userId)
     .in('type', ['INVESTIMENTO', 'BENEFICIO']);
 
-  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+  const excludedAccountIds = excludedAccounts?.map((a: { id: string }) => a.id) || [];
 
   // Buscar transacoes de despesa do mes com categoria - excluir transferencias e contas excluidas
   let query = client
@@ -248,7 +248,7 @@ export async function getCashFlow(
     .eq('user_id', userId)
     .in('type', ['INVESTIMENTO', 'BENEFICIO']);
 
-  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+  const excludedAccountIds = excludedAccounts?.map((a: { id: string }) => a.id) || [];
 
   const result: CashFlowPoint[] = [];
   const now = new Date();
@@ -465,7 +465,7 @@ export async function getBudgetAllocation(
     .eq('user_id', userId)
     .in('type', ['INVESTIMENTO', 'BENEFICIO']);
 
-  const excludedAccountIds = excludedAccounts?.map((a) => a.id) || [];
+  const excludedAccountIds = excludedAccounts?.map((a: { id: string }) => a.id) || [];
 
   // Buscar receitas do mes - excluir transferencias e contas excluidas
   let incomeQuery = client

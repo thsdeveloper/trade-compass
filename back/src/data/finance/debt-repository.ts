@@ -61,7 +61,7 @@ export async function getDebtsByUser(
   }
 
   // Processar para retornar apenas negociacao ativa
-  const debts = (data || []).map((debt) => {
+  const debts = (data || []).map((debt: FinanceDebt & { active_negotiation: FinanceDebtNegotiation[] | null }) => {
     const negotiations = debt.active_negotiation as FinanceDebtNegotiation[] | null;
     const activeNegotiation = negotiations?.find((n) => n.is_active) || null;
     return {

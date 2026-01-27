@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -128,6 +129,8 @@ export default function NewTransactionScreen() {
         { backgroundColor: colors.background, paddingTop: insets.top },
       ]}
     >
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}

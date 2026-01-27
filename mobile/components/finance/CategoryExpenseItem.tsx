@@ -1,15 +1,110 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { formatCurrency, type ExpensesByCategory } from '@/types/finance';
 
 interface CategoryExpenseItemProps {
   item: ExpensesByCategory;
 }
 
+// Map Lucide icon names to SF Symbols
+const CATEGORY_ICON_MAP: Record<string, IconSymbolName> = {
+  // Financas
+  'Wallet': 'wallet.pass.fill',
+  'CreditCard': 'creditcard.fill',
+  'Banknote': 'banknote.fill',
+  'DollarSign': 'dollarsign.circle.fill',
+  'PiggyBank': 'banknote.fill',
+  'TrendingUp': 'chart.line.uptrend.xyaxis',
+  'TrendingDown': 'chart.line.downtrend.xyaxis',
+  'Receipt': 'doc.text.fill',
+  'Landmark': 'building.columns.fill',
+  // Casa
+  'Home': 'house.fill',
+  'Building': 'building.columns.fill',
+  'Lightbulb': 'bolt.fill',
+  'Plug': 'bolt.fill',
+  'Flame': 'bolt.fill',
+  'Droplets': 'drop.fill',
+  // Alimentacao
+  'ShoppingCart': 'cart.fill',
+  'Utensils': 'fork.knife',
+  'Coffee': 'cup.and.saucer.fill',
+  'Pizza': 'fork.knife',
+  'Apple': 'fork.knife',
+  // Transporte
+  'Car': 'car.fill',
+  'CarFront': 'car.fill',
+  'Bus': 'bus',
+  'Train': 'tram.fill',
+  'Plane': 'airplane',
+  'Bike': 'bicycle',
+  'Fuel': 'fuelpump.fill',
+  // Saude
+  'Heart': 'heart.fill',
+  'HeartPulse': 'heart.fill',
+  'Pill': 'pills.fill',
+  'Stethoscope': 'stethoscope',
+  'Dumbbell': 'dumbbell.fill',
+  'Hospital': 'cross.fill',
+  // Entretenimento
+  'Gamepad2': 'gamecontroller.fill',
+  'Music': 'music.note',
+  'Tv': 'tv.fill',
+  'Film': 'film',
+  'Camera': 'camera.fill',
+  'Gift': 'gift.fill',
+  // Educacao
+  'GraduationCap': 'graduationcap.fill',
+  'BookOpen': 'book.fill',
+  'Book': 'book.fill',
+  // Compras
+  'Shirt': 'tshirt.fill',
+  'ShoppingBag': 'bag.fill',
+  'Store': 'storefront.fill',
+  'Tag': 'tag.fill',
+  // Trabalho
+  'Briefcase': 'briefcase.fill',
+  'Users': 'person.2.fill',
+  'Monitor': 'desktopcomputer',
+  'Laptop': 'laptopcomputer',
+  'Phone': 'phone.fill',
+  'Mail': 'envelope.fill',
+  'Calendar': 'calendar',
+  // Tecnologia
+  'Wifi': 'wifi',
+  'Smartphone': 'iphone',
+  'Globe': 'globe',
+  'Zap': 'bolt.fill',
+  // Servicos
+  'Wrench': 'wrench.and.screwdriver.fill',
+  'Settings': 'gearshape.fill',
+  'Scissors': 'scissors',
+  'Bell': 'bell.fill',
+  // Viagem
+  'Hotel': 'bed.double.fill',
+  'Map': 'map.fill',
+  'Luggage': 'suitcase.fill',
+  // Pets
+  'Dog': 'pawprint.fill',
+  'Cat': 'pawprint.fill',
+  'Leaf': 'leaf.fill',
+  // Default
+  'default': 'circle.fill',
+};
+
+function getCategoryIcon(iconName: string): IconSymbolName {
+  return CATEGORY_ICON_MAP[iconName] || CATEGORY_ICON_MAP['default'];
+}
+
 export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+
+  const categoryIconName = getCategoryIcon(item.category_icon);
+  const categoryBgColor = item.category_color + (isDark ? '30' : '15');
 
   return (
     <View style={styles.container}>
@@ -17,11 +112,13 @@ export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
         <View
           style={[
             styles.iconContainer,
-            { backgroundColor: item.category_color + '20' },
+            { backgroundColor: categoryBgColor },
           ]}
         >
-          <View
-            style={[styles.colorDot, { backgroundColor: item.category_color }]}
+          <IconSymbol
+            name={categoryIconName}
+            size={18}
+            color={item.category_color}
           />
         </View>
         <View style={styles.textContent}>
@@ -77,17 +174,12 @@ const styles = StyleSheet.create({
     marginRight: Spacing.md,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.sm,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
-  },
-  colorDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
   },
   textContent: {
     flex: 1,

@@ -9,12 +9,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Href } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { setStatusBarStyle } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MenuItem {
   id: string;
@@ -25,7 +29,13 @@ interface MenuItem {
   danger?: boolean;
 }
 
-const MENU_SECTIONS: { title?: string; items: MenuItem[] }[] = [
+const createMenuSections = (signOut: () => Promise<void>): { title?: string; items: MenuItem[] }[] => [
+  {
+    title: 'Conta',
+    items: [
+      { id: 'profile', label: 'Editar Perfil', icon: 'person.fill', route: '/profile/edit' },
+    ],
+  },
   {
     title: 'Financas',
     items: [
@@ -54,7 +64,7 @@ const MENU_SECTIONS: { title?: string; items: MenuItem[] }[] = [
             'Deseja realmente sair do aplicativo?',
             [
               { text: 'Cancelar', style: 'cancel' },
-              { text: 'Sair', style: 'destructive', onPress: () => {} },
+              { text: 'Sair', style: 'destructive', onPress: () => signOut() },
             ]
           );
         },
@@ -67,6 +77,17 @@ export default function MoreScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const { user, profile, signOut, refreshProfile } = useAuth();
+
+  const MENU_SECTIONS = createMenuSections(signOut);
+
+  // Set status bar style and refresh profile when screen gains focus
+  useFocusEffect(
+    React.useCallback(() => {
+      setStatusBarStyle('light');
+      refreshProfile();
+    }, [refreshProfile])
+  );
 
   const handleMenuPress = (item: MenuItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -77,7 +98,14 @@ export default function MoreScreen() {
     }
   };
 
+  const handleAvatarPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/profile/edit' as Href);
+  };
+
   const appVersion = Constants.expoConfig?.version || '1.0.0';
+  const displayName = profile?.full_name || 'Usuario';
+  const displayEmail = user?.email || '';
 
   return (
     <SafeAreaView
@@ -86,13 +114,22 @@ export default function MoreScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <View style={styles.profileSection}>
+        <TouchableOpacity style={styles.profileSection} onPress={handleAvatarPress} activeOpacity={0.8}>
           <View style={styles.avatarContainer}>
-            <IconSymbol name="person.circle.fill" size={64} color="#FFFFFF" />
+            {profile?.avatar_url ? (
+              <Image
+                source={{ uri: profile.avatar_url }}
+                style={styles.avatar}
+                contentFit="cover"
+                transition={200}
+              />
+            ) : (
+              <IconSymbol name="person.circle.fill" size={64} color="#FFFFFF" />
+            )}
           </View>
-          <Text style={styles.userName}>Usuario</Text>
-          <Text style={styles.userEmail}>usuario@email.com</Text>
-        </View>
+          <Text style={styles.userName}>{displayName}</Text>
+          <Text style={styles.userEmail}>{displayEmail}</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -179,6 +216,11 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginBottom: Spacing.md,
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   userName: {
     fontSize: FontSize.xl,

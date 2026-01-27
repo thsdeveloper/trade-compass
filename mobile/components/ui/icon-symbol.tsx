@@ -33,10 +33,120 @@ const MAPPING = {
   'wallet.pass': 'account-balance-wallet',
   'arrow.down.circle.fill': 'arrow-downward',
   'arrow.up.circle.fill': 'arrow-upward',
+  'arrow.down': 'arrow-downward',
+  'arrow.up': 'arrow-upward',
   'chart.line.uptrend.xyaxis': 'trending-up',
   'chart.line.downtrend.xyaxis': 'trending-down',
   'creditcard.fill': 'credit-card',
   'banknote.fill': 'payments',
+
+  // Category icons - Alimentacao
+  'cart.fill': 'shopping-cart',
+  'fork.knife': 'restaurant',
+  'cup.and.saucer.fill': 'local-cafe',
+
+  // Category icons - Transporte
+  'car.fill': 'directions-car',
+  'bus': 'directions-bus',
+  'tram.fill': 'tram',
+  'airplane': 'flight',
+  'bicycle': 'pedal-bike',
+  'fuelpump.fill': 'local-gas-station',
+  'mappin.and.ellipse': 'place',
+  'location.fill': 'my-location',
+  'truck.box.fill': 'local-shipping',
+
+  // Category icons - Saude
+  'pills.fill': 'medication',
+  'stethoscope': 'medical-services',
+  'cross.fill': 'local-hospital',
+  'dumbbell.fill': 'fitness-center',
+  'figure.stand': 'accessibility-new',
+
+  // Category icons - Educacao & Trabalho
+  'book.fill': 'menu-book',
+  'books.vertical.fill': 'library-books',
+  'briefcase.fill': 'work',
+  'graduationcap.fill': 'school',
+  'brain.head.profile': 'psychology',
+
+  // Category icons - Compras & Vestuario
+  'bag.fill': 'shopping-bag',
+  'storefront.fill': 'storefront',
+  'shippingbox.fill': 'inventory-2',
+  'tshirt.fill': 'checkroom',
+  'eyeglasses': 'visibility',
+  'umbrella.fill': 'beach-access',
+
+  // Category icons - Entretenimento
+  'gift.fill': 'card-giftcard',
+  'gamecontroller.fill': 'sports-esports',
+  'music.note': 'music-note',
+  'headphones': 'headphones',
+  'tv.fill': 'tv',
+  'film': 'movie',
+  'camera.fill': 'photo-camera',
+  'sparkles': 'auto-awesome',
+
+  // Category icons - Tech
+  'iphone': 'phone-iphone',
+  'ipad': 'tablet-mac',
+  'desktopcomputer': 'desktop-windows',
+  'laptopcomputer': 'laptop-mac',
+  'printer.fill': 'print',
+  'phone.fill': 'phone',
+  'envelope.fill': 'email',
+  'globe': 'language',
+  'cloud.fill': 'cloud',
+  'wifi': 'wifi',
+
+  // Category icons - Casa
+  'key.fill': 'vpn-key',
+  'drop.fill': 'water-drop',
+
+  // Category icons - Servicos
+  'wrench.and.screwdriver.fill': 'build',
+  'hammer.fill': 'hardware',
+  'scissors': 'content-cut',
+  'shield.fill': 'security',
+  'lock.fill': 'lock',
+  'timer': 'timer',
+
+  // Category icons - Viagem
+  'bed.double.fill': 'hotel',
+  'map.fill': 'map',
+  'safari.fill': 'explore',
+  'mountain.2.fill': 'terrain',
+  'tent.fill': 'holiday-village',
+  'suitcase.fill': 'luggage',
+  'sun.max.fill': 'wb-sunny',
+  'moon.fill': 'nightlight',
+
+  // Category icons - Pets & Natureza
+  'pawprint.fill': 'pets',
+  'bird.fill': 'flutter-dash',
+  'fish.fill': 'set-meal',
+  'leaf.fill': 'eco',
+  'camera.macro': 'local-florist',
+
+  // Category icons - Comunicacao
+  'message.fill': 'chat',
+  'at': 'alternate-email',
+  'link': 'link',
+
+  // Category icons - Status
+  'exclamationmark.triangle': 'warning',
+  'exclamationmark.triangle.fill': 'warning',
+  'bookmark.fill': 'bookmark',
+  'flag.fill': 'flag',
+  'target': 'gps-fixed',
+
+  // Category icons - Outros
+  'circle.fill': 'circle',
+  'archivebox.fill': 'archive',
+  'folder.fill': 'folder',
+  'arrow.triangle.2.circlepath': 'sync',
+  'person.2.fill': 'people',
 
   // Nubank-style icons
   'eye': 'visibility',

@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { setStatusBarStyle } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
@@ -25,6 +27,7 @@ import { MonthNavigator } from '@/components/finance/MonthNavigator';
 import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
 import { CategoryExpenseItem } from '@/components/finance/CategoryExpenseItem';
 import { UpcomingPaymentItem } from '@/components/finance/UpcomingPaymentItem';
+import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
@@ -35,6 +38,13 @@ export default function DashboardScreen() {
   const router = useRouter();
 
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+
+  // Set status bar style when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+    }, [])
+  );
 
   const {
     selectedMonth,
@@ -353,6 +363,8 @@ export default function DashboardScreen() {
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      <FloatingActionButton />
     </View>
   );
 }

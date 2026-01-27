@@ -10,16 +10,25 @@ import { useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { sendMagicLink, loginWithPassword } from '@/lib/api';
+import { getProfile } from '@/lib/profile-api';
 import type { Session, User } from '@supabase/supabase-js';
+
+export interface Profile {
+  full_name: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  profile: Profile | null;
   isLoading: boolean;
   isLoggedIn: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInWithMagicLink: (email: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,11 +36,28 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const segments = useSegments();
 
   const isLoggedIn = !!session;
+
+  const refreshProfile = useCallback(async () => {
+    if (!session) {
+      setProfile(null);
+      return;
+    }
+
+    try {
+      const result = await getProfile();
+      if (result.data) {
+        setProfile(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    }
+  }, [session]);
 
   const handleDeepLink = useCallback(
     async (url: string) => {
@@ -115,6 +141,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Fetch profile when session changes
+  useEffect(() => {
+    if (session) {
+      refreshProfile();
+    } else {
+      setProfile(null);
+    }
+  }, [session, refreshProfile]);
+
   useEffect(() => {
     const handleInitialUrl = async () => {
       const initialUrl = await Linking.getInitialURL();
@@ -191,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);
+    setProfile(null);
   };
 
   return (
@@ -198,11 +234,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         session,
+        profile,
         isLoading,
         isLoggedIn,
         signIn,
         signInWithMagicLink,
         signOut,
+        refreshProfile,
       }}
     >
       {children}

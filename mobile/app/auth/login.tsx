@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '@/contexts/AuthContext';
 
 type LoginMode = 'password' | 'magic-link';
@@ -75,6 +76,8 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <StatusBar style="dark" />
+
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Trade Compass</Text>

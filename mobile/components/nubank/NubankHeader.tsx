@@ -5,8 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  StatusBar,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -58,76 +56,70 @@ export function NubankHeader({
   const firstName = userName.split(' ')[0];
 
   return (
-    <>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={colors.primary}
-      />
-      <View
-        style={[
-          styles.container,
-          {
-            backgroundColor: colors.primary,
-            paddingTop: insets.top + Spacing.md,
-          },
-        ]}
-      >
-        {/* Top Row - Profile and Icons */}
-        <View style={styles.topRow}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.primary,
+          paddingTop: insets.top + Spacing.md,
+        },
+      ]}
+    >
+      {/* Top Row - Profile and Icons */}
+      <View style={styles.topRow}>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => handlePress(onProfilePress)}
+          activeOpacity={0.7}
+        >
+          {userPhoto ? (
+            <Image source={{ uri: userPhoto }} style={styles.profileImage} />
+          ) : (
+            <View style={styles.profilePlaceholder}>
+              <IconSymbol name="person.circle.fill" size={40} color="#FFFFFF" />
+            </View>
+          )}
+          <View style={styles.profileIndicator} />
+        </TouchableOpacity>
+
+        <View style={styles.iconsRow}>
           <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => handlePress(onProfilePress)}
+            style={styles.iconButton}
+            onPress={handleToggleBalance}
             activeOpacity={0.7}
           >
-            {userPhoto ? (
-              <Image source={{ uri: userPhoto }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <IconSymbol name="person.circle.fill" size={40} color="#FFFFFF" />
-              </View>
-            )}
-            <View style={styles.profileIndicator} />
+            <IconSymbol
+              name={isBalanceVisible ? 'eye.fill' : 'eye.slash.fill'}
+              size={24}
+              color="#FFFFFF"
+            />
           </TouchableOpacity>
 
-          <View style={styles.iconsRow}>
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={handleToggleBalance}
-              activeOpacity={0.7}
-            >
-              <IconSymbol
-                name={isBalanceVisible ? 'eye.fill' : 'eye.slash.fill'}
-                size={24}
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => handlePress(onHelpPress)}
+            activeOpacity={0.7}
+          >
+            <IconSymbol name="questionmark.circle" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => handlePress(onHelpPress)}
-              activeOpacity={0.7}
-            >
-              <IconSymbol name="questionmark.circle" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => handlePress(onMenuPress)}
-              activeOpacity={0.7}
-            >
-              <IconSymbol name="person.circle" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Greeting */}
-        <View style={styles.greetingContainer}>
-          <Text style={styles.greeting}>
-            {getGreeting()}, {firstName}
-          </Text>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => handlePress(onMenuPress)}
+            activeOpacity={0.7}
+          >
+            <IconSymbol name="person.circle" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
       </View>
-    </>
+
+      {/* Greeting */}
+      <View style={styles.greetingContainer}>
+        <Text style={styles.greeting}>
+          {getGreeting()}, {firstName}
+        </Text>
+      </View>
+    </View>
   );
 }
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure, protectedProcedure } from '../trpc.js';
-import { supabaseAdmin } from '../../lib/supabase.js';
+import { supabaseAdmin, createUserClient } from '../../lib/supabase.js';
 
 export const authRouter = router({
   register: publicProcedure
@@ -206,4 +206,52 @@ export const authRouter = router({
       message: 'Logout realizado com sucesso',
     };
   }),
+
+  changePassword: protectedProcedure
+    .input(
+      z.object({
+        currentPassword: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
+        newPassword: z.string().min(6, 'Nova senha deve ter no mínimo 6 caracteres'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { currentPassword, newPassword } = input;
+
+      if (currentPassword === newPassword) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A nova senha deve ser diferente da senha atual',
+        });
+      }
+
+      // Verify current password by attempting to sign in
+      const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+        email: ctx.user.email!,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Senha atual incorreta',
+        });
+      }
+
+      // Update password using admin API
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        ctx.user.id,
+        { password: newPassword }
+      );
+
+      if (updateError) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: updateError.message,
+        });
+      }
+
+      return {
+        message: 'Senha alterada com sucesso',
+      };
+    }),
 });

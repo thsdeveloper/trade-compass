@@ -43,6 +43,24 @@ export interface PasswordRecoveryResponse {
   message: string;
 }
 
+// Profile types
+export interface Profile {
+  full_name: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+}
+
+export interface UpdateProfileDTO {
+  full_name?: string | null;
+  phone?: string | null;
+}
+
+export interface UploadUrlResponse {
+  signedUrl: string;
+  publicUrl: string;
+  path: string;
+}
+
 // Watchlist types
 export interface WatchlistItemResponse {
   id: string;
@@ -258,6 +276,58 @@ class ApiClient {
   async removeFromWatchlist(id: string, accessToken: string): Promise<void> {
     await this.authFetch(`/watchlist/${id}`, accessToken, {
       method: 'DELETE',
+    });
+  }
+
+  // Profile endpoints
+  async getProfile(accessToken: string): Promise<Profile> {
+    return this.authFetch('/profile/get', accessToken);
+  }
+
+  async updateProfile(
+    updates: UpdateProfileDTO,
+    accessToken: string
+  ): Promise<Profile> {
+    return this.authFetch('/profile/update', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async getUploadUrl(
+    fileExtension: 'jpg' | 'jpeg' | 'png' | 'webp',
+    accessToken: string
+  ): Promise<UploadUrlResponse> {
+    return this.authFetch('/profile/getUploadUrl', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ fileExtension }),
+    });
+  }
+
+  async updateAvatarUrl(
+    avatar_url: string,
+    accessToken: string
+  ): Promise<{ avatar_url: string }> {
+    return this.authFetch('/profile/updateAvatarUrl', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ avatar_url }),
+    });
+  }
+
+  async deleteAvatar(accessToken: string): Promise<{ message: string }> {
+    return this.authFetch('/profile/deleteAvatar', accessToken, {
+      method: 'POST',
+    });
+  }
+
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+    accessToken: string
+  ): Promise<{ message: string }> {
+    return this.authFetch('/auth/changePassword', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
     });
   }
 }

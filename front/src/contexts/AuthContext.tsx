@@ -11,7 +11,9 @@ import {
 } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
-import { api } from '@/lib/api';
+import { api, type Profile } from '@/lib/api';
+
+export type { Profile };
 
 /**
  * Authentication Context Type
@@ -23,6 +25,8 @@ interface AuthContextType {
   user: User | null;
   /** Current session with tokens (null if not authenticated) */
   session: Session | null;
+  /** User profile data (null if not loaded or not authenticated) */
+  profile: Profile | null;
   /** Whether authentication state is being initialized */
   loading: boolean;
   /** Authenticate user with email and password */
@@ -39,6 +43,8 @@ interface AuthContextType {
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null; message?: string }>;
   /** Set session from tokens (for magic link hash fragment) */
   setSessionFromTokens: (accessToken: string, refreshToken: string) => Promise<{ error: Error | null }>;
+  /** Refresh profile data from server */
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -73,9 +79,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const supabase = useMemo(() => createClient(), []);
+
+  /**
+   * Refresh profile data from server
+   */
+  const refreshProfile = useCallback(async () => {
+    if (!session?.access_token) {
+      setProfile(null);
+      return;
+    }
+
+    try {
+      const profileData = await api.getProfile(session.access_token);
+      setProfile(profileData);
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    }
+  }, [session?.access_token]);
 
   useEffect(() => {
     // Get initial session from Supabase (for SSR/session persistence)
@@ -95,6 +119,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, [supabase]);
+
+  // Fetch profile when session changes
+  useEffect(() => {
+    if (session?.access_token) {
+      refreshProfile();
+    } else {
+      setProfile(null);
+    }
+  }, [session?.access_token, refreshProfile]);
 
   /**
    * Sign in user with email and password
@@ -197,7 +230,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Error calling backend logout:', err);
     } finally {
-      // Always clear local session
+      // Always clear local session and profile
+      setProfile(null);
       await supabase.auth.signOut();
     }
   }, [supabase, session]);
@@ -312,6 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       session,
+      profile,
       loading,
       signIn,
       signUp,
@@ -319,9 +354,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       recoverPassword,
       resetPassword,
       signInWithMagicLink,
-      setSessionFromTokens
+      setSessionFromTokens,
+      refreshProfile,
     }),
-    [user, session, loading, signIn, signUp, signOut, recoverPassword, resetPassword, signInWithMagicLink, setSessionFromTokens]
+    [user, session, profile, loading, signIn, signUp, signOut, recoverPassword, resetPassword, signInWithMagicLink, setSessionFromTokens, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

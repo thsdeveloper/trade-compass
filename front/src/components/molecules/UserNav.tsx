@@ -18,7 +18,7 @@ interface UserNavProps {
 }
 
 export function UserNav({ variant = 'default' }: UserNavProps) {
-  const { user, signOut, loading } = useAuth();
+  const { user, profile, signOut, loading } = useAuth();
 
   if (loading) {
     return <div className="h-9 w-9 animate-pulse rounded-full bg-sidebar-accent" />;
@@ -26,8 +26,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
 
   // Header variant with dropdown menu
   if (variant === 'header' && user) {
-    const initials = user.email?.slice(0, 2).toUpperCase() || 'U';
-    const displayName = user.email?.split('@')[0] || 'Usuário';
+    const displayName = profile?.full_name || user.email?.split('@')[0] || 'Usuario';
+    const initials = profile?.full_name
+      ? profile.full_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+      : user.email?.slice(0, 2).toUpperCase() || 'U';
 
     return (
       <DropdownMenu>
@@ -36,9 +38,17 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
             variant="ghost"
             className="relative h-9 w-9 rounded-full p-0 transition-all duration-150 hover:ring-2 hover:ring-sidebar-ring/40"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
-              <span className="text-sm font-medium">{initials}</span>
-            </div>
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={displayName}
+                className="h-9 w-9 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
+                <span className="text-sm font-medium">{initials}</span>
+              </div>
+            )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56" sideOffset={8}>
@@ -105,14 +115,24 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
 
   // Default variant (sidebar/mobile)
   if (user) {
+    const displayName = profile?.full_name || user.email?.split('@')[0] || 'Usuario';
+
     return (
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
-            <User className="h-4 w-4" />
-          </div>
+          {profile?.avatar_url ? (
+            <img
+              src={profile.avatar_url}
+              alt={displayName}
+              className="h-8 w-8 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-sidebar-foreground">
+              <User className="h-4 w-4" />
+            </div>
+          )}
           <span className="hidden text-sm font-medium text-sidebar-foreground md:inline-block">
-            {user.email?.split('@')[0]}
+            {displayName}
           </span>
         </div>
         <Button

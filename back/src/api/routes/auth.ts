@@ -430,6 +430,123 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /**
+   * POST /auth/changePassword
+   *
+   * Changes the password for the authenticated user.
+   * Requires current password verification before updating.
+   *
+   * Headers:
+   * - Authorization: Bearer <access_token>
+   *
+   * Request Body:
+   * - currentPassword: string (required, min 6 characters)
+   * - newPassword: string (required, min 6 characters)
+   *
+   * Response (200):
+   * - message: Success message
+   *
+   * Errors:
+   * - 400: Missing or invalid passwords
+   * - 401: Current password incorrect
+   * - 500: Server error
+   */
+  app.post<{
+    Body: { currentPassword: string; newPassword: string };
+  }>('/auth/changePassword', async (request, reply) => {
+    const authHeader = request.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return reply.status(401).send({
+        error: 'Unauthorized',
+        message: 'Token de autenticacao ausente',
+        statusCode: 401,
+      });
+    }
+
+    const token = authHeader.substring(7);
+    const { currentPassword, newPassword } = request.body;
+
+    if (!currentPassword || !newPassword) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Senha atual e nova senha sao obrigatorias',
+        statusCode: 400,
+      });
+    }
+
+    if (currentPassword.length < 6 || newPassword.length < 6) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Senhas devem ter no minimo 6 caracteres',
+        statusCode: 400,
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'A nova senha deve ser diferente da senha atual',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      // Get user from token
+      const {
+        data: { user },
+        error: userError,
+      } = await supabaseAdmin.auth.getUser(token);
+
+      if (userError || !user) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Token invalido ou expirado',
+          statusCode: 401,
+        });
+      }
+
+      // Verify current password by attempting to sign in
+      const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+        email: user.email!,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Senha atual incorreta',
+          statusCode: 401,
+        });
+      }
+
+      // Update password using admin API
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        user.id,
+        { password: newPassword }
+      );
+
+      if (updateError) {
+        return reply.status(400).send({
+          error: 'Update Failed',
+          message: updateError.message,
+          statusCode: 400,
+        });
+      }
+
+      return reply.status(200).send({
+        message: 'Senha alterada com sucesso',
+      });
+    } catch (err) {
+      app.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Erro ao alterar senha',
+        statusCode: 500,
+      });
+    }
+  });
+
+  /**
    * POST /auth/magic-link
    *
    * Sends a magic link (passwordless login link) to user's email.

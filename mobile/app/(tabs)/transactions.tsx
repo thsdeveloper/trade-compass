@@ -12,7 +12,7 @@ import { setStatusBarStyle } from 'expo-status-bar';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
-import { MonthNavigator } from '@/components/finance/MonthNavigator';
+import { MonthSlider } from '@/components/finance/MonthSlider';
 import { TransactionListItem } from '@/components/finance/TransactionListItem';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
@@ -83,17 +83,12 @@ export default function TransactionsScreen() {
     setIsRefreshing(false);
   }, [loadTransactions]);
 
-  const handlePreviousMonth = useCallback(() => {
-    setSelectedMonth(
-      new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1, 1)
-    );
-  }, [selectedMonth, setSelectedMonth]);
-
-  const handleNextMonth = useCallback(() => {
-    setSelectedMonth(
-      new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1)
-    );
-  }, [selectedMonth, setSelectedMonth]);
+  const handleMonthChange = useCallback(
+    (date: Date) => {
+      setSelectedMonth(date);
+    },
+    [setSelectedMonth]
+  );
 
   const filteredTransactions = useMemo(() => {
     if (activeFilter === 'ALL') return transactions;
@@ -125,11 +120,10 @@ export default function TransactionsScreen() {
       {/* Title */}
       <Text style={[styles.title, { color: colors.text }]}>Transações</Text>
 
-      {/* Month Navigator */}
-      <MonthNavigator
-        date={selectedMonth}
-        onPrevious={handlePreviousMonth}
-        onNext={handleNextMonth}
+      {/* Month Slider */}
+      <MonthSlider
+        selectedDate={selectedMonth}
+        onMonthChange={handleMonthChange}
       />
 
       {/* Summary Cards */}

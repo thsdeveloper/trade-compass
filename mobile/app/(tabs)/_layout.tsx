@@ -31,8 +31,8 @@ export default function TabLayout() {
 
       <NativeTabs.Trigger name="transactions">
         <Icon
-          sf={{ default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' }}
-          androidSrc={<MaterialIcons name="receipt-long" size={24} color={colors.textSecondary} />}
+          sf={{ default: 'arrow.up.arrow.down', selected: 'arrow.up.arrow.down.circle.fill' }}
+          androidSrc={<MaterialIcons name="swap-vert" size={24} color={colors.textSecondary} />}
         />
         <Label>Transações</Label>
       </NativeTabs.Trigger>

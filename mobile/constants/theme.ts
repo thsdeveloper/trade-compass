@@ -1,15 +1,15 @@
 /**
- * Nubank-style theme configuration
+ * Finance-style theme configuration
  */
 
 import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    // Primary
-    primary: '#8A05BE',
-    primaryDark: '#6F049A',
-    primaryLight: '#F5E6FF',
+    // Primary - Finance Blue
+    primary: '#0066FF',
+    primaryDark: '#0052CC',
+    primaryLight: '#E6F0FF',
 
     // Backgrounds
     background: '#FFFFFF',
@@ -25,8 +25,8 @@ export const Colors = {
     border: '#E5E5E5',
     icon: '#6B6B6B',
     tabIconDefault: '#6B6B6B',
-    tabIconSelected: '#8A05BE',
-    tint: '#8A05BE',
+    tabIconSelected: '#0066FF',
+    tint: '#0066FF',
 
     // Semantic
     success: '#00A651',
@@ -39,10 +39,10 @@ export const Colors = {
     infoLight: '#E3F2FD',
   },
   dark: {
-    // Primary
-    primary: '#A855F7',
-    primaryDark: '#8A05BE',
-    primaryLight: '#2D1F3D',
+    // Primary - Finance Blue
+    primary: '#3B82F6',
+    primaryDark: '#0066FF',
+    primaryLight: '#1E3A5F',
 
     // Backgrounds
     background: '#121212',
@@ -58,8 +58,8 @@ export const Colors = {
     border: '#374151',
     icon: '#9BA1A6',
     tabIconDefault: '#9BA1A6',
-    tabIconSelected: '#A855F7',
-    tint: '#A855F7',
+    tabIconSelected: '#3B82F6',
+    tint: '#3B82F6',
 
     // Semantic
     success: '#10B981',

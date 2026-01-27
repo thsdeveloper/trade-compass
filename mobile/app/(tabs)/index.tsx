@@ -2,11 +2,14 @@ import { useEffect, useCallback, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useAnimatedRef,
+  useScrollViewOffset,
+} from 'react-native-reanimated';
 import { useRouter, Href } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -14,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import { formatCurrency } from '@/types/finance';
 
@@ -36,8 +40,13 @@ export default function DashboardScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const { profile } = useAuth();
 
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+
+  // Animated scroll refs for shrinking header
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollOffset = useScrollViewOffset(scrollRef);
 
   // Set status bar style when screen gains focus
   useFocusEffect(
@@ -144,16 +153,20 @@ export default function DashboardScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Nubank-style Header */}
       <NubankHeader
-        userName="Usuario"
+        userName={profile?.full_name || 'Usuario'}
+        userPhoto={profile?.avatar_url}
         isBalanceVisible={isBalanceVisible}
         onToggleBalance={handleToggleBalance}
         onProfilePress={() => router.push('/more' as Href)}
+        scrollOffset={scrollOffset}
       />
 
-      <ScrollView
+      <Animated.ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isDashboardLoading}
@@ -362,7 +375,7 @@ export default function DashboardScreen() {
 
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
-      </ScrollView>
+      </Animated.ScrollView>
 
       <FloatingActionButton />
     </View>

@@ -17,6 +17,7 @@ function makeCandlesWithSupport(supportLevel: number, currentClose: number, curr
   const candles: Candle[] = [];
 
   // Create 25 candles with a clear support
+  // Implementaç~cao
   for (let i = 0; i < 24; i++) {
     const basePrice = supportLevel + 5;
     candles.push(makeCandle(

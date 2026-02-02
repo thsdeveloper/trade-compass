@@ -1,0 +1,1 @@
+export { GlobalSearchCommand } from './GlobalSearchCommand';

@@ -16,9 +16,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'MoneyCompass - Clareza para Decidir',
+  title: 'MoneyCompass - Hub de Gerenciamento Financeiro',
   description:
-    'Copiloto inteligente para decisoes no mercado financeiro. Analise de contexto, zonas de decisao e setups tecnicos.',
+    'Gerencie transações, planeje orçamento 50/30/20, acompanhe metas e investimentos. Comece grátis!',
+  keywords: [
+    'finanças pessoais',
+    'controle financeiro',
+    'orçamento 50/30/20',
+    'gestão de gastos',
+    'metas financeiras',
+    'planejamento financeiro',
+    'controle de despesas',
+    'organização financeira',
+  ],
+  authors: [{ name: 'MoneyCompass' }],
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    url: 'https://moneycompass.app',
+    title: 'MoneyCompass - Hub de Gerenciamento Financeiro',
+    description:
+      'Gerencie transações, planeje orçamento 50/30/20, acompanhe metas e investimentos. Comece grátis!',
+    siteName: 'MoneyCompass',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'MoneyCompass - Hub de Gerenciamento Financeiro',
+    description:
+      'Gerencie transações, planeje orçamento 50/30/20, acompanhe metas e investimentos. Comece grátis!',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

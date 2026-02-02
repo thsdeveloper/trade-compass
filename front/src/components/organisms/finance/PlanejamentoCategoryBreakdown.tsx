@@ -7,12 +7,14 @@ interface PlanejamentoCategoryBreakdownProps {
   budgetSummary: BudgetSummary;
   categories: FinanceCategory[];
   expensesByCategory: ExpensesByCategory[];
+  selectedMonth?: string;
 }
 
 export function PlanejamentoCategoryBreakdown({
   budgetSummary,
   categories,
-  expensesByCategory
+  expensesByCategory,
+  selectedMonth
 }: PlanejamentoCategoryBreakdownProps) {
   const sortedAllocations = [...budgetSummary.allocations].sort((a, b) => {
     const order = ['ESSENCIAL', 'ESTILO_VIDA', 'INVESTIMENTO'];
@@ -32,6 +34,7 @@ export function PlanejamentoCategoryBreakdown({
             totalIncome={budgetSummary.total_income}
             categories={categories}
             expensesByCategory={expensesByCategory}
+            selectedMonth={selectedMonth}
           />
         ))}
       </div>

@@ -1,10 +1,13 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
+import { useGlobalSearchOptional } from '@/contexts/GlobalSearchContext';
 import { UserNav } from '@/components/molecules/UserNav';
 import { NewFinanceButton } from '@/components/molecules/NewFinanceButton';
 import { NotificationDropdown } from '@/components/molecules/NotificationDropdown';
+import { Button } from '@/components/ui/button';
 
 interface HeaderProps {
   className?: string;
@@ -12,6 +15,7 @@ interface HeaderProps {
 
 export function Header({ className }: HeaderProps) {
   const { isCollapsed } = useSidebar();
+  const globalSearch = useGlobalSearchOptional();
 
   return (
     <header
@@ -22,8 +26,24 @@ export function Header({ className }: HeaderProps) {
         className
       )}
     >
-      {/* Left side - New button */}
-      <NewFinanceButton />
+      {/* Left side - New button and Search */}
+      <div className="flex items-center gap-2">
+        <NewFinanceButton />
+        {globalSearch && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 w-64 justify-start text-muted-foreground"
+            onClick={globalSearch.openSearch}
+          >
+            <Search className="mr-2 h-4 w-4" />
+            <span className="flex-1 text-left">Buscar...</span>
+            <kbd className="ml-2 px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+              Cmd+K
+            </kbd>
+          </Button>
+        )}
+      </div>
 
       {/* Right side - Notifications and User */}
       <div className="flex items-center gap-2">

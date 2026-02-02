@@ -32,7 +32,7 @@ interface AuthContextType {
   /** Authenticate user with email and password */
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   /** Create new user account */
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: Error | null; emailConfirmationRequired?: boolean; message?: string }>;
   /** Sign out current user */
   signOut: () => Promise<void>;
   /** Initiate password recovery flow */
@@ -184,10 +184,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * @returns Object with error (null on success)
    */
   const signUp = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<{ error: Error | null; emailConfirmationRequired?: boolean; message?: string }> => {
       try {
         // Call backend API for registration
         const response = await api.register(email, password);
+
+        // If email confirmation is required, return success with flag
+        if (response.emailConfirmationRequired) {
+          return {
+            error: null,
+            emailConfirmationRequired: true,
+            message: response.message || 'Verifique seu email para confirmar o cadastro.'
+          };
+        }
 
         if (response.session) {
           // Set the session in Supabase client for persistence

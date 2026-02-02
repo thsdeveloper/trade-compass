@@ -14,6 +14,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
 import { MonthSlider } from '@/components/finance/MonthSlider';
 import { TransactionListItem } from '@/components/finance/TransactionListItem';
+import { TransactionDetailModal } from '@/components/finance/TransactionDetailModal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
 import {
@@ -51,6 +52,8 @@ export default function TransactionsScreen() {
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithDetails | null>(null);
+  const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
 
   // Set status bar style when screen gains focus
   useFocusEffect(
@@ -89,6 +92,16 @@ export default function TransactionsScreen() {
     },
     [setSelectedMonth]
   );
+
+  const handleTransactionPress = useCallback((transaction: TransactionWithDetails) => {
+    setSelectedTransaction(transaction);
+    setIsDetailModalVisible(true);
+  }, []);
+
+  const handleCloseDetailModal = useCallback(() => {
+    setIsDetailModalVisible(false);
+    setSelectedTransaction(null);
+  }, []);
 
   const filteredTransactions = useMemo(() => {
     if (activeFilter === 'ALL') return transactions;
@@ -213,10 +226,11 @@ export default function TransactionsScreen() {
     ({ item, index, section }: { item: TransactionWithDetails; index: number; section: SectionData }) => (
       <TransactionListItem
         transaction={item}
+        onPress={() => handleTransactionPress(item)}
         showDivider={index < section.data.length - 1}
       />
     ),
-    []
+    [handleTransactionPress]
   );
 
   const keyExtractor = useCallback(
@@ -270,6 +284,11 @@ export default function TransactionsScreen() {
         refreshing={isRefreshing}
       />
       <FloatingActionButton />
+      <TransactionDetailModal
+        transaction={selectedTransaction}
+        visible={isDetailModalVisible}
+        onClose={handleCloseDetailModal}
+      />
     </View>
   );
 }

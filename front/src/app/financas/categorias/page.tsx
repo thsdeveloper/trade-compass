@@ -88,7 +88,7 @@ export default function CategoriasPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 

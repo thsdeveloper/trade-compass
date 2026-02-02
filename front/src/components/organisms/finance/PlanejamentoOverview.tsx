@@ -2,7 +2,7 @@
 
 import { BudgetMethodologyHero } from '@/components/molecules/BudgetMethodologyHero';
 import { BudgetHealthScore } from '@/components/molecules/BudgetHealthScore';
-import { BudgetDonutChart } from '@/components/molecules/BudgetDonutChart';
+import { BudgetRadarChart } from '@/components/molecules/BudgetRadarChart';
 import type { BudgetSummary } from '@/types/finance';
 
 interface PlanejamentoOverviewProps {
@@ -31,8 +31,8 @@ export function PlanejamentoOverview({ budgetSummary }: PlanejamentoOverviewProp
         </div>
       </div>
 
-      {/* Donut Chart */}
-      <BudgetDonutChart
+      {/* Radar Chart - Ideal vs Real Distribution */}
+      <BudgetRadarChart
         allocations={budgetSummary.allocations}
         totalIncome={budgetSummary.total_income}
       />

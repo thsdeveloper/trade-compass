@@ -104,10 +104,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
     return (
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" asChild className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
-          <Link href="/auth?mode=login">Entrar</Link>
+          <Link href="/login">Entrar</Link>
         </Button>
         <Button size="sm" asChild className="bg-white text-sidebar hover:bg-white/90">
-          <Link href="/auth?mode=register">Cadastre-se</Link>
+          <Link href="/cadastro">Cadastre-se</Link>
         </Button>
       </div>
     );
@@ -151,10 +151,10 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="sm" asChild className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
-        <Link href="/auth?mode=login">Entrar</Link>
+        <Link href="/login">Entrar</Link>
       </Button>
       <Button size="sm" asChild className="bg-white text-sidebar hover:bg-white/90">
-        <Link href="/auth?mode=register">Cadastre-se</Link>
+        <Link href="/cadastro">Cadastre-se</Link>
       </Button>
     </div>
   );

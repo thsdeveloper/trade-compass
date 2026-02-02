@@ -69,7 +69,7 @@ function AuthPageContent() {
               setError('Erro ao estabelecer sessão: ' + error.message);
             } else {
               // Redirect to dashboard
-              router.push('/watchlist');
+              router.push('/financas');
               return;
             }
           } catch (err) {
@@ -118,7 +118,7 @@ function AuthPageContent() {
         if (authError) {
           setError(authError.message);
         } else {
-          router.push('/watchlist');
+          router.push('/financas');
         }
       }
     } catch {

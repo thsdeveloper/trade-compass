@@ -78,7 +78,7 @@ function ResetPasswordForm() {
       } else {
         setSuccess(true);
         setTimeout(() => {
-          router.push('/auth');
+          router.push('/login');
         }, 2000);
       }
     } catch {
@@ -189,7 +189,7 @@ function ResetPasswordForm() {
             <div className="mt-4 text-center text-sm text-muted-foreground">
               <button
                 type="button"
-                onClick={() => router.push('/auth')}
+                onClick={() => router.push('/login')}
                 className="text-primary hover:underline"
               >
                 Voltar para login

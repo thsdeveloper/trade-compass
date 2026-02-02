@@ -145,7 +145,7 @@ export default function ContasPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 

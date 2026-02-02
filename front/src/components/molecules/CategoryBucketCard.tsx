@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Home, ShoppingBag, PiggyBank } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp, Home, ShoppingBag, PiggyBank, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/atoms/StatusBadge';
 import { CategoryIcon } from '@/components/atoms/CategoryIcon';
+import { MiniThermometer } from '@/components/molecules/BudgetThermometer';
 import type { BudgetCategory, BudgetAllocation, ExpensesByCategory, FinanceCategory, PlanningStatus } from '@/types/finance';
 import {
   formatCurrency,
@@ -18,6 +20,7 @@ interface CategoryBucketCardProps {
   totalIncome: number;
   categories: FinanceCategory[];
   expensesByCategory: ExpensesByCategory[];
+  selectedMonth?: string;
   className?: string;
 }
 
@@ -38,9 +41,21 @@ export function CategoryBucketCard({
   totalIncome,
   categories,
   expensesByCategory,
+  selectedMonth,
   className
 }: CategoryBucketCardProps) {
+  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleCategoryClick = (categoryId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const params = new URLSearchParams();
+    params.set('category_id', categoryId);
+    if (selectedMonth) {
+      params.set('month', selectedMonth);
+    }
+    router.push(`/financas/transacoes?${params.toString()}`);
+  };
 
   const Icon = bucketIcons[allocation.category];
   const color = BUDGET_CATEGORY_COLORS[allocation.category];
@@ -94,7 +109,12 @@ export function CategoryBucketCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Mini Thermometer */}
+            <MiniThermometer
+              percentage={progressPercentage}
+              category={allocation.category}
+            />
             <StatusBadge status={allocation.status as PlanningStatus} showIcon={false} />
             {isExpanded ? (
               <ChevronUp className="h-4 w-4 text-slate-400" />
@@ -171,9 +191,10 @@ export function CategoryBucketCard({
           ) : (
             <div className="space-y-2">
               {categoriesWithExpenses.map(({ category, amount, percentage }) => (
-                <div
+                <button
                   key={category.id}
-                  className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2"
+                  onClick={(e) => handleCategoryClick(category.id, e)}
+                  className="flex w-full items-center justify-between rounded-md bg-slate-50 px-3 py-2 transition-colors hover:bg-slate-100 group"
                 >
                   <div className="flex items-center gap-2">
                     <CategoryIcon
@@ -190,8 +211,9 @@ export function CategoryBucketCard({
                     <span className="text-xs tabular-nums text-slate-400">
                       {percentage.toFixed(1)}%
                     </span>
+                    <ExternalLink className="h-3 w-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

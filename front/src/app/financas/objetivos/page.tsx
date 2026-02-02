@@ -98,7 +98,7 @@ export default function ObjetivosPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
     loadData();

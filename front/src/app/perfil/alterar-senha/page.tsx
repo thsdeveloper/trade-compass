@@ -35,7 +35,7 @@ export default function AlterarSenhaPage() {
   // Redirect if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace('/auth?mode=login');
+      router.replace('/login');
     }
   }, [authLoading, user, router]);
 

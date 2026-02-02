@@ -146,7 +146,7 @@ export default function FinancasPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 

@@ -126,7 +126,7 @@ export default function CartoesPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 

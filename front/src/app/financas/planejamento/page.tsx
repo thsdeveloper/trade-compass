@@ -23,6 +23,8 @@ import type { BudgetAnalysisReportData } from '@/types/reports';
 
 import { PlanejamentoSkeleton } from '@/components/organisms/skeletons/PlanejamentoSkeleton';
 import { PlanejamentoOverview } from '@/components/organisms/finance/PlanejamentoOverview';
+import { PlanejamentoSpendingPace } from '@/components/organisms/finance/PlanejamentoSpendingPace';
+import { PlanejamentoComparison } from '@/components/organisms/finance/PlanejamentoComparison';
 import { PlanejamentoCategoryBreakdown } from '@/components/organisms/finance/PlanejamentoCategoryBreakdown';
 import { PlanejamentoHistorical } from '@/components/organisms/finance/PlanejamentoHistorical';
 import { PlanejamentoProjections } from '@/components/organisms/finance/PlanejamentoProjections';
@@ -150,7 +152,7 @@ export default function PlanejamentoPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 
@@ -257,11 +259,22 @@ export default function PlanejamentoPage() {
         {/* Overview Section */}
         <PlanejamentoOverview budgetSummary={budgetSummary} />
 
+        {/* Spending Pace Section */}
+        <PlanejamentoSpendingPace
+          budgetSummary={budgetSummary}
+          daysElapsed={daysElapsed}
+          daysRemaining={daysRemaining}
+        />
+
+        {/* Ideal vs Real Comparison Section */}
+        <PlanejamentoComparison budgetSummary={budgetSummary} />
+
         {/* Category Breakdown */}
         <PlanejamentoCategoryBreakdown
           budgetSummary={budgetSummary}
           categories={categories}
           expensesByCategory={expensesByCategory}
+          selectedMonth={selectedMonth}
         />
 
         {/* Historical Trend */}

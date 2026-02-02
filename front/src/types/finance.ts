@@ -21,6 +21,17 @@ export type TransactionType = 'RECEITA' | 'DESPESA' | 'TRANSFERENCIA';
 
 export type TransactionStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
+// Filters for transaction page
+export interface TransactionFilters {
+  status: TransactionStatus | 'all';
+  type: TransactionType | 'all';
+  category: string;
+  tag: string;
+  account: string;
+  urgent: boolean;
+  search: string;
+}
+
 export type RecurrenceFrequency =
   | 'DIARIA'
   | 'SEMANAL'

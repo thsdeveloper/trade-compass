@@ -36,7 +36,9 @@ export interface AuthResponse {
     id: string;
     email: string;
   };
-  session: AuthSession;
+  session: AuthSession | null;
+  message?: string;
+  emailConfirmationRequired?: boolean;
 }
 
 export interface PasswordRecoveryResponse {

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   if (error) {
     console.error('Auth callback error:', error, error_description);
     return NextResponse.redirect(
-      new URL(`/auth?error=${encodeURIComponent(error_description || error)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(error_description || error)}`, request.url)
     );
   }
 
@@ -45,12 +45,12 @@ export async function GET(request: NextRequest) {
     if (exchangeError) {
       console.error('Error exchanging code for session:', exchangeError);
       return NextResponse.redirect(
-        new URL('/auth?error=Link inválido ou expirado', request.url)
+        new URL('/login?error=Link inválido ou expirado', request.url)
       );
     }
 
     // Successfully authenticated - redirect to dashboard
-    return NextResponse.redirect(new URL('/watchlist', request.url));
+    return NextResponse.redirect(new URL('/financas', request.url));
   }
 
   // Handle token_hash (alternative auth method)
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!verifyError) {
-      return NextResponse.redirect(new URL('/watchlist', request.url));
+      return NextResponse.redirect(new URL('/financas', request.url));
     }
 
     console.error('Error verifying token_hash:', verifyError);
@@ -73,6 +73,6 @@ export async function GET(request: NextRequest) {
   // No code or token_hash provided - invalid callback
   console.error('No code or token_hash in callback URL');
   return NextResponse.redirect(
-    new URL('/auth?error=Link de autenticação inválido', request.url)
+    new URL('/login?error=Link de autenticação inválido', request.url)
   );
 }

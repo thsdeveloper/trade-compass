@@ -15,6 +15,7 @@ import { signalsRoutes } from './routes/signals.js';
 import { backtestRoutes } from './routes/backtest.js';
 import { financeRoutes } from './routes/finance/index.js';
 import { profileRoutes } from './routes/profile.js';
+import { agentStreamRoutes } from './routes/agent-stream.js';
 import { appRouter, createContext, type AppRouter } from '../trpc/index.js';
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -64,6 +65,7 @@ export async function buildServer() {
   await app.register(backtestRoutes);
   await app.register(financeRoutes);
   await app.register(profileRoutes);
+  await app.register(agentStreamRoutes);
 
   // Error handler
   app.setErrorHandler((error: FastifyError, request, reply) => {

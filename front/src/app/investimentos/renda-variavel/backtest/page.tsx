@@ -134,7 +134,7 @@ export default function BacktestPage() {
             Faca login para acessar o backtest dos seus ativos
           </p>
           <Link
-            href="/auth"
+            href="/login"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-medium transition-colors"
           >
             Entrar

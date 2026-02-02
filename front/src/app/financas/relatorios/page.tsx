@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, FileDown, Loader2 } from 'lucide-react';
+import { AlertCircle, FileDown, Loader2, Mail } from 'lucide-react';
 import { exportReportToPDF } from '@/lib/pdf-export';
 import { toast } from '@/lib/toast';
 import { ReportsSkeleton } from '@/components/organisms/skeletons/ReportsSkeleton';
@@ -18,6 +18,7 @@ import { PaymentMethodsReport } from './components/PaymentMethodsReport';
 import { GoalsProgressReport } from './components/GoalsProgressReport';
 import { RecurringAnalysisReport } from './components/RecurringAnalysisReport';
 import { YoYComparisonReport } from './components/YoYComparisonReport';
+import { SendReportEmailModal } from './components/SendReportEmailModal';
 import type { ReportType, ReportDateFilter } from '@/types/reports';
 import { createDateFilter } from '@/lib/date-utils';
 
@@ -28,6 +29,7 @@ export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
   const reportContainerRef = useRef<HTMLDivElement>(null);
 
   // Report state
@@ -70,7 +72,7 @@ export default function RelatoriosPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 
@@ -148,20 +150,31 @@ export default function RelatoriosPage() {
               Analise detalhada das suas financas
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportPDF}
-            disabled={exporting}
-            className="gap-2"
-          >
-            {exporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileDown className="h-4 w-4" />
-            )}
-            {exporting ? 'Exportando...' : 'Exportar PDF'}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEmailModalOpen(true)}
+              className="gap-2"
+            >
+              <Mail className="h-4 w-4" />
+              Enviar para e-mail
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportPDF}
+              disabled={exporting}
+              className="gap-2"
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4" />
+              )}
+              {exporting ? 'Exportando...' : 'Exportar PDF'}
+            </Button>
+          </div>
         </div>
 
         {/* Report Tabs */}
@@ -184,6 +197,18 @@ export default function RelatoriosPage() {
           {renderReport()}
         </div>
       </div>
+
+      {/* Email Modal */}
+      <SendReportEmailModal
+        open={emailModalOpen}
+        onOpenChange={setEmailModalOpen}
+        reportType={activeReport}
+        startDate={dateFilter.startDate}
+        endDate={dateFilter.endDate}
+        includePending={includePending}
+        selectedYears={selectedYears}
+        userEmail={user?.email}
+      />
     </PageShell>
   );
 }

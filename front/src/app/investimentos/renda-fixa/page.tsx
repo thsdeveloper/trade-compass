@@ -124,7 +124,7 @@ export default function RendaFixaPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
     loadData();

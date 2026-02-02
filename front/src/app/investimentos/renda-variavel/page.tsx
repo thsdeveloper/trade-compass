@@ -60,7 +60,7 @@ export default function RendaVariavelPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/auth');
+      router.push('/login');
     }
   }, [user, authLoading, router]);
 

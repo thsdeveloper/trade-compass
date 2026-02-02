@@ -63,6 +63,9 @@ export async function authRoutes(app: FastifyInstance) {
       const { data, error } = await supabaseAdmin.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
+        },
       });
 
       if (error) {
@@ -73,12 +76,29 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
+      // Check if email confirmation is required
+      // If user exists but session is null, email confirmation is pending
+      const emailConfirmationRequired = data.user && !data.session;
+
+      if (emailConfirmationRequired) {
+        return reply.status(201).send({
+          user: {
+            id: data.user?.id,
+            email: data.user?.email,
+          },
+          session: null,
+          message: 'Conta criada! Verifique seu email para confirmar o cadastro.',
+          emailConfirmationRequired: true,
+        });
+      }
+
       return reply.status(201).send({
         user: {
           id: data.user?.id,
           email: data.user?.email,
         },
         session: data.session,
+        emailConfirmationRequired: false,
       });
     } catch (err) {
       app.log.error(err);
@@ -187,7 +207,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     try {
       const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password`,
+        redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/redefinir-senha`,
       });
 
       if (error) {

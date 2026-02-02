@@ -47,7 +47,7 @@ export default function WatchlistPage() {
     if (authLoading) return;
 
     if (!user) {
-      router.push('/auth');
+      router.push('/login');
       return;
     }
 

@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/molecules/ConfirmDialog';
 import { YearSelector } from '@/components/molecules/YearSelector';
 import { DataTable } from '@/components/molecules/DataTable';
 import { SelectionSummaryBar } from '@/components/molecules/SelectionSummaryBar';
+import { TransactionSearchInput } from '@/components/molecules/TransactionSearchInput';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -25,7 +26,6 @@ import { cn } from '@/lib/utils';
 import { financeApi } from '@/lib/finance-api';
 import { toast } from '@/lib/toast';
 import { useFinanceDataRefresh } from '@/hooks/useFinanceDataRefresh';
-import { useDebounce } from '@/hooks/useDebounce';
 import { useLocalStorageState } from '@/hooks/useLocalStorageState';
 import { TransactionsSummaryCards } from '@/components/molecules/TransactionsSummaryCards';
 import { getTransactionColumns } from './columns';
@@ -180,6 +180,7 @@ export function TransactionsClient({
     category: initialFilters.category || 'all',
     tag: 'all',
     account: initialFilters.account || 'all',
+    creditCard: 'all',
     urgent: initialFilters.urgent,
     search: initialFilters.search || '',
   }));
@@ -188,10 +189,16 @@ export function TransactionsClient({
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [selectedYear, setSelectedYear] = useState(() => parseInt(initialMonth.split('-')[0]));
 
-  const debouncedSearch = useDebounce(filters.search, 400);
-
   // localStorage state with proper hydration
   const [groupCardTransactions, setGroupCardTransactions] = useLocalStorageState('finance:groupCardTransactions', true);
+
+  // Search results from InstantSearch (transaction IDs)
+  const [searchResultIds, setSearchResultIds] = useState<Set<string> | null>(null);
+
+  // Callback for TransactionSearchInput
+  const handleSearchResultsChange = useCallback((ids: Set<string> | null) => {
+    setSearchResultIds(ids);
+  }, []);
 
   // Update individual filter
   const updateFilter = useCallback(<K extends keyof TransactionFilters>(
@@ -237,23 +244,6 @@ export function TransactionsClient({
     router.replace(newUrl, { scroll: false });
   }, [searchParams, router, updateFilter]);
 
-  // Sync search with URL
-  useEffect(() => {
-    const currentSearch = searchParams.get('search') || '';
-    const newSearch = debouncedSearch.trim();
-
-    if (currentSearch === newSearch) return;
-
-    const params = new URLSearchParams(searchParams.toString());
-    if (newSearch) {
-      params.set('search', newSearch);
-    } else {
-      params.delete('search');
-    }
-    const newUrl = params.toString() ? `?${params.toString()}` : '/financas/transacoes';
-    router.replace(newUrl, { scroll: false });
-  }, [debouncedSearch, searchParams, router]);
-
   // Count active filters
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -262,10 +252,11 @@ export function TransactionsClient({
     if (filters.category !== 'all') count++;
     if (filters.tag !== 'all') count++;
     if (filters.account !== 'all') count++;
+    if (filters.creditCard !== 'all') count++;
     if (filters.urgent) count++;
-    if (filters.search.length > 0) count++;
+    if (searchResultIds !== null) count++;
     return count;
-  }, [filters]);
+  }, [filters, searchResultIds]);
 
   // Check if any filter is active
   const hasActiveFilters = activeFiltersCount > 0;
@@ -278,11 +269,16 @@ export function TransactionsClient({
       category: 'all',
       tag: 'all',
       account: 'all',
+      creditCard: 'all',
       urgent: false,
       search: '',
     });
+    setSearchResultIds(null);
     router.replace('/financas/transacoes', { scroll: false });
   }, [router]);
+
+  // Invoice payments state (Map of "cardId-invoiceMonth" to total paid)
+  const [invoicePayments, setInvoicePayments] = useState<Map<string, number>>(new Map());
 
   // Accordion state
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
@@ -293,11 +289,14 @@ export function TransactionsClient({
   const loadData = useCallback(async (forceReload = false) => {
     if (!session?.access_token) return;
 
-    // Create key for current filters
+    // Create key for current filters (excluding search - handled by Algolia locally)
     const filtersKey = JSON.stringify({
       selectedMonth,
-      ...filters,
-      search: debouncedSearch,
+      status: filters.status,
+      type: filters.type,
+      category: filters.category,
+      tag: filters.tag,
+      account: filters.account,
     });
 
     // If already loaded with these filters and not forced, don't reload
@@ -339,9 +338,10 @@ export function TransactionsClient({
         apiFilters.account_id = filters.account;
       }
 
-      if (debouncedSearch.trim().length >= 2) {
-        apiFilters.search = debouncedSearch.trim();
-      }
+      // Search is now handled by Algolia locally, not sent to API
+
+      // Debug: Log API filters
+      console.log('[loadData] API filters:', apiFilters);
 
       const [transactionsData, categoriesData, tagsData, accountsData, cardsData, goalsData, summaryData] =
         await Promise.all([
@@ -354,6 +354,23 @@ export function TransactionsClient({
           financeApi.getDashboardSummary(session.access_token, selectedMonth),
         ]);
 
+      // Debug: Check for specific transaction
+      const gasolinaId = '62f32f4e-09fb-471d-bc82-8dbc990fc031';
+      const gasolinaTx = transactionsData.find((t: any) => t.id === gasolinaId);
+      console.log('[loadData] Total transactions loaded:', transactionsData.length);
+      console.log('[loadData] Gasolina transaction found:', gasolinaTx ? {
+        id: gasolinaTx.id,
+        desc: gasolinaTx.description,
+        due_date: gasolinaTx.due_date,
+        status: gasolinaTx.status,
+        credit_card_id: gasolinaTx.credit_card_id,
+        has_credit_card: !!gasolinaTx.credit_card,
+      } : 'NOT FOUND');
+
+      // Debug: List all Jan 2026 transactions
+      const jan2026Txs = transactionsData.filter((t: any) => t.due_date.startsWith('2026-01'));
+      console.log('[loadData] January 2026 transactions:', jan2026Txs.length);
+
       setTransactions(transactionsData);
       setCategories(categoriesData);
       setTags(tagsData);
@@ -362,6 +379,25 @@ export function TransactionsClient({
       setGoals(goalsData);
       setSummary(summaryData);
 
+      // Load invoice payments for each credit card
+      const paymentsMap = new Map<string, number>();
+      for (const card of cardsData) {
+        try {
+          const payments = await financeApi.getInvoicePaymentsByMonth(
+            card.id,
+            selectedMonth,
+            session.access_token
+          );
+          const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+          if (totalPaid > 0) {
+            paymentsMap.set(`${card.id}-${selectedMonth}`, totalPaid);
+          }
+        } catch (err) {
+          console.error(`Error loading invoice payments for card ${card.id}:`, err);
+        }
+      }
+      setInvoicePayments(paymentsMap);
+
       // Save loaded filters
       lastLoadedFiltersRef.current = filtersKey;
     } catch (err) {
@@ -369,7 +405,7 @@ export function TransactionsClient({
     } finally {
       setLoading(false);
     }
-  }, [session?.access_token, selectedMonth, filters, debouncedSearch]);
+  }, [session?.access_token, selectedMonth, filters.status, filters.type, filters.category, filters.tag, filters.account]);
 
   useEffect(() => {
     loadData();
@@ -382,13 +418,64 @@ export function TransactionsClient({
 
   // Separate account transactions and group card transactions by invoice
   const { accountTransactions, invoiceGroups } = useMemo(() => {
-    return groupTransactionsByInvoice(
-      transactions,
+    // Debug: log filtering state
+    console.log('[TransactionsClient] Filtering:', {
+      totalTransactions: transactions.length,
+      searchResultIds: searchResultIds ? `Set(${searchResultIds.size})` : 'null',
+      creditCardFilter: filters.creditCard,
       selectedMonth,
       groupCardTransactions,
-      filters.urgent
+    });
+
+    // Apply credit card filter before grouping
+    let filteredTransactions = transactions;
+
+    // Debug: Check for Gasolina transaction BEFORE credit card filter
+    const gasolinaId = '62f32f4e-09fb-471d-bc82-8dbc990fc031';
+    const gasolinaBefore = filteredTransactions.find(t => t.id === gasolinaId);
+    console.log('[TransactionsClient] Gasolina BEFORE cc filter:', gasolinaBefore ? {
+      id: gasolinaBefore.id,
+      credit_card_id: gasolinaBefore.credit_card_id,
+      filterValue: filters.creditCard,
+      matches: gasolinaBefore.credit_card_id === filters.creditCard,
+    } : 'NOT IN LIST');
+
+    if (filters.creditCard !== 'all') {
+      filteredTransactions = filteredTransactions.filter(
+        t => t.credit_card_id === filters.creditCard
+      );
+      console.log('[TransactionsClient] After credit card filter:', filteredTransactions.length);
+
+      // Debug: Check for Gasolina transaction AFTER credit card filter
+      const gasolinaAfter = filteredTransactions.find(t => t.id === gasolinaId);
+      console.log('[TransactionsClient] Gasolina AFTER cc filter:', gasolinaAfter ? 'FOUND' : 'FILTERED OUT');
+    }
+
+    // Apply InstantSearch filter (if search is active and results exist)
+    if (searchResultIds !== null) {
+      console.log('[TransactionsClient] Applying search filter, before:', filteredTransactions.length);
+      filteredTransactions = filteredTransactions.filter(
+        t => searchResultIds.has(t.id)
+      );
+      console.log('[TransactionsClient] After search filter:', filteredTransactions.length);
+    }
+
+    return groupTransactionsByInvoice(
+      filteredTransactions,
+      selectedMonth,
+      groupCardTransactions,
+      filters.urgent,
+      invoicePayments
     );
-  }, [transactions, selectedMonth, groupCardTransactions, filters.urgent]);
+  }, [
+    transactions,
+    selectedMonth,
+    groupCardTransactions,
+    filters.urgent,
+    filters.creditCard,
+    searchResultIds,
+    invoicePayments,
+  ]);
 
   // Calculate selection summary
   const selectionSummary = useMemo(() => {
@@ -418,7 +505,7 @@ export function TransactionsClient({
   // Clear row selection when filters change
   useEffect(() => {
     setRowSelection({});
-  }, [selectedMonth, filters, debouncedSearch]);
+  }, [selectedMonth, filters]);
 
   const toggleInvoice = (key: string) => {
     setExpandedInvoices(prev => {
@@ -784,43 +871,52 @@ export function TransactionsClient({
         {/* Summary Cards */}
         {summary && <TransactionsSummaryCards summary={summary} accounts={accounts} />}
 
-        {/* Filters and Export */}
-        <div className="flex items-center justify-between">
-          <TransactionFiltersSheet
-            searchTerm={filters.search}
-            typeFilter={filters.type}
-            statusFilter={filters.status}
-            categoryFilter={filters.category}
-            tagFilter={filters.tag}
-            accountFilter={filters.account}
-            urgentFilter={filters.urgent}
-            groupCardTransactions={groupCardTransactions}
-            onSearchChange={(v) => updateFilter('search', v)}
-            onTypeChange={(v) => updateFilter('type', v)}
-            onStatusChange={(v) => updateFilter('status', v)}
-            onCategoryChange={(v) => updateFilter('category', v)}
-            onTagChange={(v) => updateFilter('tag', v)}
-            onAccountChange={handleAccountFilterChange}
-            onUrgentChange={(v) => updateFilter('urgent', v)}
-            onGroupCardTransactionsChange={setGroupCardTransactions}
-            onClearFilters={handleClearFilters}
-            categories={categories}
-            tags={tags}
-            accounts={accounts}
-            hasActiveFilters={hasActiveFilters}
-            activeFiltersCount={activeFiltersCount}
+        {/* Search, Filters and Export */}
+        <div className="flex items-center justify-between gap-4">
+          {/* Search on the left */}
+          <TransactionSearchInput
+            onResultsChange={handleSearchResultsChange}
           />
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setExportDialogOpen(true)}
-            disabled={hasNoData}
-            className="h-8 gap-1.5"
-          >
-            <Download className="h-4 w-4" />
-            Exportar
-          </Button>
+          {/* Filters and Export on the right */}
+          <div className="flex items-center gap-2">
+            <TransactionFiltersSheet
+              typeFilter={filters.type}
+              statusFilter={filters.status}
+              categoryFilter={filters.category}
+              tagFilter={filters.tag}
+              accountFilter={filters.account}
+              creditCardFilter={filters.creditCard}
+              urgentFilter={filters.urgent}
+              groupCardTransactions={groupCardTransactions}
+              onTypeChange={(v) => updateFilter('type', v)}
+              onStatusChange={(v) => updateFilter('status', v)}
+              onCategoryChange={(v) => updateFilter('category', v)}
+              onTagChange={(v) => updateFilter('tag', v)}
+              onAccountChange={handleAccountFilterChange}
+              onCreditCardChange={(v) => updateFilter('creditCard', v)}
+              onUrgentChange={(v) => updateFilter('urgent', v)}
+              onGroupCardTransactionsChange={setGroupCardTransactions}
+              onClearFilters={handleClearFilters}
+              categories={categories}
+              tags={tags}
+              accounts={accounts}
+              creditCards={creditCards}
+              hasActiveFilters={hasActiveFilters}
+              activeFiltersCount={activeFiltersCount}
+            />
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportDialogOpen(true)}
+              disabled={hasNoData}
+              className="h-8 gap-1.5"
+            >
+              <Download className="h-4 w-4" />
+              Exportar
+            </Button>
+          </div>
         </div>
 
         {/* Invoice Groups (Accordion) */}
@@ -876,9 +972,27 @@ export function TransactionsClient({
                           >
                             {getInvoiceStatusLabel(group.status)}
                           </span>
-                          <span className="text-sm font-semibold tabular-nums text-red-600">
-                            -{formatCurrency(Math.abs(group.total))}
-                          </span>
+                          <div className="text-right">
+                            {group.paidAmount > 0 ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="text-xs text-slate-400 line-through tabular-nums">
+                                  {formatCurrency(Math.abs(group.total))}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-emerald-600 tabular-nums">
+                                    Pago: {formatCurrency(group.paidAmount)}
+                                  </span>
+                                  <span className="text-sm font-semibold tabular-nums text-red-600">
+                                    -{formatCurrency(Math.abs(group.remainingAmount))}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-sm font-semibold tabular-nums text-red-600">
+                                -{formatCurrency(Math.abs(group.total))}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

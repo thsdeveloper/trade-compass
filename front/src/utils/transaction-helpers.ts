@@ -9,6 +9,8 @@ export interface InvoiceGroup {
   invoiceMonth: string;
   transactions: TransactionWithDetails[];
   total: number;
+  paidAmount: number;
+  remainingAmount: number;
   status: InvoiceStatus;
 }
 
@@ -17,14 +19,22 @@ export interface InvoiceGroup {
  * based on the due date and card closing day.
  */
 export function getInvoiceMonth(dueDate: string, closingDay: number): string {
-  const date = new Date(dueDate + 'T12:00:00');
-  const day = date.getDate();
+  const [year, month] = dueDate.split('-').map(Number);
+  const day = parseInt(dueDate.split('-')[2], 10);
+
+  let invoiceYear = year;
+  let invoiceMonth = month;
 
   if (day > closingDay) {
-    date.setMonth(date.getMonth() + 1);
+    // Transaction goes to next month's invoice
+    invoiceMonth += 1;
+    if (invoiceMonth > 12) {
+      invoiceMonth = 1;
+      invoiceYear += 1;
+    }
   }
 
-  return date.toISOString().slice(0, 7);
+  return `${invoiceYear}-${String(invoiceMonth).padStart(2, '0')}`;
 }
 
 /**
@@ -78,15 +88,25 @@ export function getInvoiceStatusLabel(status: InvoiceStatus): string {
 /**
  * Group transactions by credit card invoice and separate account transactions.
  * Applies urgent filter if enabled.
+ * @param invoicePayments - Map of "cardId-invoiceMonth" to total paid amount
  */
 export function groupTransactionsByInvoice(
   transactions: TransactionWithDetails[],
   selectedMonth: string,
   groupCardTransactions: boolean,
-  urgentFilter: boolean
+  urgentFilter: boolean,
+  invoicePayments?: Map<string, number>
 ): { accountTransactions: TransactionWithDetails[]; invoiceGroups: InvoiceGroup[] } {
   const accountTx: TransactionWithDetails[] = [];
   const cardTxMap = new Map<string, InvoiceGroup>();
+
+  // Debug
+  console.log('[groupTransactionsByInvoice] Input:', {
+    totalTransactions: transactions.length,
+    selectedMonth,
+    groupCardTransactions,
+    urgentFilter,
+  });
 
   // Period of the selected month to filter account transactions
   const [selYear, selMonth] = selectedMonth.split('-').map(Number);
@@ -106,9 +126,31 @@ export function groupTransactionsByInvoice(
     return txDate <= tomorrow;
   };
 
+  // Debug: Check for Gasolina transaction
+  const gasolinaId = '62f32f4e-09fb-471d-bc82-8dbc990fc031';
+  const gasolinaTx = transactions.find(t => t.id === gasolinaId);
+  console.log('[groupTransactionsByInvoice] Gasolina in input:', gasolinaTx ? {
+    id: gasolinaTx.id,
+    desc: gasolinaTx.description,
+    due_date: gasolinaTx.due_date,
+    has_credit_card_id: !!gasolinaTx.credit_card_id,
+    has_credit_card: !!gasolinaTx.credit_card,
+    closing_day: gasolinaTx.credit_card?.closing_day,
+  } : 'NOT FOUND');
+
   for (const tx of transactions) {
     if (tx.credit_card_id && tx.credit_card) {
       const invoiceMonth = getInvoiceMonth(tx.due_date, tx.credit_card.closing_day);
+
+      // Debug: Specific check for Gasolina
+      if (tx.id === gasolinaId) {
+        console.log('[groupTransactionsByInvoice] Processing Gasolina:', {
+          invoiceMonth,
+          selectedMonth,
+          matches: invoiceMonth === selectedMonth,
+          groupCardTransactions,
+        });
+      }
 
       // If grouping is disabled, show card transactions as normal rows
       if (!groupCardTransactions) {
@@ -132,6 +174,8 @@ export function groupTransactionsByInvoice(
           invoiceMonth,
           transactions: [],
           total: 0,
+          paidAmount: 0,
+          remainingAmount: 0,
           status: 'PENDENTE',
         });
       }
@@ -154,24 +198,50 @@ export function groupTransactionsByInvoice(
     }
   }
 
-  // Determine status of each invoice
+  // Determine status of each invoice and calculate paid/remaining amounts
   for (const group of cardTxMap.values()) {
-    const allPaid = group.transactions.every(tx => tx.status === 'PAGO');
-    const anyPaid = group.transactions.some(tx => tx.status === 'PAGO');
+    const key = `${group.cardId}-${group.invoiceMonth}`;
+    const paidFromPayments = invoicePayments?.get(key) || 0;
 
-    if (allPaid) {
+    group.paidAmount = paidFromPayments;
+    group.remainingAmount = Math.max(0, group.total - paidFromPayments);
+
+    // Determine status based on payments
+    if (group.total > 0 && group.remainingAmount === 0) {
       group.status = 'PAGO';
-    } else if (anyPaid) {
+    } else if (paidFromPayments > 0) {
       group.status = 'PARCIAL';
     } else {
-      group.status = 'PENDENTE';
+      // Fallback to checking individual transaction status
+      const allPaid = group.transactions.every(tx => tx.status === 'PAGO');
+      if (allPaid) {
+        group.status = 'PAGO';
+        group.paidAmount = group.total;
+        group.remainingAmount = 0;
+      } else {
+        group.status = 'PENDENTE';
+      }
     }
   }
 
   // Filter only invoices for the selected month with transactions and sort
-  const groups = Array.from(cardTxMap.values())
+  const allGroups = Array.from(cardTxMap.values());
+  console.log('[groupTransactionsByInvoice] All invoice groups:', allGroups.map(g => ({
+    cardName: g.cardName,
+    invoiceMonth: g.invoiceMonth,
+    txCount: g.transactions.length,
+    matchesSelected: g.invoiceMonth === selectedMonth,
+  })));
+
+  const groups = allGroups
     .filter(g => g.invoiceMonth === selectedMonth && g.transactions.length > 0)
     .sort((a, b) => b.invoiceMonth.localeCompare(a.invoiceMonth));
+
+  console.log('[groupTransactionsByInvoice] Final result:', {
+    accountTransactions: accountTx.length,
+    invoiceGroups: groups.length,
+    totalCardTx: groups.reduce((sum, g) => sum + g.transactions.length, 0),
+  });
 
   // Sort transactions by due date
   accountTx.sort((a, b) => a.due_date.localeCompare(b.due_date));

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ApiError } from '../../../domain/types.js';
 import type {
   FinanceCreditCard,
+  FinanceInvoicePayment,
   CreateCreditCardDTO,
   UpdateCreditCardDTO,
   CreditCardInvoice,
@@ -21,6 +22,7 @@ import { getTransactionsByCreditCardAndPeriod } from '../../../data/finance/tran
 import {
   payInvoice,
   getInvoicePaymentsByCard,
+  getInvoicePaymentsByMonth,
 } from '../../../data/finance/invoice-payment-repository.js';
 
 export async function creditCardRoutes(app: FastifyInstance) {
@@ -135,21 +137,28 @@ export async function creditCardRoutes(app: FastifyInstance) {
         return `${y}-${m}-${day}`;
       };
 
-      const transactions = await getTransactionsByCreditCardAndPeriod(
-        id,
-        user.id,
-        formatDate(startDate),
-        formatDate(endDate),
-        accessToken
-      );
+      const [transactions, payments] = await Promise.all([
+        getTransactionsByCreditCardAndPeriod(
+          id,
+          user.id,
+          formatDate(startDate),
+          formatDate(endDate),
+          accessToken
+        ),
+        getInvoicePaymentsByMonth(id, month, user.id, accessToken),
+      ]);
 
       const total = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+      const paidAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const remainingAmount = Math.max(0, total - paidAmount);
 
       return {
         credit_card: card,
         month,
         transactions,
         total,
+        paid_amount: paidAmount,
+        remaining_amount: remainingAmount,
         closing_date: closingDateStr,
         due_date: dueDateStr,
       };
@@ -332,6 +341,47 @@ export async function creditCardRoutes(app: FastifyInstance) {
       return payments;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao buscar pagamentos';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/credit-cards/:id/invoice-payments - Get invoice payments by month
+  app.get<{
+    Params: { id: string };
+    Querystring: { month: string };
+    Reply: FinanceInvoicePayment[] | ApiError;
+  }>('/finance/credit-cards/:id/invoice-payments', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const { month } = request.query;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Mes deve estar no formato YYYY-MM',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const card = await getCreditCardById(id, user.id, accessToken);
+
+      if (!card) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Cartao nao encontrado',
+          statusCode: 404,
+        });
+      }
+
+      const payments = await getInvoicePaymentsByMonth(id, month, user.id, accessToken);
+      return payments;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar pagamentos da fatura';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

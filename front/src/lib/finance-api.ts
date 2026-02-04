@@ -24,6 +24,7 @@ import type {
   PayInvoiceFormData,
   InvoicePaymentResult,
   InvoicePaymentWithDetails,
+  FinanceInvoicePayment,
   FinanceDebt,
   FinanceDebtNegotiation,
   DebtWithNegotiation,
@@ -268,6 +269,17 @@ class FinanceApiClient {
     accessToken: string
   ): Promise<InvoicePaymentWithDetails[]> {
     return this.authFetch(`/finance/credit-cards/${cardId}/payments`, accessToken);
+  }
+
+  async getInvoicePaymentsByMonth(
+    cardId: string,
+    month: string,
+    accessToken: string
+  ): Promise<FinanceInvoicePayment[]> {
+    return this.authFetch(
+      `/finance/credit-cards/${cardId}/invoice-payments?month=${month}`,
+      accessToken
+    );
   }
 
   // Transactions

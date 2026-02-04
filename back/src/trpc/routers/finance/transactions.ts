@@ -19,6 +19,12 @@ import {
 } from '../../../data/finance/transaction-repository.js';
 import { deleteRecurrence } from '../../../data/finance/recurrence-repository.js';
 import { getCreditCardById } from '../../../data/finance/credit-card-repository.js';
+import {
+  indexTransaction,
+  indexTransactions,
+  updateTransactionIndex,
+  deleteTransactionFromIndex,
+} from '../../../lib/algolia-sync.js';
 
 const transactionTypeEnum = z.enum(['RECEITA', 'DESPESA', 'TRANSFERENCIA']);
 const transactionStatusEnum = z.enum(['PENDENTE', 'PAGO', 'VENCIDO', 'CANCELADO']);
@@ -156,7 +162,12 @@ export const transactionsRouter = router({
         }
       }
 
-      return createTransaction(ctx.user.id, input, ctx.accessToken);
+      const transaction = await createTransaction(ctx.user.id, input, ctx.accessToken);
+
+      // Index in Algolia (fire and forget)
+      indexTransaction(transaction.id, ctx.user.id).catch(() => {});
+
+      return transaction;
     }),
 
   createInstallments: protectedProcedure
@@ -199,7 +210,15 @@ export const transactionsRouter = router({
         }
       }
 
-      return createInstallmentTransactions(ctx.user.id, input, ctx.accessToken);
+      const transactions = await createInstallmentTransactions(ctx.user.id, input, ctx.accessToken);
+
+      // Index all installments in Algolia (fire and forget)
+      if (transactions && transactions.length > 0) {
+        const ids = transactions.map((t: any) => t.id);
+        indexTransactions(ids, ctx.user.id).catch(() => {});
+      }
+
+      return transactions;
     }),
 
   createTransfer: protectedProcedure
@@ -213,7 +232,18 @@ export const transactionsRouter = router({
       }
 
       try {
-        return await createTransfer(ctx.user.id, input, ctx.accessToken);
+        const result = await createTransfer(ctx.user.id, input, ctx.accessToken);
+
+        // Index both transactions in Algolia (fire and forget)
+        if (result) {
+          const ids = [
+            result.source_transaction.id,
+            result.destination_transaction.id,
+          ];
+          indexTransactions(ids, ctx.user.id).catch(() => {});
+        }
+
+        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao criar transferência';
         if (message.includes('nao encontrada')) {
@@ -227,7 +257,19 @@ export const transactionsRouter = router({
     .input(z.object({ transferId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       try {
+        // Get transaction IDs before canceling
+        const transactions = await getTransactionsByUser(ctx.user.id, {}, ctx.accessToken);
+        const transferTxIds = transactions
+          .filter((t: any) => t.transfer_id === input.transferId)
+          .map((t: any) => t.id);
+
         await cancelTransfer(input.transferId, ctx.user.id, ctx.accessToken);
+
+        // Re-index affected transactions (status changed to CANCELADO)
+        if (transferTxIds.length > 0) {
+          indexTransactions(transferTxIds, ctx.user.id).catch(() => {});
+        }
+
         return { success: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao cancelar transferência';
@@ -266,7 +308,12 @@ export const transactionsRouter = router({
       }
 
       try {
-        return await updateTransaction(input.id, ctx.user.id, input.data, ctx.accessToken);
+        const result = await updateTransaction(input.id, ctx.user.id, input.data, ctx.accessToken);
+
+        // Re-index in Algolia (fire and forget)
+        updateTransactionIndex(input.id, ctx.user.id).catch(() => {});
+
+        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao atualizar transação';
         if (message.includes('nao encontrada')) {
@@ -285,7 +332,12 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await payTransaction(input.id, ctx.user.id, input.data, ctx.accessToken);
+        const result = await payTransaction(input.id, ctx.user.id, input.data, ctx.accessToken);
+
+        // Re-index in Algolia (status changed to PAGO)
+        updateTransactionIndex(input.id, ctx.user.id).catch(() => {});
+
+        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao pagar transação';
         if (message.includes('nao encontrada')) {
@@ -322,6 +374,10 @@ export const transactionsRouter = router({
 
       try {
         await cancelTransaction(input.id, ctx.user.id, ctx.accessToken);
+
+        // Update in Algolia (status changed to CANCELADO)
+        updateTransactionIndex(input.id, ctx.user.id).catch(() => {});
+
         return { success: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao cancelar transação';

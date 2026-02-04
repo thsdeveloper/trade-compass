@@ -4,6 +4,7 @@ import { FinanceDialogProvider } from '@/contexts/FinanceDialogContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { AgentProvider } from '@/contexts/AgentContext';
 import { GlobalSearchProvider } from '@/contexts/GlobalSearchContext';
+import { AlgoliaProvider } from '@/providers/AlgoliaProvider';
 import { FinanceDialogsContainer } from '@/components/organisms/finance/FinanceDialogsContainer';
 import { AgentChatSheet } from '@/components/organisms/agent';
 import { AgentChatButton } from '@/components/molecules/AgentChatButton';
@@ -19,11 +20,13 @@ export default function FinancasLayout({
       <NotificationProvider>
         <AgentProvider>
           <GlobalSearchProvider>
-            {children}
-            <FinanceDialogsContainer />
-            <AgentChatButton />
-            <AgentChatSheet />
-            <GlobalSearchCommand />
+            <AlgoliaProvider>
+              {children}
+              <FinanceDialogsContainer />
+              <AgentChatButton />
+              <AgentChatSheet />
+              <GlobalSearchCommand />
+            </AlgoliaProvider>
           </GlobalSearchProvider>
         </AgentProvider>
       </NotificationProvider>

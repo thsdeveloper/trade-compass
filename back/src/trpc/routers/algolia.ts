@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
 import { TRPCError } from '@trpc/server';
-import { algoliaAdmin, ALGOLIA_INDICES, type AlgoliaIndexName } from '../../lib/algolia.js';
+import { algoliaAdmin, ALGOLIA_INDICES, type AlgoliaIndexName, generateSecuredApiKey } from '../../lib/algolia.js';
 
 // Schema para busca
 const searchSchema = z.object({
@@ -101,6 +101,34 @@ export const algoliaRouter = router({
   getIndices: protectedProcedure.query(() => {
     return {
       indices: ALGOLIA_INDICES,
+    };
+  }),
+
+  // Retorna uma secured API key para busca direta do frontend
+  // A key tem filtro user_id embutido e expira em 1 hora
+  getSecuredApiKey: protectedProcedure.query(({ ctx }) => {
+    const userId = ctx.user.id;
+    const securedKey = generateSecuredApiKey(userId);
+
+    if (!securedKey) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Algolia search key não está configurada',
+      });
+    }
+
+    const appId = process.env.ALGOLIA_APP_ID;
+    if (!appId) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Algolia app ID não está configurado',
+      });
+    }
+
+    return {
+      appId,
+      securedApiKey: securedKey,
+      expiresAt: Date.now() + 3600 * 1000, // 1 hour from now
     };
   }),
 });

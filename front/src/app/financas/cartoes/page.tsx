@@ -749,9 +749,31 @@ export default function CartoesPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-slate-400">Total da fatura</p>
-                    <p className="text-xl font-semibold tabular-nums text-slate-900">
-                      {formatCurrency(currentInvoice.total)}
-                    </p>
+                    {currentInvoice.paid_amount > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-sm text-slate-400 line-through tabular-nums">
+                          {formatCurrency(currentInvoice.total)}
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <p className="text-xs text-emerald-600">Pago</p>
+                            <p className="text-sm font-semibold tabular-nums text-emerald-600">
+                              {formatCurrency(currentInvoice.paid_amount)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500">Restante</p>
+                            <p className="text-xl font-semibold tabular-nums text-slate-900">
+                              {formatCurrency(currentInvoice.remaining_amount)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xl font-semibold tabular-nums text-slate-900">
+                        {formatCurrency(currentInvoice.total)}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-slate-400">Vencimento</p>
@@ -800,7 +822,7 @@ export default function CartoesPage() {
               </div>
 
               {/* Pay Invoice Button */}
-              {currentInvoice.total > 0 && (
+              {currentInvoice.remaining_amount > 0 && (
                 <Button
                   className="h-9 w-full bg-slate-900 text-sm font-medium hover:bg-slate-800"
                   onClick={() => setPayInvoiceDialogOpen(true)}

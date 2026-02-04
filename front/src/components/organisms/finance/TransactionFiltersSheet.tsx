@@ -1,8 +1,7 @@
 'use client';
 
-import { Filter, Search, X } from 'lucide-react';
+import { CreditCard, Filter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -28,28 +27,29 @@ import type {
   FinanceCategory,
   FinanceTag,
   AccountWithBank,
+  FinanceCreditCard,
   TransactionStatus,
   TransactionType,
 } from '@/types/finance';
 
 interface TransactionFiltersSheetProps {
   // Filter values
-  searchTerm: string;
   typeFilter: TransactionType | 'all';
   statusFilter: TransactionStatus | 'all';
   categoryFilter: string;
   tagFilter: string;
   accountFilter: string;
+  creditCardFilter: string;
   urgentFilter: boolean;
   groupCardTransactions: boolean;
 
   // Filter setters
-  onSearchChange: (value: string) => void;
   onTypeChange: (value: TransactionType | 'all') => void;
   onStatusChange: (value: TransactionStatus | 'all') => void;
   onCategoryChange: (value: string) => void;
   onTagChange: (value: string) => void;
   onAccountChange: (value: string) => void;
+  onCreditCardChange: (value: string) => void;
   onUrgentChange: (value: boolean) => void;
   onGroupCardTransactionsChange: (value: boolean) => void;
   onClearFilters: () => void;
@@ -58,6 +58,7 @@ interface TransactionFiltersSheetProps {
   categories: FinanceCategory[];
   tags: FinanceTag[];
   accounts: AccountWithBank[];
+  creditCards: FinanceCreditCard[];
 
   // State
   hasActiveFilters: boolean;
@@ -65,26 +66,27 @@ interface TransactionFiltersSheetProps {
 }
 
 export function TransactionFiltersSheet({
-  searchTerm,
   typeFilter,
   statusFilter,
   categoryFilter,
   tagFilter,
   accountFilter,
+  creditCardFilter,
   urgentFilter,
   groupCardTransactions,
-  onSearchChange,
   onTypeChange,
   onStatusChange,
   onCategoryChange,
   onTagChange,
   onAccountChange,
+  onCreditCardChange,
   onUrgentChange,
   onGroupCardTransactionsChange,
   onClearFilters,
   categories,
   tags,
   accounts,
+  creditCards,
   hasActiveFilters,
   activeFiltersCount,
 }: TransactionFiltersSheetProps) {
@@ -113,32 +115,6 @@ export function TransactionFiltersSheet({
         </SheetHeader>
 
         <div className="flex flex-col gap-6 py-4 overflow-y-auto flex-1">
-          {/* Search */}
-          <div className="space-y-2">
-            <Label htmlFor="search" className="text-sm font-medium text-slate-700">
-              Buscar
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                id="search"
-                type="text"
-                placeholder="Buscar por descricao..."
-                value={searchTerm}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="h-9 pl-8 pr-8"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => onSearchChange('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
           {/* Type Filter */}
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-700">Tipo</Label>
@@ -212,6 +188,28 @@ export function TransactionFiltersSheet({
               allowAll
               placeholder="Todas as contas"
             />
+          </div>
+
+          {/* Credit Card Filter */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-slate-700">Cartao de Credito</Label>
+            <Select value={creditCardFilter} onValueChange={onCreditCardChange}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Selecione um cartao" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os cartoes</SelectItem>
+                {creditCards.map((card) => (
+                  <SelectItem key={card.id} value={card.id}>
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="h-4 w-4" style={{ color: card.color }} />
+                      <span>{card.name}</span>
+                      <span className="text-xs text-slate-400">({card.brand})</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Urgent Filter */}

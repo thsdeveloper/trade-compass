@@ -42,6 +42,29 @@ export async function getInvoicePaymentsByCard(
   return data || [];
 }
 
+export async function getInvoicePaymentsByMonth(
+  creditCardId: string,
+  invoiceMonth: string,
+  userId: string,
+  accessToken: string
+): Promise<FinanceInvoicePayment[]> {
+  const client = createUserClient(accessToken);
+
+  const { data, error } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('credit_card_id', creditCardId)
+    .eq('invoice_month', invoiceMonth)
+    .eq('user_id', userId)
+    .order('payment_date', { ascending: false });
+
+  if (error) {
+    throw new Error(`Erro ao buscar pagamentos de fatura por mes: ${error.message}`);
+  }
+
+  return data || [];
+}
+
 export async function getInvoicePaymentById(
   paymentId: string,
   userId: string,

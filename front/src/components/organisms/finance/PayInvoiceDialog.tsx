@@ -52,23 +52,26 @@ export function PayInvoiceDialog({
   const [accountId, setAccountId] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Calcular valor minimo (15% da fatura)
-  const minimumAmount = invoice ? invoice.total * 0.15 : 0;
+  // Usar remaining_amount para calculos (considera pagamentos ja feitos)
+  const remainingAmount = invoice ? invoice.remaining_amount : 0;
+
+  // Calcular valor minimo (15% do valor restante)
+  const minimumAmount = invoice ? remainingAmount * 0.15 : 0;
 
   useEffect(() => {
     if (invoice) {
       if (paymentType === 'TOTAL') {
-        setAmount(invoice.total);
+        setAmount(remainingAmount);
       } else if (paymentType === 'MINIMO') {
         setAmount(minimumAmount);
       }
     }
-  }, [paymentType, invoice, minimumAmount]);
+  }, [paymentType, invoice, remainingAmount, minimumAmount]);
 
   useEffect(() => {
     if (open && invoice) {
       setPaymentType('TOTAL');
-      setAmount(invoice.total);
+      setAmount(invoice.remaining_amount);
       setAccountId('');
       setNotes('');
     }
@@ -124,10 +127,25 @@ export function PayInvoiceDialog({
           <div className="rounded-lg bg-slate-50 p-4 space-y-2">
             <div className="flex justify-between">
               <span className="text-sm text-slate-600">Total da fatura:</span>
-              <span className="font-semibold text-slate-900">
+              <span className={cn(
+                "font-semibold",
+                invoice.paid_amount > 0 ? "text-slate-400 line-through text-sm" : "text-slate-900"
+              )}>
                 {formatCurrency(invoice.total)}
               </span>
             </div>
+            {invoice.paid_amount > 0 && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-emerald-600">Ja pago:</span>
+                  <span className="text-emerald-600 font-medium">{formatCurrency(invoice.paid_amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium text-slate-700">Valor restante:</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(remainingAmount)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between text-sm text-slate-500">
               <span>Pagamento minimo (15%):</span>
               <span>{formatCurrency(minimumAmount)}</span>
@@ -196,7 +214,7 @@ export function PayInvoiceDialog({
                 className="h-9 text-sm"
               />
               <p className="text-xs text-slate-400">
-                Minimo: {formatCurrency(minimumAmount)} | Maximo: {formatCurrency(invoice.total)}
+                Minimo: {formatCurrency(minimumAmount)} | Maximo: {formatCurrency(remainingAmount)}
               </p>
             </div>
           )}

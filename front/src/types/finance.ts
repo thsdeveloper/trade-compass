@@ -28,6 +28,7 @@ export interface TransactionFilters {
   category: string;
   tag: string;
   account: string;
+  creditCard: string;
   urgent: boolean;
   search: string;
 }
@@ -313,6 +314,8 @@ export interface CreditCardInvoice {
   month: string;
   transactions: TransactionWithDetails[];
   total: number;
+  paid_amount: number;
+  remaining_amount: number;
   closing_date: string;
   due_date: string;
 }

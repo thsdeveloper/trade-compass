@@ -249,6 +249,8 @@ export interface TransactionFormData {
   total_installments?: number;
   // Tags
   tag_ids?: string[];
+  // Frontend-only: executar (pagar/receber) imediatamente ao criar
+  execute_immediately?: boolean;
 }
 
 export interface TagFormData {

@@ -58,6 +58,7 @@ const navigationConfig = [
       { id: 'contas-investimento', label: 'Contas', href: '/investimentos/contas', icon: Building2 },
       { id: 'renda-fixa', label: 'Renda Fixa', href: '/investimentos/renda-fixa', icon: Landmark },
       { id: 'renda-variavel', label: 'Renda Variavel', href: '/investimentos/renda-variavel', icon: CandlestickChart },
+      { id: 'monitoramento', label: 'Monitoramento', href: '/investimentos/renda-variavel/alertas', icon: Bell },
     ],
   },
 ];

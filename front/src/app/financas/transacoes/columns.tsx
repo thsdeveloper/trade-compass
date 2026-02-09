@@ -154,6 +154,21 @@ export function getTransactionColumns(
       },
     },
     {
+      accessorKey: 'payment_date',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Dt. Pagamento" />
+      ),
+      cell: ({ row }) => {
+        const transaction = row.original;
+        if (!transaction.payment_date) return <span className="text-sm text-slate-400">-</span>;
+        return (
+          <span className="text-sm tabular-nums text-slate-600">
+            {new Date(transaction.payment_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+          </span>
+        );
+      },
+    },
+    {
       accessorKey: 'amount',
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Valor" className="justify-end" />

@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Loader2, ArrowDown, ArrowLeftRight, ArrowDownLeft, ArrowUpRight, Building2 } from 'lucide-react';
 import { BankLogo } from '@/components/molecules/BankSelect';
 import { cn } from '@/lib/utils';
@@ -153,6 +154,7 @@ export function TransactionDialog({
     total_installments: 2,
     tag_ids: [],
     goal_id: undefined,
+    execute_immediately: false,
   });
 
   useEffect(() => {
@@ -184,6 +186,7 @@ export function TransactionDialog({
         total_installments: 2,
         tag_ids: [],
         goal_id: undefined,
+        execute_immediately: false,
       });
       setPaymentMethod('account');
       setIsRecurrence(false);
@@ -829,6 +832,25 @@ export function TransactionDialog({
           </div>
 
           <DialogFooter className="gap-2 pt-4 mt-4 border-t border-slate-100">
+            {/* Switch "Ja paga/recebida" - apenas para nova transacao simples (nao-edicao, nao-transferencia, nao-parcelamento, nao-recorrencia, nao-cartao) */}
+            {!isEditing &&
+              formData.type !== 'TRANSFERENCIA' &&
+              !formData.is_installment &&
+              !isRecurrence &&
+              !(formData.type === 'DESPESA' && paymentMethod === 'credit_card') && (
+                <div className="flex items-center gap-2 mr-auto">
+                  <Switch
+                    id="execute_immediately"
+                    checked={formData.execute_immediately ?? false}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, execute_immediately: checked })
+                    }
+                  />
+                  <Label htmlFor="execute_immediately" className="text-sm text-slate-600 cursor-pointer">
+                    {formData.type === 'RECEITA' ? 'Ja recebida' : 'Ja paga'}
+                  </Label>
+                </div>
+              )}
             <Button
               type="button"
               variant="outline"

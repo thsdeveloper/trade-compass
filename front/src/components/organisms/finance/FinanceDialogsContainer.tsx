@@ -120,7 +120,7 @@ export function FinanceDialogsContainer() {
         session.access_token
       );
     } else {
-      await financeApi.createTransaction(
+      const created = await financeApi.createTransaction(
         {
           category_id: data.category_id,
           account_id: data.account_id,
@@ -134,9 +134,21 @@ export function FinanceDialogsContainer() {
         },
         session.access_token
       );
+
+      if (data.execute_immediately) {
+        await financeApi.payTransaction(
+          created.id,
+          { paid_amount: data.amount, payment_date: data.due_date },
+          session.access_token
+        );
+      }
     }
 
-    toast.success('Transacao criada com sucesso');
+    toast.success(
+      data.execute_immediately
+        ? 'Transacao criada e efetivada com sucesso'
+        : 'Transacao criada com sucesso'
+    );
     closeDialog('transaction');
     notifyDataChanged();
     loadData();

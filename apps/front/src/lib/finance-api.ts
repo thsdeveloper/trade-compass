@@ -86,6 +86,12 @@ import type {
   CreateTransactionBatchItem,
   ConfirmImportItem,
   ConfirmImportResult,
+  // Importação multi-arquivo
+  DetectStatementPayload,
+  DetectStatementResult,
+  MatchTransfersPayload,
+  MatchTransfersResult,
+  ConfirmMultiImportPayload,
   ResetTransactionsResult,
 } from '@/types/finance';
 
@@ -359,6 +365,38 @@ class FinanceApiClient {
     accessToken: string
   ): Promise<ConfirmImportResult> {
     return this.authFetch('/finance/import/confirm', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ==================== IMPORTAÇÃO MULTI-ARQUIVO ====================
+
+  async detectStatement(
+    data: DetectStatementPayload,
+    accessToken: string
+  ): Promise<DetectStatementResult> {
+    return this.authFetch('/finance/import/detect', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async matchTransfers(
+    data: MatchTransfersPayload,
+    accessToken: string
+  ): Promise<MatchTransfersResult> {
+    return this.authFetch('/finance/import/match', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async confirmImportMulti(
+    data: ConfirmMultiImportPayload,
+    accessToken: string
+  ): Promise<ConfirmImportResult> {
+    return this.authFetch('/finance/import/confirm-multi', accessToken, {
       method: 'POST',
       body: JSON.stringify(data),
     });

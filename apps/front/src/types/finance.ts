@@ -305,6 +305,82 @@ export interface ConfirmImportResult {
   transfers_created: number;
 }
 
+// ==================== IMPORTAÇÃO MULTI-ARQUIVO ====================
+
+export type DetectedDocumentKind = 'ACCOUNT_STATEMENT' | 'CREDIT_CARD_INVOICE' | 'OTHER';
+
+export interface DetectStatementPayload {
+  kind: StatementFileKind;
+  filename: string;
+  /** Texto puro (csv/ofx/txt) ou base64 sem prefixo data: (pdf/imagem) */
+  content: string;
+  mime_type?: string;
+}
+
+export interface DetectStatementResult {
+  document_kind: DetectedDocumentKind;
+  detected_account_id: string | null;
+  bank_name: string | null;
+}
+
+export interface MatchTransactionInput {
+  description: string;
+  amount: number;
+  type: 'RECEITA' | 'DESPESA';
+  due_date: string;
+  line_kind: StatementLineKind;
+  suggested_transfer_account_id: string | null;
+  possible_duplicate: boolean;
+}
+
+export interface MatchStatementInput {
+  account_id: string;
+  transactions: MatchTransactionInput[];
+}
+
+export interface MatchTransfersPayload {
+  statements: MatchStatementInput[];
+}
+
+export interface TransferPairRef {
+  statement_index: number;
+  tx_index: number;
+}
+
+export interface MatchedTransferPair {
+  /** Perna DESPESA (conta de origem do dinheiro) */
+  out: TransferPairRef;
+  /** Perna RECEITA (conta de destino do dinheiro) */
+  in: TransferPairRef;
+  score: number;
+  confidence: 'HIGH' | 'MEDIUM';
+}
+
+export interface MatchTransfersResult {
+  pairs: MatchedTransferPair[];
+  intra_batch_duplicates: TransferPairRef[];
+}
+
+export interface ConfirmMultiGroup {
+  account_id: string;
+  items: ConfirmImportItem[];
+}
+
+export interface ConfirmMatchedTransfer {
+  source_account_id: string;
+  destination_account_id: string;
+  category_id: string;
+  description: string;
+  amount: number;
+  transfer_date: string;
+  notes?: string;
+}
+
+export interface ConfirmMultiImportPayload {
+  groups: ConfirmMultiGroup[];
+  transfers: ConfirmMatchedTransfer[];
+}
+
 export interface ResetTransactionsResult {
   transactions_deleted: number;
   invoice_payments_deleted: number;

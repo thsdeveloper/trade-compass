@@ -13,6 +13,7 @@ import { reportsRoutes } from './reports.js';
 import { fixedIncomeRoutes } from './fixed-income.js';
 import { mortgageRoutes } from './mortgages.js';
 import { importRoutes } from './import.js';
+import { importMultiRoutes } from './import-multi.js';
 import { resetRoutes } from './reset.js';
 
 export async function financeRoutes(app: FastifyInstance) {
@@ -37,5 +38,6 @@ export async function financeRoutes(app: FastifyInstance) {
   await fixedIncomeRoutes(app);
   await mortgageRoutes(app);
   await importRoutes(app);
+  await importMultiRoutes(app);
   await resetRoutes(app);
 }

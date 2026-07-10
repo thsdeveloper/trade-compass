@@ -177,8 +177,9 @@ CARTOES DO USUARIO:
 ${cardList || '(nenhum cartao cadastrado)'}`;
 }
 
-function buildUserContent(
-  input: ParseStatementInput
+export function buildUserContent(
+  input: Pick<ParseStatementInput, 'kind' | 'filename' | 'content' | 'mimeType'>,
+  instruction?: string
 ): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   if (input.kind === 'text') {
     return [
@@ -193,7 +194,9 @@ function buildUserContent(
     return [
       {
         type: 'text',
-        text: `Extraia as transacoes do extrato em PDF anexo (arquivo: ${input.filename}).`,
+        text:
+          instruction ??
+          `Extraia as transacoes do extrato em PDF anexo (arquivo: ${input.filename}).`,
       },
       {
         type: 'file',
@@ -209,7 +212,9 @@ function buildUserContent(
   return [
     {
       type: 'text',
-      text: `Extraia as transacoes do extrato na imagem anexa (arquivo: ${input.filename}).`,
+      text:
+        instruction ??
+        `Extraia as transacoes do extrato na imagem anexa (arquivo: ${input.filename}).`,
     },
     {
       type: 'image_url',
@@ -225,6 +230,21 @@ function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime());
+}
+
+function mapOpenAIError(err: unknown): Error {
+  const apiError = err as { status?: number; code?: string; message?: string };
+  if (apiError.status === 429 || apiError.code === 'insufficient_quota') {
+    return new Error(
+      'A conta OpenAI esta sem creditos de API. Adicione creditos em platform.openai.com/settings/organization/billing e tente novamente.'
+    );
+  }
+  if (apiError.status === 401) {
+    return new Error('Chave da OpenAI invalida. Verifique a variavel OPENAI_API_KEY.');
+  }
+  return new Error(
+    `Erro ao chamar a IA: ${apiError.message || 'erro desconhecido'}. Tente novamente.`
+  );
 }
 
 export async function parseStatement(
@@ -258,18 +278,7 @@ export async function parseStatement(
       temperature: 0,
     });
   } catch (err) {
-    const apiError = err as { status?: number; code?: string; message?: string };
-    if (apiError.status === 429 || apiError.code === 'insufficient_quota') {
-      throw new Error(
-        'A conta OpenAI esta sem creditos de API. Adicione creditos em platform.openai.com/settings/organization/billing e tente novamente.'
-      );
-    }
-    if (apiError.status === 401) {
-      throw new Error('Chave da OpenAI invalida. Verifique a variavel OPENAI_API_KEY.');
-    }
-    throw new Error(
-      `Erro ao chamar a IA: ${apiError.message || 'erro desconhecido'}. Tente novamente.`
-    );
+    throw mapOpenAIError(err);
   }
 
   const choice = response.choices[0];
@@ -374,4 +383,151 @@ export async function parseStatement(
   }
 
   return result;
+}
+
+// ============================================================================
+// DETECCAO DE CONTA (importacao multi-arquivo)
+// ============================================================================
+
+export type DetectedDocumentKind = 'ACCOUNT_STATEMENT' | 'CREDIT_CARD_INVOICE' | 'OTHER';
+
+export interface DetectAccountInput {
+  kind: StatementFileKind;
+  filename: string;
+  /** Texto puro (csv/ofx/txt) ou base64 sem prefixo data: (pdf/imagem) */
+  content: string;
+  mimeType?: string;
+}
+
+export interface DetectAccountResult {
+  documentKind: DetectedDocumentKind;
+  /** Indice na lista de contas fornecida, ou null se nao identificou */
+  detectedAccountIndex: number | null;
+  /** Nome do banco lido no documento (para exibir quando nao casou com nenhuma conta) */
+  bankName: string | null;
+}
+
+/** Para deteccao basta o cabecalho do arquivo — trunca texto para reduzir custo */
+const DETECT_TEXT_CHARS = 5_000;
+
+const DETECTION_SCHEMA = {
+  name: 'statement_detection',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      document_kind: {
+        type: 'string',
+        enum: ['ACCOUNT_STATEMENT', 'CREDIT_CARD_INVOICE', 'OTHER'],
+        description:
+          'ACCOUNT_STATEMENT para extrato de conta bancaria; CREDIT_CARD_INVOICE para fatura de cartao de credito; OTHER se nao for nenhum dos dois',
+      },
+      detected_account_index: {
+        type: ['integer', 'null'],
+        description:
+          'Indice da conta do usuario a que o documento pertence (lista CONTAS DO USUARIO), ou null se nao tiver certeza',
+      },
+      bank_name: {
+        type: ['string', 'null'],
+        description: 'Nome do banco/instituicao identificado no documento, ou null',
+      },
+    },
+    required: ['document_kind', 'detected_account_index', 'bank_name'],
+  },
+} as const;
+
+function buildDetectPrompt(accounts: AccountWithBank[]): string {
+  const accountList = accounts
+    .map((a, i) => `[${i}] ${a.name}${a.bank?.name ? ` (${a.bank.name})` : ''}`)
+    .join('\n');
+
+  return `Voce e um classificador de documentos financeiros do Trade Compass. Analise o documento fornecido e responda:
+
+1. document_kind: e um EXTRATO DE CONTA BANCARIA (ACCOUNT_STATEMENT), uma FATURA DE CARTAO DE CREDITO (CREDIT_CARD_INVOICE) ou outro tipo de documento (OTHER)?
+   - Fatura de cartao: tem "fatura", data de vencimento da fatura, limite do cartao, lista de compras no credito
+   - Extrato de conta: movimentacoes de entrada/saida, saldo, PIX/TED/debitos
+
+2. detected_account_index: identifique pelo cabecalho, logotipo, nome do banco ou dados do titular a qual das contas do usuario abaixo o documento pertence. Use o indice da lista. Se nenhuma corresponder claramente, use null. NAO chute.
+
+3. bank_name: o nome do banco/instituicao que aparece no documento (ex: "Nubank", "Itau", "Banco do Brasil"), ou null se nao aparecer.
+
+CONTAS DO USUARIO:
+${accountList || '(nenhuma conta cadastrada)'}`;
+}
+
+/**
+ * Identifica de qual conta do usuario e o extrato e classifica o tipo de documento.
+ * Chamada leve (max_tokens baixo; texto truncado ao cabecalho).
+ */
+export async function detectStatementAccount(
+  input: DetectAccountInput,
+  accounts: AccountWithBank[]
+): Promise<DetectAccountResult> {
+  if (!openai) {
+    throw new Error('OpenAI nao configurado. Verifique a variavel OPENAI_API_KEY.');
+  }
+
+  const content =
+    input.kind === 'text' ? input.content.slice(0, DETECT_TEXT_CHARS) : input.content;
+
+  let response: OpenAI.Chat.Completions.ChatCompletion;
+  try {
+    response = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: buildDetectPrompt(accounts) },
+        {
+          role: 'user',
+          content: buildUserContent(
+            { ...input, content },
+            `Classifique o documento anexo (arquivo: ${input.filename}) e identifique a conta do usuario.`
+          ),
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: DETECTION_SCHEMA as unknown as OpenAI.ResponseFormatJSONSchema['json_schema'],
+      },
+      max_tokens: 300,
+      temperature: 0,
+    });
+  } catch (err) {
+    throw mapOpenAIError(err);
+  }
+
+  const raw = response.choices[0]?.message?.content;
+  if (!raw) {
+    throw new Error('A IA nao retornou resposta. Tente novamente.');
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('A IA retornou uma resposta invalida. Tente novamente.');
+  }
+
+  const documentKind: DetectedDocumentKind =
+    parsed.document_kind === 'ACCOUNT_STATEMENT' ||
+    parsed.document_kind === 'CREDIT_CARD_INVOICE' ||
+    parsed.document_kind === 'OTHER'
+      ? parsed.document_kind
+      : 'OTHER';
+
+  const rawIndex = parsed.detected_account_index;
+  const detectedAccountIndex =
+    typeof rawIndex === 'number' &&
+    Number.isInteger(rawIndex) &&
+    rawIndex >= 0 &&
+    rawIndex < accounts.length
+      ? rawIndex
+      : null;
+
+  const bankName =
+    typeof parsed.bank_name === 'string' && parsed.bank_name.trim()
+      ? parsed.bank_name.trim()
+      : null;
+
+  return { documentKind, detectedAccountIndex, bankName };
 }

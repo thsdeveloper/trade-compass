@@ -10,12 +10,15 @@ import {
   createPaidTransactionsBatch,
   createTransfer,
 } from '../../../data/finance/transaction-repository.js';
-import type { CreateTransactionDTO, TransactionType } from '../../../domain/finance-types.js';
+import type { CreateTransactionDTO } from '../../../domain/finance-types.js';
 import {
   parseStatement,
   type ParsedStatementTransaction,
   type StatementFileKind,
 } from '../../../services/statement-import-service.js';
+import type { ConfirmImportItem } from '../../../services/import-validation-service.js';
+
+export type { ConfirmImportItem };
 
 interface ParseStatementBody {
   kind: StatementFileKind;
@@ -32,18 +35,6 @@ export interface ImportPreviewTransaction extends ParsedStatementTransaction {
 
 interface ParseStatementResponse {
   transactions: ImportPreviewTransaction[];
-}
-
-interface ConfirmImportItem {
-  kind: 'NORMAL' | 'TRANSFERENCIA_INTERNA';
-  category_id: string;
-  type: TransactionType;
-  description: string;
-  amount: number;
-  due_date: string;
-  notes?: string;
-  /** Conta contraparte (obrigatoria quando kind = TRANSFERENCIA_INTERNA) */
-  transfer_account_id?: string;
 }
 
 interface ConfirmImportBody {

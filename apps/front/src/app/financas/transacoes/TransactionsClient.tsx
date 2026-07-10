@@ -15,11 +15,19 @@ import { TransactionSearchInput } from '@/components/molecules/TransactionSearch
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
   CreditCard,
   Download,
+  FileStack,
+  FileText,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -95,6 +103,11 @@ const ExportTransactionsDialog = dynamic(
 
 const ImportStatementDialog = dynamic(
   () => import('@/components/organisms/finance/ImportStatementDialog').then(m => ({ default: m.ImportStatementDialog })),
+  { ssr: false }
+);
+
+const ImportMultiStatementDialog = dynamic(
+  () => import('@/components/organisms/finance/ImportMultiStatementDialog').then(m => ({ default: m.ImportMultiStatementDialog })),
   { ssr: false }
 );
 
@@ -175,6 +188,7 @@ export function TransactionsClient({
 
   // Import statement dialog state
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importMultiDialogOpen, setImportMultiDialogOpen] = useState(false);
 
   // Reset transactions dialog state
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -933,15 +947,25 @@ export function TransactionsClient({
               activeFiltersCount={activeFiltersCount}
             />
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportDialogOpen(true)}
-              className="h-8 gap-1.5"
-            >
-              <Upload className="h-4 w-4" />
-              Importar
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                  <Upload className="h-4 w-4" />
+                  Importar
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setImportDialogOpen(true)}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Importar extrato ou fatura
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setImportMultiDialogOpen(true)}>
+                  <FileStack className="h-4 w-4 mr-2" />
+                  Importar vários extratos
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               variant="outline"
@@ -1179,6 +1203,17 @@ export function TransactionsClient({
           onOpenChange={setImportDialogOpen}
           accounts={accounts}
           creditCards={creditCards}
+          categories={categories}
+          onImported={() => loadData(true)}
+        />
+      )}
+
+      {/* Import Multi Statement Dialog */}
+      {importMultiDialogOpen && (
+        <ImportMultiStatementDialog
+          open={importMultiDialogOpen}
+          onOpenChange={setImportMultiDialogOpen}
+          accounts={accounts}
           categories={categories}
           onImported={() => loadData(true)}
         />

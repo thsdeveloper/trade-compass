@@ -43,6 +43,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { financeApi } from '@/lib/finance-api';
+import {
+  ACCEPT,
+  MAX_FILE_SIZE,
+  getFileKind,
+  readFileAsBase64,
+  formatStatementDate,
+} from '@/lib/statement-file-utils';
 import { toast } from '@/lib/toast';
 import type {
   AccountWithBank,
@@ -50,7 +57,6 @@ import type {
   FinanceCreditCard,
   ConfirmImportItem,
   ImportPreviewTransaction,
-  StatementFileKind,
   StatementLineKind,
 } from '@/types/finance';
 import { formatCurrency } from '@/types/finance';
@@ -80,40 +86,7 @@ const KIND_LABELS: Record<StatementLineKind, string> = {
 
 type TargetType = 'account' | 'credit_card';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-const TEXT_EXTENSIONS = ['csv', 'txt', 'ofx', 'qfx', 'qif'];
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
-
-const ACCEPT =
-  '.csv,.txt,.ofx,.qfx,.qif,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,text/csv,text/plain,image/jpeg,image/png,image/webp';
-
-function getFileKind(file: File): StatementFileKind | null {
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  if (TEXT_EXTENSIONS.includes(ext)) return 'text';
-  if (ext === 'pdf' || file.type === 'application/pdf') return 'pdf';
-  if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('text/')) return 'text';
-  return null;
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Remove o prefixo data:...;base64,
-      resolve(result.substring(result.indexOf(',') + 1));
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split('-');
-  return `${day}/${month}/${year}`;
-}
+const formatDate = formatStatementDate;
 
 export function ImportStatementDialog({
   open,

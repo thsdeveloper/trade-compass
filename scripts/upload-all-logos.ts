@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as dotenv from 'dotenv';
 
 // Carregar variaveis de ambiente
-dotenv.config({ path: path.join(__dirname, '../back/.env') });
+dotenv.config({ path: path.join(__dirname, '../apps/api/.env') });
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;

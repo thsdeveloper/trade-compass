@@ -1,0 +1,17 @@
+# Build context = repo root. NÃO excluir os package.json que o Dockerfile copia.
+**/node_modules
+**/dist
+**/.next
+**/.expo
+**/.turbo
+**/.env*
+.git
+.github
+.idea
+.qodo
+.claude
+test-results
+playwright-report
+e2e
+supabase
+*.log

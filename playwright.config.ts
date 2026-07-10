@@ -39,17 +39,17 @@ export default defineConfig({
   // Run your local dev servers before starting the tests
   // Note: This assumes you have init.sh that starts both servers
   // For manual testing, start servers separately:
-  // - Backend: cd back && pnpm dev (port 3001)
-  // - Frontend: cd front && pnpm dev (port 3000)
+  // - Backend: cd apps/api && pnpm dev (port 3001)
+  // - Frontend: cd apps/front && pnpm dev (port 3000)
   webServer: [
     {
-      command: 'cd back && pnpm dev',
+      command: 'cd apps/api && pnpm dev',
       port: 3001,
       timeout: 120 * 1000,
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'cd front && pnpm dev',
+      command: 'cd apps/front && pnpm dev',
       port: 3000,
       timeout: 120 * 1000,
       reuseExistingServer: !process.env.CI,

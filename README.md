@@ -49,9 +49,12 @@
 
 ```text
 trade-compass/
-├── back/           # Fastify backend API
-├── front/          # Next.js frontend application
+├── apps/
+│   ├── api/        # Fastify backend API (deploy: Fly.io)
+│   ├── front/      # Next.js frontend application (deploy: Vercel)
+│   └── mobile/     # Expo React Native app
 ├── e2e/            # Playwright end-to-end tests
+├── .github/workflows/deploy-api.yml  # CI/CD da API para o Fly.io
 ├── package.json    # Root workspace configuration
 └── pnpm-workspace.yaml
 ```
@@ -79,7 +82,7 @@ trade-compass/
    ```
 
 3. Configure environment variables:
-   - Copy `.env.example` to `.env` in both `back/` and `front/` folders.
+   - Copy `.env.example` to `.env` in both `apps/api/` and `apps/front/` folders.
    - Fill in your Supabase credentials and other required keys.
 
 ### Running the Project
@@ -97,7 +100,7 @@ Alternatively, you can run them separately:
 pnpm dev:front
 
 # Backend only
-pnpm dev:back
+pnpm dev:api
 ```
 
 ---

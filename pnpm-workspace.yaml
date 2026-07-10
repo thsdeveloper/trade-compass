@@ -1,7 +1,5 @@
 packages:
-  - 'front'
-  - 'back'
-  - 'mobile'
+  - 'apps/*'
 onlyBuiltDependencies:
   - core-js
   - esbuild

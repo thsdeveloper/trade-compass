@@ -5,8 +5,8 @@
  * para todos os ativos cadastrados.
  *
  * Uso:
- *   pnpm --filter back sync:signals
- *   pnpm --filter back sync:signals PETR4 VALE3 (ativos especificos)
+ *   pnpm --filter api sync:signals
+ *   pnpm --filter api sync:signals PETR4 VALE3 (ativos especificos)
  */
 
 // Carregar variaveis de ambiente ANTES de importar outros modulos

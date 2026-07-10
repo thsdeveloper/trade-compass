@@ -22,7 +22,7 @@ import * as path from 'path';
 
 // Carregar variaveis de ambiente do back
 import * as dotenv from 'dotenv';
-dotenv.config({ path: path.join(__dirname, '../back/.env') });
+dotenv.config({ path: path.join(__dirname, '../apps/api/.env') });
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;

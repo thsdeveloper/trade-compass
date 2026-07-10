@@ -1,9 +1,0 @@
-[build]
-builder = "nixpacks"
-watchPatterns = ["back/**", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "nixpacks.toml", "railway.toml"]
-
-[deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3

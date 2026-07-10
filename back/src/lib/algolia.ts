@@ -1,13 +1,27 @@
 import { algoliasearch, type SearchClient } from 'algoliasearch';
 import { createHmac } from 'crypto';
 
-const appId = process.env.ALGOLIA_APP_ID;
-const adminKey = process.env.ALGOLIA_ADMIN_KEY;
-const searchOnlyKey = process.env.ALGOLIA_SEARCH_ONLY_KEY;
+// Placeholders do .env.example (ex: "your_algolia_app_id") contam como NAO configurado -
+// com eles o cliente tentaria alcancar hosts inexistentes (RetryError: Unreachable hosts)
+function envValue(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized.startsWith('your_') || normalized.startsWith('your-')) {
+    return undefined;
+  }
+  return value.trim();
+}
+
+const appId = envValue(process.env.ALGOLIA_APP_ID);
+const adminKey = envValue(process.env.ALGOLIA_ADMIN_KEY);
+const searchOnlyKey = envValue(process.env.ALGOLIA_SEARCH_ONLY_KEY);
 
 if (!appId) {
   console.warn('ALGOLIA_APP_ID not set - Algolia features will be disabled');
 }
+
+// App ID real configurado (null quando ausente ou placeholder)
+export const algoliaAppId: string | null = appId ?? null;
 
 // Admin client for indexing operations (server-side only)
 export const algoliaAdmin: SearchClient | null =

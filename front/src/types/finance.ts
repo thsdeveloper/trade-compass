@@ -257,6 +257,73 @@ export interface TagFormData {
   name: string;
 }
 
+// ==================== IMPORTAÇÃO DE EXTRATO ====================
+
+export type StatementFileKind = 'text' | 'pdf' | 'image';
+
+export interface ParseStatementPayload {
+  kind: StatementFileKind;
+  filename: string;
+  /** Texto puro (csv/ofx/txt) ou base64 sem prefixo data: (pdf/imagem) */
+  content: string;
+  mime_type?: string;
+  account_id?: string;
+  credit_card_id?: string;
+}
+
+export type StatementLineKind =
+  | 'NORMAL'
+  | 'TRANSFERENCIA_INTERNA'
+  | 'PAGAMENTO_FATURA';
+
+export interface ImportPreviewTransaction {
+  description: string;
+  amount: number;
+  type: 'RECEITA' | 'DESPESA';
+  due_date: string;
+  category_id: string | null;
+  notes: string | null;
+  line_kind: StatementLineKind;
+  suggested_transfer_account_id: string | null;
+  suggested_credit_card_id: string | null;
+  possible_duplicate: boolean;
+}
+
+export interface ConfirmImportItem {
+  kind: 'NORMAL' | 'TRANSFERENCIA_INTERNA';
+  category_id: string;
+  type: TransactionType;
+  description: string;
+  amount: number;
+  due_date: string;
+  notes?: string;
+  transfer_account_id?: string;
+}
+
+export interface ConfirmImportResult {
+  transactions_created: number;
+  transfers_created: number;
+}
+
+export interface ResetTransactionsResult {
+  transactions_deleted: number;
+  invoice_payments_deleted: number;
+  recurrences_deleted: number;
+  accounts_reset: number;
+  credit_cards_reset: number;
+}
+
+export interface CreateTransactionBatchItem {
+  category_id: string;
+  account_id?: string;
+  credit_card_id?: string;
+  type: TransactionType;
+  description: string;
+  amount: number;
+  due_date: string;
+  notes?: string;
+}
+
 export interface RecurrenceFormData {
   category_id: string;
   account_id?: string;

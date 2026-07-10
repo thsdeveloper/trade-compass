@@ -190,6 +190,111 @@ export async function createTransaction(
   return data;
 }
 
+export async function createTransactionsBatch(
+  userId: string,
+  items: CreateTransactionDTO[],
+  accessToken: string
+): Promise<FinanceTransaction[]> {
+  const client = createUserClient(accessToken);
+
+  const rows = items.map((transaction) => ({
+    user_id: userId,
+    category_id: transaction.category_id,
+    account_id: transaction.account_id || null,
+    credit_card_id: transaction.credit_card_id || null,
+    goal_id: transaction.goal_id || null,
+    type: transaction.type,
+    status: 'PENDENTE',
+    description: transaction.description,
+    amount: transaction.amount,
+    due_date: transaction.due_date,
+    notes: transaction.notes || null,
+  }));
+
+  const { data: created, error } = await client
+    .from(TABLE)
+    .insert(rows)
+    .select();
+
+  if (error) {
+    throw new Error(`Erro ao criar transacoes em lote: ${error.message}`);
+  }
+
+  // Diminuir limite disponivel dos cartoes (agregado por cartao)
+  const cardTotals = new Map<string, number>();
+  for (const transaction of items) {
+    if (transaction.type === 'DESPESA' && transaction.credit_card_id) {
+      cardTotals.set(
+        transaction.credit_card_id,
+        (cardTotals.get(transaction.credit_card_id) || 0) + transaction.amount
+      );
+    }
+  }
+  for (const [cardId, total] of cardTotals) {
+    await updateCreditCardAvailableLimit(cardId, userId, -total, accessToken);
+  }
+
+  return created || [];
+}
+
+/**
+ * Cria transacoes ja PAGAS em lote numa conta (importacao de extrato bancario:
+ * as linhas do extrato sao fatos consumados) e ajusta o saldo da conta pelo
+ * liquido do lote (receitas - despesas).
+ */
+export async function createPaidTransactionsBatch(
+  userId: string,
+  accountId: string,
+  items: CreateTransactionDTO[],
+  accessToken: string
+): Promise<FinanceTransaction[]> {
+  const client = createUserClient(accessToken);
+
+  const rows = items.map((transaction) => ({
+    user_id: userId,
+    category_id: transaction.category_id,
+    account_id: accountId,
+    credit_card_id: null,
+    goal_id: transaction.goal_id || null,
+    type: transaction.type,
+    status: 'PAGO',
+    description: transaction.description,
+    amount: transaction.amount,
+    paid_amount: transaction.amount,
+    due_date: transaction.due_date,
+    payment_date: transaction.due_date,
+    notes: transaction.notes || null,
+  }));
+
+  const { data: created, error } = await client
+    .from(TABLE)
+    .insert(rows)
+    .select();
+
+  if (error) {
+    throw new Error(`Erro ao criar transacoes em lote: ${error.message}`);
+  }
+
+  // Ajustar saldo da conta pelo liquido do lote
+  const net = items.reduce(
+    (sum, t) => sum + (t.type === 'RECEITA' ? t.amount : -t.amount),
+    0
+  );
+  if (net !== 0) {
+    const account = await getAccountById(accountId, userId, accessToken);
+    if (account) {
+      await updateAccountBalance(
+        accountId,
+        userId,
+        account.current_balance + net,
+        accessToken
+      );
+    }
+  }
+
+  return created || [];
+}
+
 export async function createInstallmentTransactions(
   userId: string,
   data: CreateInstallmentTransactionDTO,

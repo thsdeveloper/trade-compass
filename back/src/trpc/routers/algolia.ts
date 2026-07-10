@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
 import { TRPCError } from '@trpc/server';
-import { algoliaAdmin, ALGOLIA_INDICES, type AlgoliaIndexName, generateSecuredApiKey } from '../../lib/algolia.js';
+import { algoliaAdmin, algoliaAppId, ALGOLIA_INDICES, type AlgoliaIndexName, generateSecuredApiKey } from '../../lib/algolia.js';
 
 // Schema para busca
 const searchSchema = z.object({
@@ -117,8 +117,7 @@ export const algoliaRouter = router({
       });
     }
 
-    const appId = process.env.ALGOLIA_APP_ID;
-    if (!appId) {
+    if (!algoliaAppId) {
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Algolia app ID não está configurado',
@@ -126,7 +125,7 @@ export const algoliaRouter = router({
     }
 
     return {
-      appId,
+      appId: algoliaAppId,
       securedApiKey: securedKey,
       expiresAt: Date.now() + 3600 * 1000, // 1 hour from now
     };

@@ -20,6 +20,8 @@ import {
   ChevronRight,
   CreditCard,
   Download,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import { TransacoesPageSkeleton } from '@/components/organisms/skeletons/TransacoesPageSkeleton';
 import { cn } from '@/lib/utils';
@@ -88,6 +90,16 @@ const PayTransactionDialog = dynamic(
 
 const ExportTransactionsDialog = dynamic(
   () => import('@/components/organisms/finance/ExportTransactionsDialog').then(m => ({ default: m.ExportTransactionsDialog })),
+  { ssr: false }
+);
+
+const ImportStatementDialog = dynamic(
+  () => import('@/components/organisms/finance/ImportStatementDialog').then(m => ({ default: m.ImportStatementDialog })),
+  { ssr: false }
+);
+
+const ResetTransactionsDialog = dynamic(
+  () => import('@/components/organisms/finance/ResetTransactionsDialog').then(m => ({ default: m.ResetTransactionsDialog })),
   { ssr: false }
 );
 
@@ -160,6 +172,12 @@ export function TransactionsClient({
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
+  // Import statement dialog state
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  // Reset transactions dialog state
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   // Row selection state
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -918,12 +936,32 @@ export function TransactionsClient({
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setImportDialogOpen(true)}
+              className="h-8 gap-1.5"
+            >
+              <Upload className="h-4 w-4" />
+              Importar
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setExportDialogOpen(true)}
               disabled={hasNoData}
               className="h-8 gap-1.5"
             >
               <Download className="h-4 w-4" />
               Exportar
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setResetDialogOpen(true)}
+              className="h-8 gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4" />
+              Zerar
             </Button>
           </div>
         </div>
@@ -1131,6 +1169,27 @@ export function TransactionsClient({
           ]}
           selectedMonth={selectedMonth}
           creditCards={creditCards}
+        />
+      )}
+
+      {/* Import Statement Dialog */}
+      {importDialogOpen && (
+        <ImportStatementDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          accounts={accounts}
+          creditCards={creditCards}
+          categories={categories}
+          onImported={() => loadData(true)}
+        />
+      )}
+
+      {/* Reset Transactions Dialog */}
+      {resetDialogOpen && (
+        <ResetTransactionsDialog
+          open={resetDialogOpen}
+          onOpenChange={setResetDialogOpen}
+          onReset={() => loadData(true)}
         />
       )}
     </PageShell>

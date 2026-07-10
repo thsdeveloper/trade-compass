@@ -4,6 +4,7 @@ import type {
   FinanceTransaction,
   TransactionWithCategory,
   CreateTransactionDTO,
+  CreateTransactionsBatchDTO,
   CreateInstallmentTransactionDTO,
   UpdateTransactionDTO,
   PayTransactionDTO,
@@ -16,6 +17,7 @@ import {
   getTransactionsByUser,
   getTransactionById,
   createTransaction,
+  createTransactionsBatch,
   createInstallmentTransactions,
   updateTransaction,
   payTransaction,
@@ -148,6 +150,109 @@ export async function transactionRoutes(app: FastifyInstance) {
       return reply.status(201).send(transaction);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao criar transacao';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // POST /finance/transactions/batch - Create multiple transactions (importacao de extrato)
+  app.post<{
+    Body: CreateTransactionsBatchDTO;
+    Reply: FinanceTransaction[] | ApiError;
+  }>('/finance/transactions/batch', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const items = request.body?.transactions;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Informe ao menos uma transacao',
+        statusCode: 400,
+      });
+    }
+
+    if (items.length > 500) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Maximo de 500 transacoes por lote',
+        statusCode: 400,
+      });
+    }
+
+    // Validar cada item com as mesmas regras da criacao individual
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const label = `Transacao ${i + 1}`;
+
+      if (!item.category_id || !item.type || !item.description || !item.amount || !item.due_date) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: `${label}: categoria, tipo, descricao, valor e data sao obrigatorios`,
+          statusCode: 400,
+        });
+      }
+
+      if (item.account_id && item.credit_card_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: `${label}: informe conta OU cartao, nao ambos`,
+          statusCode: 400,
+        });
+      }
+
+      if (item.type === 'RECEITA' && !item.account_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: `${label}: receita deve ter uma conta de destino`,
+          statusCode: 400,
+        });
+      }
+
+      if (item.type === 'DESPESA' && !item.account_id && !item.credit_card_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: `${label}: despesa deve ter conta ou cartao de credito`,
+          statusCode: 400,
+        });
+      }
+    }
+
+    // Validar limite disponivel por cartao (soma das despesas do lote)
+    const cardTotals = new Map<string, number>();
+    for (const item of items) {
+      if (item.type === 'DESPESA' && item.credit_card_id) {
+        cardTotals.set(
+          item.credit_card_id,
+          (cardTotals.get(item.credit_card_id) || 0) + item.amount
+        );
+      }
+    }
+    for (const [cardId, total] of cardTotals) {
+      const card = await getCreditCardById(cardId, user.id, accessToken);
+      if (!card) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Cartao de credito nao encontrado',
+          statusCode: 404,
+        });
+      }
+      if (card.available_limit < total) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: `Limite insuficiente no cartao ${card.name}. Disponivel: R$ ${card.available_limit.toFixed(2)}, necessario: R$ ${total.toFixed(2)}`,
+          statusCode: 400,
+        });
+      }
+    }
+
+    try {
+      const transactions = await createTransactionsBatch(user.id, items, accessToken);
+      return reply.status(201).send(transactions);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao criar transacoes em lote';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

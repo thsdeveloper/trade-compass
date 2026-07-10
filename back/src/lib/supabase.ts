@@ -16,6 +16,22 @@ export const supabaseAdmin: SupabaseClient = createClient(
   }
 );
 
+// Verify a user's password without affecting any session (ephemeral client)
+export async function verifyUserPassword(
+  email: string,
+  password: string
+): Promise<boolean> {
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  return !error;
+}
+
 // Create a client for a specific user's context (respects RLS)
 export function createUserClient(accessToken: string): SupabaseClient {
   return createClient(supabaseUrl, supabaseAnonKey, {

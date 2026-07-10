@@ -281,6 +281,10 @@ export interface CreateTransactionDTO {
   tag_ids?: string[];
 }
 
+export interface CreateTransactionsBatchDTO {
+  transactions: CreateTransactionDTO[];
+}
+
 export interface CreateInstallmentTransactionDTO {
   category_id: string;
   account_id?: string;

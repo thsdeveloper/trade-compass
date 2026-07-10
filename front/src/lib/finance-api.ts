@@ -80,6 +80,13 @@ import type {
   TRRate,
   AmortizationSimulationRequest,
   AmortizationSimulationResponse,
+  // Importação de extrato
+  ParseStatementPayload,
+  ImportPreviewTransaction,
+  CreateTransactionBatchItem,
+  ConfirmImportItem,
+  ConfirmImportResult,
+  ResetTransactionsResult,
 } from '@/types/finance';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -320,6 +327,54 @@ class FinanceApiClient {
     return this.authFetch('/finance/transactions', accessToken, {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async parseStatement(
+    data: ParseStatementPayload,
+    accessToken: string
+  ): Promise<{ transactions: ImportPreviewTransaction[] }> {
+    return this.authFetch('/finance/import/parse', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createTransactionsBatch(
+    transactions: CreateTransactionBatchItem[],
+    accessToken: string
+  ): Promise<FinanceTransaction[]> {
+    return this.authFetch('/finance/transactions/batch', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ transactions }),
+    });
+  }
+
+  async confirmImport(
+    data: {
+      account_id?: string;
+      credit_card_id?: string;
+      items: ConfirmImportItem[];
+    },
+    accessToken: string
+  ): Promise<ConfirmImportResult> {
+    return this.authFetch('/finance/import/confirm', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async resetAllTransactions(
+    password: string,
+    accessToken: string,
+    options?: { zeroInitialBalances?: boolean }
+  ): Promise<ResetTransactionsResult> {
+    return this.authFetch('/finance/reset', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        password,
+        zero_initial_balances: options?.zeroInitialBalances === true,
+      }),
     });
   }
 

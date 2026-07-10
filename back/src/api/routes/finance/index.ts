@@ -12,6 +12,8 @@ import { goalRoutes } from './goals.js';
 import { reportsRoutes } from './reports.js';
 import { fixedIncomeRoutes } from './fixed-income.js';
 import { mortgageRoutes } from './mortgages.js';
+import { importRoutes } from './import.js';
+import { resetRoutes } from './reset.js';
 
 export async function financeRoutes(app: FastifyInstance) {
   // Apply auth middleware to all routes in this plugin
@@ -34,4 +36,6 @@ export async function financeRoutes(app: FastifyInstance) {
   await reportsRoutes(app);
   await fixedIncomeRoutes(app);
   await mortgageRoutes(app);
+  await importRoutes(app);
+  await resetRoutes(app);
 }

@@ -271,7 +271,7 @@ export default function FinancasPage() {
                 variant="default"
               />
 
-              {summary?.benefit_balance && summary.benefit_balance > 0 && (
+              {(summary?.benefit_balance ?? 0) > 0 && summary && (
                 <SummaryCard
                   title="Beneficios"
                   value={summary.benefit_balance}

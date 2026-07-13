@@ -125,6 +125,29 @@
 }
 
 /* Landing page animations */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-rise-delayed {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.animate-rise-delayed-2 {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
 @keyframes float {
   0%, 100% {
     transform: translateY(0px);
@@ -219,5 +242,18 @@
 
 .card-glow:hover::before {
   opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-rise-delayed,
+  .animate-rise-delayed-2,
+  .animate-float,
+  .animate-float-delayed,
+  .animate-pulse-slow,
+  .animate-pulse-slower,
+  .animate-shimmer {
+    animation: none;
+  }
 }
 

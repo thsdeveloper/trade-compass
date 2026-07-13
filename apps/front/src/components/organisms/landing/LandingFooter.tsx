@@ -51,7 +51,7 @@ export function LandingFooter() {
             {/* Brand */}
             <div className="col-span-2">
               <Link href="/" className="flex items-center gap-2.5 mb-4">
-                <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2">
+                <div className="rounded-xl bg-blue-600 p-2">
                   <Compass className="h-5 w-5 text-white" />
                 </div>
                 <span className="text-xl font-bold text-white">MoneyCompass</span>
@@ -147,7 +147,7 @@ export function LandingFooter() {
             <p className="text-sm text-slate-500">
               &copy; {new Date().getFullYear()} MoneyCompass. Todos os direitos reservados.
             </p>
-            <p className="text-xs text-slate-600 text-center sm:text-right max-w-md">
+            <p className="text-xs text-slate-500 text-center sm:text-right max-w-md">
               Este produto não constitui aconselhamento financeiro. Consulte um profissional para decisões de investimento.
             </p>
           </div>

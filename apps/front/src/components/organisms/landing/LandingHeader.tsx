@@ -55,13 +55,15 @@ export function LandingHeader() {
         <div className="flex h-16 lg:h-20 items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl blur-sm opacity-50" />
-              <div className="relative rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2">
-                <Compass className="h-5 w-5 text-white" />
-              </div>
+            <div className="rounded-xl bg-blue-600 p-2">
+              <Compass className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+            <span
+              className={cn(
+                'text-xl font-bold transition-colors',
+                isScrolled ? 'text-slate-900' : 'text-white'
+              )}
+            >
               MoneyCompass
             </span>
           </Link>
@@ -72,7 +74,12 @@ export function LandingHeader() {
               <button
                 key={link.href}
                 onClick={() => scrollToSection(link.href)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-50 transition-all"
+                className={cn(
+                  'px-4 py-2 text-sm font-medium rounded-lg transition-all',
+                  isScrolled
+                    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    : 'text-slate-100 hover:text-white hover:bg-white/10'
+                )}
               >
                 {link.label}
               </button>
@@ -82,17 +89,31 @@ export function LandingHeader() {
           {/* Desktop Auth Buttons */}
           <div className="hidden lg:flex items-center gap-3">
             {loading ? (
-              <div className="h-10 w-28 bg-slate-100 animate-pulse rounded-full" />
+              <div
+                className={cn(
+                  'h-10 w-28 animate-pulse rounded-full',
+                  isScrolled ? 'bg-slate-100' : 'bg-white/10'
+                )}
+              />
             ) : user ? (
-              <Button asChild className="rounded-full px-6 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/25">
-                <Link href="/financas">Ir para Dashboard</Link>
+              <Button asChild className="rounded-full px-6 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-950/20">
+                <Link href="/financas">Ir para o Dashboard</Link>
               </Button>
             ) : (
               <>
-                <Button variant="ghost" asChild className="rounded-full px-5 text-slate-600 hover:text-slate-900">
+                <Button
+                  variant="ghost"
+                  asChild
+                  className={cn(
+                    'rounded-full px-5',
+                    isScrolled
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-100 hover:text-white hover:bg-white/10'
+                  )}
+                >
                   <Link href="/login">Entrar</Link>
                 </Button>
-                <Button asChild className="rounded-full px-6 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/25">
+                <Button asChild className="rounded-full px-6 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-950/20">
                   <Link href="/cadastro">Começar Grátis</Link>
                 </Button>
               </>
@@ -102,7 +123,16 @@ export function LandingHeader() {
           {/* Mobile Menu */}
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild className="lg:hidden">
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'rounded-full',
+                  isScrolled
+                    ? 'text-slate-900 hover:bg-slate-100'
+                    : 'text-white hover:bg-white/10 hover:text-white'
+                )}
+              >
                 <Menu className="h-5 w-5" />
                 <span className="sr-only">Menu</span>
               </Button>
@@ -110,7 +140,7 @@ export function LandingHeader() {
             <SheetContent side="right" className="w-[300px] bg-white/95 backdrop-blur-xl">
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2.5">
-                  <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2">
+                  <div className="rounded-xl bg-blue-600 p-2">
                     <Compass className="h-4 w-4 text-white" />
                   </div>
                   MoneyCompass
@@ -130,15 +160,15 @@ export function LandingHeader() {
                 {loading ? (
                   <div className="h-12 bg-slate-100 animate-pulse rounded-full" />
                 ) : user ? (
-                  <Button asChild className="w-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600">
-                    <Link href="/financas">Ir para Dashboard</Link>
+                  <Button asChild className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white">
+                    <Link href="/financas">Ir para o Dashboard</Link>
                   </Button>
                 ) : (
                   <div className="flex flex-col gap-3">
                     <Button variant="outline" asChild className="w-full rounded-full">
                       <Link href="/login">Entrar</Link>
                     </Button>
-                    <Button asChild className="w-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600">
+                    <Button asChild className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white">
                       <Link href="/cadastro">Começar Grátis</Link>
                     </Button>
                   </div>

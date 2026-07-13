@@ -1,6 +1,6 @@
 'use client';
 
-import { HelpCircle, Plus, Minus } from 'lucide-react';
+import { Plus, Minus } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -40,22 +40,16 @@ export function FAQSection() {
   };
 
   return (
-    <section id="faq" className="py-20 sm:py-32 bg-gradient-to-b from-slate-50 to-white relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full bg-blue-50/50 blur-3xl" />
-      </div>
-
+    <section id="faq" className="scroll-mt-20 py-20 sm:py-32 bg-gradient-to-b from-slate-50 to-white relative overflow-hidden">
       <div className="relative mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-12 sm:mb-16">
-          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 border border-blue-100 px-4 py-1.5 text-sm font-medium text-blue-700 mb-4">
-            <HelpCircle className="w-4 h-4" />
-            FAQ
-          </div>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-4">
-            Tem Perguntas?<br />Temos Respostas!
+        <div className="mb-12 sm:mb-16">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-4 [text-wrap:balance]">
+            Perguntas frequentes
           </h2>
+          <p className="text-lg text-slate-600">
+            O que todo mundo pergunta antes de começar.
+          </p>
         </div>
 
         {/* FAQ list */}

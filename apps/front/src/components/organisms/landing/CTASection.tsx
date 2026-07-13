@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowRight, Sparkles, ArrowUpRight, ArrowDownLeft, CreditCard, PiggyBank } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ArrowDownLeft, CreditCard, PiggyBank } from 'lucide-react';
 
 export function CTASection() {
   const { user } = useAuth();
@@ -22,16 +22,11 @@ export function CTASection() {
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Content */}
           <div className="text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/10 px-4 py-1.5 text-sm font-medium text-white/80 mb-6">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              Cresça conosco
-            </div>
-
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight">
-              Crie seu próprio<br />controle financeiro<br />em segundos
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight [text-wrap:balance]">
+              Seu dinheiro, com direção, a partir de hoje.
             </h2>
 
-            <p className="text-lg text-slate-400 mb-8 max-w-md mx-auto lg:mx-0">
+            <p className="text-lg text-slate-300 mb-8 max-w-md mx-auto lg:mx-0">
               Escolha suas categorias, defina suas metas e tenha controle total em um app intuitivo.
             </p>
 
@@ -61,7 +56,7 @@ export function CTASection() {
               )}
             </div>
 
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-4 text-sm text-slate-400">
               Sem cartão de crédito. Cancele quando quiser.
             </p>
           </div>

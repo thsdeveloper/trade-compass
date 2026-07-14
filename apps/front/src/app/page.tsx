@@ -1,41 +1,27 @@
-'use client';
-
 import {
-  LandingHeader,
-  HeroSection,
-  FeaturesSection,
-  HowItWorksSection,
-  BenefitsSection,
-  PricingSection,
-  TestimonialsSection,
-  FAQSection,
-  CTASection,
-  LandingFooter,
+  WaitlistHeader,
+  WaitlistHero,
+  WaitlistPillars,
+  MobileAppSection,
+  WaitlistFooter,
 } from '@/components/organisms/landing';
 
+// Fase de pré-lançamento: a home é uma página de captura de leads (lista de
+// espera). A landing completa (features, pricing, FAQ...) permanece em
+// components/organisms/landing para reativação no lançamento.
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-white">
-      <LandingHeader />
+      <WaitlistHeader />
       <main>
-        {/* Light: Hero */}
-        <HeroSection />
-        {/* Dark: Features */}
-        <FeaturesSection />
-        {/* Light: How It Works */}
-        <HowItWorksSection />
-        {/* Light: Benefits */}
-        <BenefitsSection />
-        {/* Dark: Testimonials */}
-        <TestimonialsSection />
-        {/* Dark: Pricing */}
-        <PricingSection />
-        {/* Light: FAQ */}
-        <FAQSection />
-        {/* Dark: CTA */}
-        <CTASection />
+        {/* Dark: Hero com formulário de waitlist */}
+        <WaitlistHero />
+        {/* Light: pilares do produto */}
+        <WaitlistPillars />
+        {/* Dark: app mobile iOS/Android + segundo formulário */}
+        <MobileAppSection />
       </main>
-      <LandingFooter />
+      <WaitlistFooter />
     </div>
   );
 }

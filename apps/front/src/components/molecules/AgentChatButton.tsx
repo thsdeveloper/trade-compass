@@ -1,8 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { AIButton } from '@/components/ui/ai-button';
 import { useAgent } from '@/contexts/AgentContext';
-import { Sparkles } from 'lucide-react';
 
 export function AgentChatButton() {
   const { openChat, isOpen } = useAgent();
@@ -12,13 +11,12 @@ export function AgentChatButton() {
   }
 
   return (
-    <Button
+    <AIButton
       onClick={openChat}
-      className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
       size="icon-lg"
-      title="Agent Flow IA"
-    >
-      <Sparkles className="h-6 w-6" />
-    </Button>
+      className="fixed right-6 bottom-6 z-50 shadow-lg shadow-fuchsia-600/30"
+      title="Norte & Polaris — assistentes IA"
+      aria-label="Abrir o assistente de IA"
+    />
   );
 }

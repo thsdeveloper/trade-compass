@@ -3,6 +3,11 @@ import { TRPCError } from '@trpc/server';
 import { router, protectedProcedure } from '../trpc.js';
 import { getFinancialContext } from '../../services/agent-data-aggregator.js';
 import { chat, type ChatMessage } from '../../services/agent-service.js';
+import {
+  getAgentDefinition,
+  DEFAULT_AGENT_ID,
+} from '../../services/agents/registry.js';
+import { getContextCached } from '../../services/agents/context-cache.js';
 
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -10,6 +15,7 @@ const messageSchema = z.object({
 });
 
 const chatInputSchema = z.object({
+  agentId: z.string().optional(),
   messages: z
     .array(messageSchema)
     .min(1, 'Envie pelo menos uma mensagem')
@@ -59,9 +65,20 @@ export const agentRouter = router({
       });
     }
 
+    const agent = getAgentDefinition(input.agentId ?? DEFAULT_AGENT_ID);
+    if (!agent) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Agente nao encontrado.',
+      });
+    }
+
     try {
-      const context = await getFinancialContext(ctx.user.id, ctx.accessToken);
-      const response = await chat(input.messages as ChatMessage[], context);
+      const contextText = await getContextCached(
+        `${agent.id}:${ctx.user.id}`,
+        () => agent.getContext(ctx.user.id, ctx.accessToken)
+      );
+      const response = await chat(input.messages as ChatMessage[], agent, contextText);
       return { response };
     } catch (error) {
       console.error('Agent chat error:', error);

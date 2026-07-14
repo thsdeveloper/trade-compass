@@ -257,3 +257,81 @@
   }
 }
 
+/* ===== Botão de recurso IA (AIButton) =====
+   Gradiente palindrômico (cor inicial = final) para o pan em loop ser
+   contínuo, sem "salto" ao reiniciar. Cores com contraste >= 4.5:1
+   contra texto branco no ponto mais claro (fuchsia-600). */
+@keyframes ai-gradient-pan {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes ai-sparkle-twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25) rotate(12deg);
+    opacity: 0.75;
+  }
+}
+
+@keyframes ai-shine-sweep {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  55%,
+  100% {
+    transform: translateX(360%) skewX(-18deg);
+  }
+}
+
+.btn-ai {
+  background-image: linear-gradient(
+    110deg,
+    #7c3aed 0%,
+    #c026d3 25%,
+    #db2777 50%,
+    #c026d3 75%,
+    #7c3aed 100%
+  );
+  background-size: 200% 100%;
+  animation: ai-gradient-pan 8s linear infinite;
+}
+
+.btn-ai:hover {
+  filter: brightness(1.08) saturate(1.1);
+}
+
+.btn-ai-icon {
+  animation: ai-sparkle-twinkle 2.4s ease-in-out infinite;
+}
+
+.btn-ai-shine {
+  inset-block: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  animation: ai-shine-sweep 3.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-ai,
+  .btn-ai-icon {
+    animation: none;
+  }
+  .btn-ai-shine {
+    display: none;
+  }
+}
+

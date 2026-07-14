@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { ChatMessage } from '@/types/agent';
+import { AGENTS, type ChatMessage } from '@/types/agent';
+import { useAgent } from '@/contexts/AgentContext';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { Bot } from 'lucide-react';
 
@@ -12,6 +13,8 @@ interface AgentMessageListProps {
 
 export function AgentMessageList({ messages, isLoading }: AgentMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { activeAgentId } = useAgent();
+  const activeAgent = AGENTS[activeAgentId];
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -27,9 +30,11 @@ export function AgentMessageList({ messages, isLoading }: AgentMessageListProps)
           <Bot className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h3 className="font-semibold text-slate-900">Assistente Financeiro</h3>
+          <h3 className="font-semibold text-slate-900">{activeAgent.label}</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Pergunte sobre suas financas e receba respostas baseadas nos seus dados.
+            {activeAgentId === 'investimentos'
+              ? 'Pergunte sobre sua carteira e receba respostas baseadas nos seus dados.'
+              : 'Pergunte sobre suas financas e receba respostas baseadas nos seus dados.'}
           </p>
         </div>
       </div>

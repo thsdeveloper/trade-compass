@@ -1,8 +1,13 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../lib/supabase.js';
-import { getFinancialContext } from '../../services/agent-data-aggregator.js';
 import { streamChat, type ChatMessage } from '../../services/agent-service.js';
+import {
+  getAgentDefinition,
+  DEFAULT_AGENT_ID,
+} from '../../services/agents/registry.js';
+import { getContextCached } from '../../services/agents/context-cache.js';
+import type { AgentDefinition } from '../../services/agents/types.js';
 
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -66,77 +71,111 @@ interface AgentStreamBody {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
-export async function agentStreamRoutes(app: FastifyInstance) {
-  app.post<{
-    Body: AgentStreamBody;
-  }>('/api/agent/stream', async (request: FastifyRequest<{ Body: AgentStreamBody }>, reply: FastifyReply) => {
-    // Authenticate
-    const auth = await authenticateRequest(request);
-    if (!auth) {
-      return reply.status(401).send({ error: 'Unauthorized' });
+async function handleAgentStream(
+  agent: AgentDefinition,
+  request: FastifyRequest<{ Body: AgentStreamBody }>,
+  reply: FastifyReply
+) {
+  // Authenticate
+  const auth = await authenticateRequest(request);
+  if (!auth) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+
+  // Rate limit
+  if (!checkRateLimit(auth.userId)) {
+    return reply.status(429).send({
+      error: 'Rate limit exceeded. Please wait before sending more messages.',
+    });
+  }
+
+  // Validate input
+  const parseResult = chatInputSchema.safeParse(request.body);
+  if (!parseResult.success) {
+    return reply.status(400).send({
+      error: 'Invalid request body',
+      details: parseResult.error.issues,
+    });
+  }
+
+  const { messages } = parseResult.data;
+
+  try {
+    // Contexto formatado do agente, com cache TTL por usuário (evita refazer
+    // as queries de agregação a cada mensagem da mesma conversa)
+    const contextText = await getContextCached(
+      `${agent.id}:${auth.userId}`,
+      () => agent.getContext(auth.userId, auth.accessToken)
+    );
+
+    // Set SSE headers
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    });
+
+    // Stream the response
+    const generator = streamChat(messages as ChatMessage[], agent, contextText);
+
+    for await (const chunk of generator) {
+      reply.raw.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
     }
 
-    // Rate limit
-    if (!checkRateLimit(auth.userId)) {
-      return reply.status(429).send({
-        error: 'Rate limit exceeded. Please wait before sending more messages.',
-      });
-    }
+    // Send done event
+    reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    reply.raw.end();
+  } catch (error) {
+    console.error('Agent stream error:', error);
 
-    // Validate input
-    const parseResult = chatInputSchema.safeParse(request.body);
-    if (!parseResult.success) {
-      return reply.status(400).send({
-        error: 'Invalid request body',
-        details: parseResult.error.issues,
-      });
-    }
-
-    const { messages } = parseResult.data;
-
-    try {
-      // Get financial context
-      const context = await getFinancialContext(auth.userId, auth.accessToken);
-
-      // Set SSE headers
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-      });
-
-      // Stream the response
-      const generator = streamChat(messages as ChatMessage[], context);
-
-      for await (const chunk of generator) {
-        reply.raw.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
-      }
-
-      // Send done event
-      reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    // If headers already sent, try to send error event
+    if (reply.raw.headersSent) {
+      reply.raw.write(
+        `data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`
+      );
       reply.raw.end();
-    } catch (error) {
-      console.error('Agent stream error:', error);
-
-      // If headers already sent, try to send error event
-      if (reply.raw.headersSent) {
-        reply.raw.write(
-          `data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`
-        );
-        reply.raw.end();
-      } else {
-        return reply.status(500).send({ error: 'Internal server error' });
-      }
+    } else {
+      return reply.status(500).send({ error: 'Internal server error' });
     }
-  });
+  }
+}
+
+function sendCorsPreflight(reply: FastifyReply) {
+  reply.header('Access-Control-Allow-Origin', '*');
+  reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  return reply.status(204).send();
+}
+
+export async function agentStreamRoutes(app: FastifyInstance) {
+  // Rota legada (clientes antigos): usa o agente padrão
+  app.post<{ Body: AgentStreamBody }>(
+    '/api/agent/stream',
+    async (request, reply) => {
+      const agent = getAgentDefinition(DEFAULT_AGENT_ID)!;
+      return handleAgentStream(agent, request, reply);
+    }
+  );
+
+  // Rota parametrizada: /api/agent/financeiro/stream, /api/agent/investimentos/stream
+  app.post<{ Body: AgentStreamBody; Params: { agentId: string } }>(
+    '/api/agent/:agentId/stream',
+    async (request, reply) => {
+      const agent = getAgentDefinition(request.params.agentId);
+      if (!agent) {
+        return reply.status(404).send({ error: 'Agente nao encontrado' });
+      }
+      return handleAgentStream(agent, request, reply);
+    }
+  );
 
   // Handle CORS preflight
-  app.options('/api/agent/stream', async (_request, reply) => {
-    reply.header('Access-Control-Allow-Origin', '*');
-    reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    return reply.status(204).send();
-  });
+  app.options('/api/agent/stream', async (_request, reply) =>
+    sendCorsPreflight(reply)
+  );
+  app.options('/api/agent/:agentId/stream', async (_request, reply) =>
+    sendCorsPreflight(reply)
+  );
 }

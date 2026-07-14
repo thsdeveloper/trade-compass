@@ -8,10 +8,23 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthContext';
-import type { ChatMessage, AgentContextType, StreamChunk } from '@/types/agent';
+import {
+  AGENTS,
+  DEFAULT_AGENT_ID,
+  type AgentId,
+  type ChatMessage,
+  type AgentContextType,
+  type StreamChunk,
+} from '@/types/agent';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+// Janela de histórico enviada por request. O backend aceita até 20 mensagens;
+// enviar menos controla o custo de tokens sem perda prática (o contexto do
+// domínio é injetado no system prompt a cada chamada).
+const MAX_HISTORY_MESSAGES = 12;
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
 
@@ -19,26 +32,57 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function emptyConversations(): Record<AgentId, ChatMessage[]> {
+  return { financeiro: [], investimentos: [] };
+}
+
+/** Deriva o agente pela seção do app em que o usuário está */
+function agentIdFromPathname(pathname: string | null): AgentId {
+  if (!pathname) return DEFAULT_AGENT_ID;
+  if (pathname.startsWith('/investimentos') || pathname.startsWith('/asset')) {
+    return 'investimentos';
+  }
+  return DEFAULT_AGENT_ID;
+}
+
 export function AgentProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeAgentId, setActiveAgentId] = useState<AgentId>(DEFAULT_AGENT_ID);
+  const [conversations, setConversations] = useState<Record<AgentId, ChatMessage[]>>(
+    emptyConversations
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const messages = conversations[activeAgentId];
+
   const openChat = useCallback(() => {
+    // Ao abrir, seleciona o agente da seção atual (telas de investimentos
+    // abrem o Analista de Carteira). As conversas de cada agente são mantidas.
+    setActiveAgentId(agentIdFromPathname(pathname));
     setIsOpen(true);
     setError(null);
-  }, []);
+  }, [pathname]);
 
   const closeChat = useCallback(() => {
     setIsOpen(false);
   }, []);
 
+  const setActiveAgent = useCallback(
+    (id: AgentId) => {
+      if (isLoading) return;
+      setActiveAgentId(id);
+      setError(null);
+    },
+    [isLoading]
+  );
+
   const clearMessages = useCallback(() => {
-    setMessages([]);
+    setConversations((prev) => ({ ...prev, [activeAgentId]: [] }));
     setError(null);
-  }, []);
+  }, [activeAgentId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -47,9 +91,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (!content.trim()) {
+      if (!content.trim() || isLoading) {
         return;
       }
+
+      const agentId = activeAgentId;
 
       setError(null);
       setIsLoading(true);
@@ -62,8 +108,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, userMessage]);
-
       // Create placeholder for assistant message
       const assistantMessageId = generateId();
       const assistantMessage: ChatMessage = {
@@ -74,23 +118,42 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         isStreaming: true,
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      const history = conversations[agentId];
+
+      setConversations((prev) => ({
+        ...prev,
+        [agentId]: [...prev[agentId], userMessage, assistantMessage],
+      }));
+
+      const updateAssistant = (patch: Partial<ChatMessage>) => {
+        setConversations((prev) => ({
+          ...prev,
+          [agentId]: prev[agentId].map((m) =>
+            m.id === assistantMessageId ? { ...m, ...patch } : m
+          ),
+        }));
+      };
 
       try {
-        // Prepare messages for API (without ids and timestamps)
-        const apiMessages = [...messages, userMessage].map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        // Prepare messages for API (janela limitada, sem ids e timestamps)
+        const apiMessages = [...history, userMessage]
+          .slice(-MAX_HISTORY_MESSAGES)
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
 
-        const response = await fetch(`${API_BASE_URL}/api/agent/stream`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ messages: apiMessages }),
-        });
+        const response = await fetch(
+          `${API_BASE_URL}/api/agent/${agentId}/stream`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ messages: apiMessages }),
+          }
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -128,23 +191,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
                 if (data.content) {
                   fullContent += data.content;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMessageId
-                        ? { ...m, content: fullContent }
-                        : m
-                    )
-                  );
+                  updateAssistant({ content: fullContent });
                 }
 
                 if (data.done) {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMessageId
-                        ? { ...m, isStreaming: false }
-                        : m
-                    )
-                  );
+                  updateAssistant({ isStreaming: false });
                 }
               } catch (parseError) {
                 console.error('Error parsing SSE chunk:', parseError);
@@ -154,11 +205,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         }
 
         // Mark as done if not already
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMessageId ? { ...m, isStreaming: false } : m
-          )
-        );
+        updateAssistant({ isStreaming: false });
       } catch (err) {
         console.error('Agent error:', err);
         const errorMessage =
@@ -166,28 +213,42 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         setError(errorMessage);
 
         // Remove the empty assistant message on error
-        setMessages((prev) =>
-          prev.filter((m) => m.id !== assistantMessageId)
-        );
+        setConversations((prev) => ({
+          ...prev,
+          [agentId]: prev[agentId].filter((m) => m.id !== assistantMessageId),
+        }));
       } finally {
         setIsLoading(false);
       }
     },
-    [session?.access_token, messages]
+    [session?.access_token, conversations, activeAgentId, isLoading]
   );
 
   const value = useMemo(
     () => ({
       isOpen,
+      activeAgentId,
       messages,
       isLoading,
       error,
       openChat,
       closeChat,
+      setActiveAgent,
       sendMessage,
       clearMessages,
     }),
-    [isOpen, messages, isLoading, error, openChat, closeChat, sendMessage, clearMessages]
+    [
+      isOpen,
+      activeAgentId,
+      messages,
+      isLoading,
+      error,
+      openChat,
+      closeChat,
+      setActiveAgent,
+      sendMessage,
+      clearMessages,
+    ]
   );
 
   return (
@@ -202,3 +263,5 @@ export function useAgent() {
   }
   return context;
 }
+
+export { AGENTS };

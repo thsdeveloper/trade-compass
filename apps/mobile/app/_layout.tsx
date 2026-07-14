@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { FinanceProvider } from '@/contexts/FinanceContext';
+import { AgentProvider } from '@/contexts/AgentContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -43,6 +44,15 @@ function RootLayoutNav() {
             headerShown: false,
           }}
         />
+        <Stack.Screen name="categorias" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="agent-chat"
+          options={{
+            presentation: 'modal',
+            title: 'Norte',
+            headerShown: false,
+          }}
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
@@ -53,7 +63,9 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <FinanceProvider>
-        <RootLayoutNav />
+        <AgentProvider>
+          <RootLayoutNav />
+        </AgentProvider>
       </FinanceProvider>
     </AuthProvider>
   );

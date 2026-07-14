@@ -40,7 +40,19 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir que o app use a câmera para escanear o QR code de notas fiscais."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir acesso às fotos para anexar notas fiscais e comprovantes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

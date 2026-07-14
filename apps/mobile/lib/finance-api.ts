@@ -10,9 +10,10 @@ import type {
   UpcomingPayment,
   BudgetSummary,
   GlobalCategoryWithChildren,
+  FinanceCreditCard,
 } from '@/types/finance';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+import { API_URL } from './api-config';
 
 interface ApiError {
   error: string;
@@ -85,6 +86,11 @@ export async function getAccounts(): Promise<FinanceAccount[]> {
   return authFetch('/finance/accounts');
 }
 
+// Credit cards
+export async function getCreditCards(): Promise<FinanceCreditCard[]> {
+  return authFetch('/finance/credit-cards');
+}
+
 // Transactions
 export async function getTransactions(filters?: {
   start_date?: string;
@@ -115,6 +121,34 @@ export async function createTransaction(
   return authFetch('/finance/transactions', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+}
+
+// account_id/credit_card_id aceitam null para desvincular ao trocar entre
+// conta e cartão (o backend repassa o null direto ao banco)
+export interface UpdateTransactionPayload
+  extends Omit<Partial<TransactionFormData>, 'account_id' | 'credit_card_id'> {
+  account_id?: string | null;
+  credit_card_id?: string | null;
+}
+
+export async function updateTransaction(
+  id: string,
+  data: UpdateTransactionPayload
+): Promise<FinanceTransaction> {
+  return authFetch(`/finance/transactions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function payTransaction(
+  id: string,
+  payment?: { paid_amount?: number; payment_date?: string }
+): Promise<FinanceTransaction> {
+  return authFetch(`/finance/transactions/${id}/pay`, {
+    method: 'PATCH',
+    body: JSON.stringify(payment ?? {}),
   });
 }
 

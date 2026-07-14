@@ -1,7 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch';
-import type { AgentApiMessage } from '@/types/agent';
+import type { AgentApiMessage, ReceiptExtractionResult } from '@/types/agent';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+import { API_URL } from './api-config';
 
 // Limites alinhados com o backend (chatInputSchema: max 20 msgs / 1000 chars).
 // A janela enviada é menor que o teto do backend para conter o custo de tokens:
@@ -93,4 +93,43 @@ export async function streamAgentChat({
       }
     }
   }
+}
+
+export interface ExtractReceiptOptions {
+  accessToken: string;
+  text?: string;
+  qrData?: string;
+  imageBase64?: string;
+}
+
+/**
+ * Envia texto livre, QR code de NFC-e e/ou foto da nota para o agente
+ * interpretar e devolver um rascunho de transação.
+ */
+export async function extractReceipt({
+  accessToken,
+  text,
+  qrData,
+  imageBase64,
+}: ExtractReceiptOptions): Promise<ReceiptExtractionResult> {
+  const response = await expoFetch(`${API_URL}/api/agent/nota/extract`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ text, qrData, imageBase64 }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}) as { error?: string });
+    if (response.status === 429) {
+      throw new Error(
+        'Muitas leituras em pouco tempo. Aguarde um instante e tente novamente.'
+      );
+    }
+    throw new Error(errorData.error || `Erro ${response.status}`);
+  }
+
+  return (await response.json()) as ReceiptExtractionResult;
 }

@@ -80,11 +80,27 @@ export interface TransactionWithDetails extends FinanceTransaction {
 export interface TransactionFormData {
   category_id: string;
   account_id?: string;
+  credit_card_id?: string;
   type: TransactionType;
   description: string;
   amount: number;
   due_date: string;
   notes?: string;
+}
+
+export interface FinanceCreditCard {
+  id: string;
+  user_id: string;
+  name: string;
+  brand: string;
+  total_limit: number;
+  available_limit: number;
+  closing_day: number;
+  due_day: number;
+  color: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // ==================== LABELS ====================

@@ -302,16 +302,29 @@ export default function TransactionsScreen() {
 
         <Text style={[styles.topBarTitle, { color: colors.text }]}>Atividades</Text>
 
-        <TouchableOpacity
-          style={[styles.topBarButton, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push('/new-transaction');
-          }}
-          accessibilityLabel="Nova transação"
-        >
-          <IconSymbol name="plus" size={22} color={colors.textOnPrimary} />
-        </TouchableOpacity>
+        <View style={styles.topBarActions}>
+          <TouchableOpacity
+            style={[styles.topBarButton, { backgroundColor: colors.surface }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push('/nota-chat');
+            }}
+            accessibilityLabel="Lançar por nota fiscal"
+          >
+            <IconSymbol name="qrcode.viewfinder" size={20} color={colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.topBarButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push('/new-transaction');
+            }}
+            accessibilityLabel="Nova transação"
+          >
+            <IconSymbol name="plus" size={22} color={colors.textOnPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <SectionList
@@ -358,6 +371,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     zIndex: 10,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
   topBarButton: {
     width: 40,

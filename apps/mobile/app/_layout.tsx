@@ -53,6 +53,14 @@ function RootLayoutNav() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="nota-chat"
+          options={{
+            presentation: 'modal',
+            title: 'Nota',
+            headerShown: false,
+          }}
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

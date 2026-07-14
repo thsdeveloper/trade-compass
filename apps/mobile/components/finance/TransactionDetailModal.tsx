@@ -1,15 +1,28 @@
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  Pressable,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useReducedMotion } from 'react-native-reanimated';
+
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useFinance } from '@/contexts/FinanceContext';
+import { getCreditCards, payTransaction, updateTransaction } from '@/lib/finance-api';
 import {
   formatCurrency,
   formatFullDate,
@@ -18,6 +31,8 @@ import {
   TRANSACTION_TYPE_LABELS,
   TRANSACTION_STATUS_LABELS,
   ACCOUNT_TYPE_LABELS,
+  type FinanceCategory,
+  type FinanceCreditCard,
   type TransactionWithDetails,
 } from '@/types/finance';
 
@@ -185,6 +200,86 @@ function getCategoryIcon(iconName: string): IconSymbolName {
   return CATEGORY_ICON_MAP[iconName] || CATEGORY_ICON_MAP['default'];
 }
 
+/**
+ * Anima o valor de 0 até o alvo com desaceleração forte (a maior parte do
+ * movimento acontece no primeiro segundo). Com reduce motion, vai direto.
+ */
+function useCountUp(target: number, animate: boolean, duration = 1000): number {
+  const [value, setValue] = useState(animate ? 0 : target);
+
+  useEffect(() => {
+    if (!animate) {
+      setValue(target);
+      return;
+    }
+    let frame: number;
+    const start = Date.now();
+    const tick = () => {
+      const t = Math.min((Date.now() - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 4);
+      setValue(target * eased);
+      if (t < 1) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, animate, duration]);
+
+  return value;
+}
+
+interface BottomSheetProps {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}
+
+/** Painel que sobe do rodapé, com backdrop e alça de arrasto */
+function BottomSheet({ visible, title, onClose, children }: BottomSheetProps) {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.sheetOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+        <View
+          style={[
+            styles.sheetPanel,
+            {
+              backgroundColor: colors.background,
+              paddingBottom: Math.max(insets.bottom, Spacing.lg),
+            },
+          ]}
+        >
+          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel="Fechar"
+            >
+              <IconSymbol name="xmark" size={20} color={colors.icon} />
+            </TouchableOpacity>
+          </View>
+          {children}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+type PaymentSource =
+  | { kind: 'account'; id: string }
+  | { kind: 'card'; id: string };
+
 export function TransactionDetailModal({
   transaction,
   visible,
@@ -194,19 +289,224 @@ export function TransactionDetailModal({
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
   const isDark = colorScheme === 'dark';
+  const reduceMotion = useReducedMotion();
 
-  if (!transaction) return null;
+  const { categories, accounts, loadTransactions } = useFinance();
 
-  const isIncome = transaction.type === 'RECEITA';
+  // Cópia local: edições refletem na hora, sem esperar o refetch da lista
+  const [current, setCurrent] = useState<TransactionWithDetails | null>(transaction);
+  const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
+  const [notesSheetOpen, setNotesSheetOpen] = useState(false);
+  const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [dateDraft, setDateDraft] = useState(new Date());
+  const [isPaying, setIsPaying] = useState(false);
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrent(transaction);
+    setNotesDraft(transaction?.notes ?? '');
+    setError(null);
+    setCategorySheetOpen(false);
+    setAccountSheetOpen(false);
+    setNotesSheetOpen(false);
+    setDateSheetOpen(false);
+  }, [transaction]);
+
+  useEffect(() => {
+    if (visible) {
+      getCreditCards()
+        .then(setCreditCards)
+        .catch(() => setCreditCards([]));
+    }
+  }, [visible]);
+
+  const animatedAmount = useCountUp(
+    current?.amount ?? 0,
+    visible && !reduceMotion && current !== null
+  );
+
+  const typeCategories = useMemo(() => {
+    if (!current) return [];
+    return categories.filter((c) => c.type === current.type);
+  }, [categories, current]);
+
+  const handleMarkPaid = useCallback(async () => {
+    if (!current || isPaying) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setError(null);
+    setIsPaying(true);
+    try {
+      const updated = await payTransaction(current.id);
+      setCurrent((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: updated.status,
+              payment_date: updated.payment_date,
+              paid_amount: updated.paid_amount,
+            }
+          : prev
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      loadTransactions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao marcar como paga');
+    } finally {
+      setIsPaying(false);
+    }
+  }, [current, isPaying, loadTransactions]);
+
+  const handleSelectCategory = useCallback(
+    async (category: FinanceCategory) => {
+      setCategorySheetOpen(false);
+      if (!current || category.id === current.category_id) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setError(null);
+      const previous = current;
+      // Otimista: aplica já e desfaz se a API falhar
+      setCurrent({ ...current, category_id: category.id, category });
+      try {
+        await updateTransaction(current.id, { category_id: category.id });
+        loadTransactions();
+      } catch (err) {
+        setCurrent(previous);
+        setError(err instanceof Error ? err.message : 'Erro ao alterar categoria');
+      }
+    },
+    [current, loadTransactions]
+  );
+
+  const handleSelectSource = useCallback(
+    async (source: PaymentSource) => {
+      setAccountSheetOpen(false);
+      if (!current) return;
+      const unchanged =
+        source.kind === 'account'
+          ? source.id === current.account_id
+          : source.id === current.credit_card_id;
+      if (unchanged) return;
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setError(null);
+      const previous = current;
+
+      if (source.kind === 'account') {
+        const account = accounts.find((a) => a.id === source.id);
+        setCurrent({
+          ...current,
+          account_id: source.id,
+          credit_card_id: null,
+          account,
+        });
+      } else {
+        setCurrent({
+          ...current,
+          account_id: null,
+          credit_card_id: source.id,
+          account: undefined,
+        });
+      }
+
+      try {
+        await updateTransaction(
+          current.id,
+          source.kind === 'account'
+            ? { account_id: source.id, credit_card_id: null }
+            : { credit_card_id: source.id, account_id: null }
+        );
+        loadTransactions();
+      } catch (err) {
+        setCurrent(previous);
+        setError(err instanceof Error ? err.message : 'Erro ao alterar conta');
+      }
+    },
+    [current, accounts, loadTransactions]
+  );
+
+  const handleSaveNotes = useCallback(async () => {
+    if (!current || isSavingNotes) return;
+    const trimmed = notesDraft.trim();
+    if (trimmed === (current.notes ?? '')) {
+      setNotesSheetOpen(false);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(null);
+    setIsSavingNotes(true);
+    try {
+      await updateTransaction(current.id, { notes: trimmed });
+      setCurrent((prev) => (prev ? { ...prev, notes: trimmed || null } : prev));
+      setNotesSheetOpen(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      loadTransactions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar observações');
+    } finally {
+      setIsSavingNotes(false);
+    }
+  }, [current, isSavingNotes, notesDraft, loadTransactions]);
+
+  const handleSaveDate = useCallback(
+    async (date: Date) => {
+      if (!current) return;
+      const isoDate = date.toISOString().split('T')[0];
+      if (isoDate === current.due_date) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setError(null);
+      const previous = current;
+      setCurrent({ ...current, due_date: isoDate });
+      try {
+        await updateTransaction(current.id, { due_date: isoDate });
+        loadTransactions();
+      } catch (err) {
+        setCurrent(previous);
+        setError(err instanceof Error ? err.message : 'Erro ao alterar data');
+      }
+    },
+    [current, loadTransactions]
+  );
+
+  const openDateSheet = useCallback(() => {
+    if (!current) return;
+    // Meio-dia evita mudar de dia por fuso ao converter a data ISO
+    setDateDraft(new Date(`${current.due_date}T12:00:00`));
+    setDateSheetOpen(true);
+  }, [current]);
+
+  if (!current) return null;
+
+  const isIncome = current.type === 'RECEITA';
+  const isTransfer = current.type === 'TRANSFERENCIA';
+  const isPaid = current.status === 'PAGO';
+  const isPayable = !isTransfer && (current.status === 'PENDENTE' || current.status === 'VENCIDO');
+  // Regra do backend: transação paga não altera valor, conta, tipo ou data
+  const canEditMoneyFields = !isPaid && !isTransfer;
+
   const amountColor = isIncome ? colors.success : colors.text;
-  const categoryIconName = getCategoryIcon(transaction.category.icon);
+  const categoryIconName = getCategoryIcon(current.category.icon);
   const iconColor = isIncome ? colors.success : colors.textSecondary;
   const iconBgColor = isIncome
     ? (isDark ? colors.success + '20' : '#E6F7EF')
     : (isDark ? colors.textSecondary + '15' : '#F5F5F5');
 
-  const statusColor = getStatusColor(transaction.status);
-  const statusBgColor = getStatusBackgroundColor(transaction.status);
+  const statusColor = getStatusColor(current.status);
+  const statusBgColor = getStatusBackgroundColor(current.status);
+  const statusLabel =
+    isPaid && current.payment_date
+      ? `Pago em ${formatFullDate(current.payment_date)}`
+      : TRANSACTION_STATUS_LABELS[current.status];
+
+  const selectedCard = current.credit_card_id
+    ? creditCards.find((c) => c.id === current.credit_card_id)
+    : undefined;
+
+  const separator = (
+    <View style={[styles.rowSeparator, { backgroundColor: isDark ? '#374151' : '#e5e7eb' }]} />
+  );
 
   return (
     <Modal
@@ -218,138 +518,374 @@ export function TransactionDetailModal({
       <View
         style={[
           styles.modalContainer,
-          { backgroundColor: colors.background, paddingTop: insets.top },
+          {
+            backgroundColor: colors.background,
+            // pageSheet no iOS já abre abaixo da status bar; só o Android
+            // (fullscreen) precisa compensar o inset superior
+            paddingTop: Platform.OS === 'ios' ? 0 : insets.top,
+          },
         ]}
       >
-        {/* Header */}
+        {/* Header compacto no topo do sheet */}
         <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#374151' : '#e5e7eb' }]}>
           <View style={styles.headerLeft}>
             <View style={[styles.headerIcon, { backgroundColor: iconBgColor }]}>
-              <IconSymbol name={categoryIconName} size={24} color={iconColor} />
+              <IconSymbol name={categoryIconName} size={22} color={iconColor} />
             </View>
-            <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-              {transaction.description}
-            </Text>
+            <View style={styles.headerTextBlock}>
+              <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                {current.description}
+              </Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                {TRANSACTION_TYPE_LABELS[current.type]}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             onPress={onClose}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Fechar detalhes"
+            style={styles.closeButton}
           >
-            <IconSymbol name="xmark" size={24} color={colors.icon} />
+            <IconSymbol name="xmark" size={22} color={colors.icon} />
           </TouchableOpacity>
         </View>
 
         <ScrollView
           style={styles.content}
-          contentContainerStyle={styles.contentContainer}
+          contentContainerStyle={[
+            styles.contentContainer,
+            { paddingBottom: Math.max(insets.bottom, Spacing.lg) + Spacing.lg },
+          ]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Valor Section */}
+          {/* Valor animado + status */}
           <View style={styles.amountSection}>
             <Text style={[styles.amountValue, { color: amountColor }]}>
-              {isIncome ? '+ ' : ''}{formatCurrency(transaction.amount)}
+              {isIncome ? '+ ' : ''}{formatCurrency(animatedAmount)}
             </Text>
-            <View style={[styles.typeBadge, { backgroundColor: isIncome ? colors.successLight : colors.dangerLight }]}>
-              <Text style={[styles.typeBadgeText, { color: isIncome ? colors.success : colors.danger }]}>
-                {TRANSACTION_TYPE_LABELS[transaction.type]}
-              </Text>
-            </View>
-          </View>
-
-          {/* Status Section */}
-          <View style={styles.statusSection}>
             <View style={[styles.statusBadge, { backgroundColor: statusBgColor }]}>
+              {isPaid && (
+                <IconSymbol name="checkmark.circle.fill" size={14} color={statusColor} />
+              )}
               <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                {TRANSACTION_STATUS_LABELS[transaction.status]}
+                {statusLabel}
               </Text>
             </View>
           </View>
 
-          {/* Detalhes Card */}
+          {/* Ação principal: pagar */}
+          {isPayable && (
+            <TouchableOpacity
+              style={[styles.payButton, { backgroundColor: colors.primary }]}
+              onPress={handleMarkPaid}
+              disabled={isPaying}
+              accessibilityLabel="Marcar como paga"
+              activeOpacity={0.8}
+            >
+              {isPaying ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+              ) : (
+                <>
+                  <IconSymbol name="checkmark" size={18} color={colors.textOnPrimary} />
+                  <Text style={[styles.payButtonText, { color: colors.textOnPrimary }]}>
+                    Marcar como paga
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {error && (
+            <View style={[styles.errorBanner, { backgroundColor: colors.dangerLight }]}>
+              <IconSymbol name="exclamationmark.circle" size={16} color={colors.danger} />
+              <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+            </View>
+          )}
+
+          {/* Detalhes: lista agrupada única */}
           <View style={[styles.card, { backgroundColor: colors.card }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Detalhes</Text>
-
-            {/* Categoria */}
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Categoria</Text>
-              <View style={styles.detailValueRow}>
-                <View style={[styles.colorDot, { backgroundColor: transaction.category.color }]} />
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  {transaction.category.name}
-                </Text>
-              </View>
-            </View>
-
-            {/* Tipo */}
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Tipo</Text>
-              <Text style={[styles.detailValue, { color: colors.text }]}>
-                {TRANSACTION_TYPE_LABELS[transaction.type]}
+            {/* Categoria (editável, exceto em transferências) */}
+            <TouchableOpacity
+              style={styles.detailRow}
+              onPress={() => setCategorySheetOpen(true)}
+              disabled={typeCategories.length === 0}
+              accessibilityLabel="Alterar categoria"
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                Categoria
               </Text>
-            </View>
+              <View style={styles.detailValueRow}>
+                <View style={[styles.colorDot, { backgroundColor: current.category.color }]} />
+                <Text style={[styles.detailValue, { color: colors.text }]}>
+                  {current.category.name}
+                </Text>
+                {typeCategories.length > 0 && (
+                  <IconSymbol name="chevron.right" size={16} color={colors.icon} />
+                )}
+              </View>
+            </TouchableOpacity>
 
-            {/* Conta */}
-            <View style={styles.detailRow}>
+            {separator}
+
+            {/* Conta / cartão (editável enquanto não paga) */}
+            <TouchableOpacity
+              style={styles.detailRow}
+              onPress={() => setAccountSheetOpen(true)}
+              disabled={!canEditMoneyFields}
+              accessibilityLabel="Alterar conta ou cartão"
+              activeOpacity={0.6}
+            >
               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Conta</Text>
-              {transaction.account ? (
-                <View style={styles.detailValueRow}>
-                  <View style={[styles.colorDot, { backgroundColor: transaction.account.color }]} />
+              <View style={styles.detailValueRow}>
+                {current.account ? (
+                  <>
+                    <View style={[styles.colorDot, { backgroundColor: current.account.color }]} />
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {current.account.name} ({ACCOUNT_TYPE_LABELS[current.account.type]})
+                    </Text>
+                  </>
+                ) : selectedCard ? (
+                  <>
+                    <IconSymbol name="creditcard" size={14} color={colors.textSecondary} />
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {selectedCard.name}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={[styles.detailValue, { color: colors.textSecondary }]}>
+                    {canEditMoneyFields ? 'Escolher conta' : 'Sem conta vinculada'}
+                  </Text>
+                )}
+                {canEditMoneyFields && (
+                  <IconSymbol name="chevron.right" size={16} color={colors.icon} />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {separator}
+
+            {/* Data da transação (editável enquanto não paga) */}
+            <TouchableOpacity
+              style={styles.detailRow}
+              onPress={openDateSheet}
+              disabled={!canEditMoneyFields}
+              accessibilityLabel="Alterar data da transação"
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Data</Text>
+              <View style={styles.detailValueRow}>
+                <Text style={[styles.detailValue, { color: colors.text }]}>
+                  {formatFullDate(current.due_date)}
+                </Text>
+                {canEditMoneyFields && (
+                  <IconSymbol name="chevron.right" size={16} color={colors.icon} />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Parcela */}
+            {current.installment_number && current.total_installments && (
+              <>
+                {separator}
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                    Parcela
+                  </Text>
                   <Text style={[styles.detailValue, { color: colors.text }]}>
-                    {transaction.account.name} ({ACCOUNT_TYPE_LABELS[transaction.account.type]})
+                    {current.installment_number} de {current.total_installments}
                   </Text>
                 </View>
+              </>
+            )}
+          </View>
+
+          {/* Observações: toque abre o editor */}
+          <TouchableOpacity
+            style={[styles.card, { backgroundColor: colors.card }]}
+            onPress={() => {
+              setNotesDraft(current.notes ?? '');
+              setNotesSheetOpen(true);
+            }}
+            accessibilityLabel="Editar observações"
+            activeOpacity={0.6}
+          >
+            <View style={styles.notesHeader}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Observações</Text>
+              <IconSymbol name="pencil" size={16} color={colors.icon} />
+            </View>
+            <Text
+              style={[
+                styles.notesText,
+                { color: current.notes ? colors.text : colors.textSecondary },
+              ]}
+            >
+              {current.notes || 'Adicionar observações...'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Sheet: categoria */}
+        <BottomSheet
+          visible={categorySheetOpen}
+          title="Alterar categoria"
+          onClose={() => setCategorySheetOpen(false)}
+        >
+          <FlatList
+            data={typeCategories}
+            keyExtractor={(item) => item.id}
+            style={styles.sheetList}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.sheetItem}
+                onPress={() => handleSelectCategory(item)}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.colorDot, { backgroundColor: item.color }]} />
+                <Text style={[styles.sheetItemText, { color: colors.text }]}>{item.name}</Text>
+                {item.id === current.category_id && (
+                  <IconSymbol name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            )}
+            ItemSeparatorComponent={() => separator}
+          />
+        </BottomSheet>
+
+        {/* Sheet: conta / cartão */}
+        <BottomSheet
+          visible={accountSheetOpen}
+          title={isIncome ? 'Recebido em qual conta?' : 'Pago com qual conta ou cartão?'}
+          onClose={() => setAccountSheetOpen(false)}
+        >
+          <ScrollView style={styles.sheetList}>
+            {accounts.map((account, index) => (
+              <View key={account.id}>
+                {index > 0 && separator}
+                <TouchableOpacity
+                  style={styles.sheetItem}
+                  onPress={() => handleSelectSource({ kind: 'account', id: account.id })}
+                  activeOpacity={0.6}
+                >
+                  <View style={[styles.colorDot, { backgroundColor: account.color }]} />
+                  <Text style={[styles.sheetItemText, { color: colors.text }]}>
+                    {account.name} ({ACCOUNT_TYPE_LABELS[account.type]})
+                  </Text>
+                  {account.id === current.account_id && (
+                    <IconSymbol name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            ))}
+            {!isIncome &&
+              creditCards.map((card) => (
+                <View key={card.id}>
+                  {separator}
+                  <TouchableOpacity
+                    style={styles.sheetItem}
+                    onPress={() => handleSelectSource({ kind: 'card', id: card.id })}
+                    activeOpacity={0.6}
+                  >
+                    <IconSymbol name="creditcard" size={16} color={colors.textSecondary} />
+                    <Text style={[styles.sheetItemText, { color: colors.text }]}>
+                      {card.name}
+                    </Text>
+                    {card.id === current.credit_card_id && (
+                      <IconSymbol name="checkmark" size={20} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))}
+          </ScrollView>
+        </BottomSheet>
+
+        {/* Sheet: observações */}
+        <BottomSheet
+          visible={notesSheetOpen}
+          title="Observações"
+          onClose={() => setNotesSheetOpen(false)}
+        >
+          <View style={styles.notesSheetBody}>
+            <TextInput
+              style={[
+                styles.notesInput,
+                { backgroundColor: colors.card, color: colors.text },
+              ]}
+              value={notesDraft}
+              onChangeText={setNotesDraft}
+              placeholder="Escreva uma observação sobre essa transação..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              autoFocus
+              textAlignVertical="top"
+            />
+            <TouchableOpacity
+              style={[styles.sheetPrimaryButton, { backgroundColor: colors.primary }]}
+              onPress={handleSaveNotes}
+              disabled={isSavingNotes}
+              accessibilityLabel="Atualizar observações"
+              activeOpacity={0.8}
+            >
+              {isSavingNotes ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
               ) : (
-                <Text style={[styles.detailValue, { color: colors.textSecondary }]}>
-                  Sem conta vinculada
+                <Text style={[styles.sheetPrimaryButtonText, { color: colors.textOnPrimary }]}>
+                  Atualizar
                 </Text>
               )}
-            </View>
+            </TouchableOpacity>
           </View>
+        </BottomSheet>
 
-          {/* Datas Card */}
-          <View style={[styles.card, { backgroundColor: colors.card }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Datas</Text>
-
-            {/* Vencimento */}
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Vencimento</Text>
-              <Text style={[styles.detailValue, { color: colors.text }]}>
-                {formatFullDate(transaction.due_date)}
-              </Text>
-            </View>
-
-            {/* Pagamento */}
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Pagamento</Text>
-              <Text style={[styles.detailValue, { color: transaction.payment_date ? colors.text : colors.textSecondary }]}>
-                {transaction.payment_date ? formatFullDate(transaction.payment_date) : 'Não pago'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Parcelas Card (conditional) */}
-          {transaction.installment_number && transaction.total_installments && (
-            <View style={[styles.card, { backgroundColor: colors.card }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Parcelas</Text>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Parcela</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  {transaction.installment_number} de {transaction.total_installments}
+        {/* Data: sheet com spinner no iOS, diálogo nativo no Android */}
+        {Platform.OS === 'ios' ? (
+          <BottomSheet
+            visible={dateSheetOpen}
+            title="Data da transação"
+            onClose={() => setDateSheetOpen(false)}
+          >
+            <View style={styles.notesSheetBody}>
+              <DateTimePicker
+                value={dateDraft}
+                mode="date"
+                display="spinner"
+                locale="pt-BR"
+                onChange={(_event, date) => {
+                  if (date) setDateDraft(date);
+                }}
+              />
+              <TouchableOpacity
+                style={[styles.sheetPrimaryButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setDateSheetOpen(false);
+                  handleSaveDate(dateDraft);
+                }}
+                accessibilityLabel="Confirmar data"
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sheetPrimaryButtonText, { color: colors.textOnPrimary }]}>
+                  Confirmar
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
-          )}
-
-          {/* Observacoes Card (conditional) */}
-          {transaction.notes && (
-            <View style={[styles.card, { backgroundColor: colors.card }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Observações</Text>
-              <Text style={[styles.notesText, { color: colors.text }]}>
-                {transaction.notes}
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+          </BottomSheet>
+        ) : (
+          dateSheetOpen && (
+            <DateTimePicker
+              value={dateDraft}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setDateSheetOpen(false);
+                if (event.type === 'set' && date) {
+                  handleSaveDate(date);
+                }
+              }}
+            />
+          )
+        )}
       </View>
     </Modal>
   );
@@ -363,8 +899,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
+    paddingLeft: Spacing.lg,
+    paddingRight: Spacing.md,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
   },
   headerLeft: {
@@ -375,16 +912,25 @@ const styles = StyleSheet.create({
     marginRight: Spacing.md,
   },
   headerIcon: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerTextBlock: {
+    flex: 1,
+    gap: 2,
+  },
   headerTitle: {
     fontSize: FontSize.lg,
-    fontWeight: '600',
-    flex: 1,
+    fontWeight: FontWeight.semibold,
+  },
+  headerSubtitle: {
+    fontSize: FontSize.xs,
+  },
+  closeButton: {
+    padding: Spacing.sm,
   },
   content: {
     flex: 1,
@@ -395,34 +941,49 @@ const styles = StyleSheet.create({
   },
   amountSection: {
     alignItems: 'center',
-    paddingVertical: Spacing.xl,
+    paddingVertical: Spacing.lg,
     gap: Spacing.md,
   },
   amountValue: {
-    fontSize: 36,
-    fontWeight: '700',
+    fontSize: 44,
+    fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
   },
-  typeBadge: {
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
   },
-  typeBadgeText: {
+  statusBadgeText: {
     fontSize: FontSize.sm,
-    fontWeight: '600',
+    fontWeight: FontWeight.semibold,
   },
-  statusSection: {
+  payButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
   },
-  statusBadge: {
-    paddingHorizontal: Spacing.lg,
+  payButtonText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
   },
-  statusBadgeText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
+  errorText: {
+    flex: 1,
+    fontSize: FontSize.sm,
   },
   card: {
     padding: Spacing.lg,
@@ -431,13 +992,13 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: FontSize.md,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
+    fontWeight: FontWeight.semibold,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 28,
   },
   detailLabel: {
     fontSize: FontSize.sm,
@@ -450,17 +1011,97 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     fontSize: FontSize.sm,
-    fontWeight: '500',
+    fontWeight: FontWeight.medium,
     textAlign: 'right',
     flexShrink: 1,
+  },
+  rowSeparator: {
+    height: StyleSheet.hairlineWidth,
   },
   colorDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   notesText: {
     fontSize: FontSize.sm,
     lineHeight: 20,
+  },
+  // Bottom sheet
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  sheetPanel: {
+    borderTopLeftRadius: BorderRadius['2xl'],
+    borderTopRightRadius: BorderRadius['2xl'],
+    paddingTop: Spacing.sm,
+    maxHeight: '75%',
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: Spacing.sm,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  sheetTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+  },
+  sheetList: {
+    paddingHorizontal: Spacing.sm,
+  },
+  sheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md + 2,
+  },
+  sheetItemText: {
+    fontSize: FontSize.md,
+    flex: 1,
+  },
+  notesSheetBody: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    gap: Spacing.md,
+  },
+  notesInput: {
+    minHeight: 120,
+    maxHeight: 220,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
+    fontSize: FontSize.md,
+    lineHeight: 22,
+  },
+  sheetPrimaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  sheetPrimaryButtonText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
   },
 });

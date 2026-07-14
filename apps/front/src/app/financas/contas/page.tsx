@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -36,6 +37,7 @@ import {
   Eye,
   Gift,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { ContasPageSkeleton } from '@/components/organisms/skeletons/ContasPageSkeleton';
 import { cn } from '@/lib/utils';
@@ -56,6 +58,15 @@ import {
 import { BankSelect, BankLogo } from '@/components/molecules/BankSelect';
 import { ColorPicker } from '@/components/atoms/CategoryIcon';
 import { CurrencyInput } from '@/components/ui/currency-input';
+import type { FinanceCategory } from '@/types/finance';
+
+const ImportStatementDialog = dynamic(
+  () =>
+    import('@/components/organisms/finance/ImportStatementDialog').then((m) => ({
+      default: m.ImportStatementDialog,
+    })),
+  { ssr: false }
+);
 
 const getAccountIcon = (type: FinanceAccountType) => {
   switch (type) {
@@ -96,6 +107,11 @@ export default function ContasPage() {
     icon: 'Wallet',
     bank_id: '',
   });
+
+  // Import Statement Dialog state (importação contextual por conta)
+  const [importAccount, setImportAccount] = useState<AccountWithBank | null>(null);
+  const [importCategories, setImportCategories] = useState<FinanceCategory[]>([]);
+  const [preparingImportId, setPreparingImportId] = useState<string | null>(null);
 
   // Balance Adjustment Dialog state
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
@@ -157,11 +173,11 @@ export default function ContasPage() {
     loadData(true);
   });
 
-  const openNewDialog = () => {
+  const openNewDialog = (type: FinanceAccountType = 'CONTA_CORRENTE') => {
     setEditingAccount(null);
     setFormData({
       name: '',
-      type: 'CONTA_CORRENTE',
+      type,
       initial_balance: 0,
       color: '#64748b',
       icon: 'Wallet',
@@ -221,6 +237,24 @@ export default function ContasPage() {
     } catch (err) {
       toast.apiError(err);
     }
+  };
+
+  const openImportDialog = async (account: AccountWithBank) => {
+    if (!session?.access_token || preparingImportId) return;
+
+    // Categorias são necessárias para a revisão da importação; carrega uma vez
+    if (importCategories.length === 0) {
+      setPreparingImportId(account.id);
+      try {
+        setImportCategories(await financeApi.getCategories(session.access_token));
+      } catch (err) {
+        toast.apiError(err);
+        return;
+      } finally {
+        setPreparingImportId(null);
+      }
+    }
+    setImportAccount(account);
   };
 
   const openBalanceAdjustmentDialog = (account: AccountWithBank) => {
@@ -373,32 +407,54 @@ export default function ContasPage() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            {/* Visíveis em touch (sem hover) e via teclado (focus-within); reveladas no hover em desktop */}
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
               <button
+                type="button"
                 onClick={() => router.push(`/financas/transacoes?account_id=${account.id}`)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-blue-50 hover:text-blue-600"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm backdrop-blur transition-colors hover:bg-blue-50 hover:text-blue-600"
                 title="Ver transacoes"
+                aria-label={`Ver transacoes da conta ${account.name}`}
               >
                 <Eye className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
+                onClick={() => openImportDialog(account)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm backdrop-blur transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                title="Importar extrato"
+                aria-label={`Importar extrato para a conta ${account.name}`}
+              >
+                {preparingImportId === account.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={() => openBalanceAdjustmentDialog(account)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-purple-50 hover:text-purple-600"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm backdrop-blur transition-colors hover:bg-slate-100 hover:text-slate-800"
                 title="Reajuste de saldo"
+                aria-label={`Reajustar saldo da conta ${account.name}`}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
                 onClick={() => openEditDialog(account)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-slate-700"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-slate-800"
                 title="Editar"
+                aria-label={`Editar conta ${account.name}`}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
                 onClick={() => handleDelete(account)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-slate-500 shadow-sm backdrop-blur transition-colors hover:bg-red-50 hover:text-red-500"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm backdrop-blur transition-colors hover:bg-red-50 hover:text-red-600"
                 title="Excluir"
+                aria-label={`Excluir conta ${account.name}`}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -502,7 +558,7 @@ export default function ContasPage() {
               </div>
               <div className="text-right">
                 <p className="text-xs text-emerald-600">{benefitAccounts.length}</p>
-                <p className="text-[10px] text-emerald-600">cartao{benefitAccounts.length !== 1 ? 'es' : ''}</p>
+                <p className="text-[10px] text-emerald-600">{benefitAccounts.length === 1 ? 'cartao' : 'cartoes'}</p>
               </div>
             </div>
           </div>
@@ -519,7 +575,7 @@ export default function ContasPage() {
               <Button
                 size="sm"
                 className="mt-4 h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800"
-                onClick={openNewDialog}
+                onClick={() => openNewDialog()}
               >
                 Adicionar conta
               </Button>
@@ -538,6 +594,14 @@ export default function ContasPage() {
                 <h2 className="text-sm font-medium text-slate-900">Contas Bancarias</h2>
                 <span className="text-xs text-slate-400">({regularAccounts.length})</span>
               </div>
+              <Button
+                size="sm"
+                className="h-8 bg-slate-900 text-sm font-medium hover:bg-slate-800"
+                onClick={() => openNewDialog()}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Nova conta
+              </Button>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {regularAccounts.map((account) => (
@@ -558,6 +622,15 @@ export default function ContasPage() {
                 <h2 className="text-sm font-medium text-slate-900">Cartoes de Beneficios</h2>
                 <span className="text-xs text-emerald-600">({benefitAccounts.length})</span>
               </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-sm font-medium"
+                onClick={() => openNewDialog('BENEFICIO')}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Adicionar beneficio
+              </Button>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {benefitAccounts.map((account) => (
@@ -706,11 +779,11 @@ export default function ContasPage() {
 
           <div className="space-y-4 py-2">
             {/* Saldo atual em destaque */}
-            <div className="rounded-lg bg-purple-50 p-4">
-              <p className="text-xs font-medium text-purple-600 uppercase tracking-wider mb-1">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
                 Saldo atual
               </p>
-              <p className="text-2xl font-bold text-purple-700 tabular-nums">
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">
                 {formatCurrency(adjustingAccount?.current_balance || 0)}
               </p>
             </div>
@@ -760,13 +833,13 @@ export default function ContasPage() {
                 className={cn(
                   'w-full rounded-lg border-2 p-3 text-left transition-all',
                   adjustmentType === 'transaction'
-                    ? 'border-purple-500 bg-purple-50'
+                    ? 'border-slate-900 bg-slate-50'
                     : 'border-slate-200 hover:border-slate-300'
                 )}
               >
                 <p className={cn(
                   'text-sm font-medium',
-                  adjustmentType === 'transaction' ? 'text-purple-700' : 'text-slate-700'
+                  adjustmentType === 'transaction' ? 'text-slate-900' : 'text-slate-700'
                 )}>
                   Criar transacao de ajuste
                 </p>
@@ -782,13 +855,13 @@ export default function ContasPage() {
                 className={cn(
                   'w-full rounded-lg border-2 p-3 text-left transition-all',
                   adjustmentType === 'initial_balance'
-                    ? 'border-purple-500 bg-purple-50'
+                    ? 'border-slate-900 bg-slate-50'
                     : 'border-slate-200 hover:border-slate-300'
                 )}
               >
                 <p className={cn(
                   'text-sm font-medium',
-                  adjustmentType === 'initial_balance' ? 'text-purple-700' : 'text-slate-700'
+                  adjustmentType === 'initial_balance' ? 'text-slate-900' : 'text-slate-700'
                 )}>
                   Modificar saldo inicial
                 </p>
@@ -834,7 +907,7 @@ export default function ContasPage() {
               size="sm"
               onClick={handleSaveAdjustment}
               disabled={savingAdjustment || newBalance === adjustingAccount?.current_balance}
-              className="h-8 bg-purple-600 hover:bg-purple-700"
+              className="h-8 bg-slate-900 hover:bg-slate-800"
             >
               {savingAdjustment && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Salvar
@@ -842,6 +915,21 @@ export default function ContasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Import Statement Dialog (destino travado na conta do card) */}
+      {importAccount && (
+        <ImportStatementDialog
+          open
+          onOpenChange={(value) => {
+            if (!value) setImportAccount(null);
+          }}
+          accounts={accounts}
+          creditCards={[]}
+          categories={importCategories}
+          defaultAccountId={importAccount.id}
+          onImported={() => loadData(true)}
+        />
+      )}
 
       {ConfirmDialog}
     </PageShell>

@@ -8,6 +8,12 @@ import type { StatementLineKind } from './statement-import-service.js';
  * Este service casa essas pernas por valor + janela de datas, usando os sinais
  * da IA (line_kind, conta contraparte sugerida) como bonus de confianca.
  * Nao ha chamada de LLM aqui: funcao pura e testavel.
+ *
+ * IMPORTANTE: um par so e formado quando a IA identificou pelo menos uma das
+ * pernas como transferencia entre contas do MESMO titular (line_kind
+ * TRANSFERENCIA_INTERNA ou conta contraparte sugerida). Valor igual + data
+ * proxima sozinhos NAO bastam: PIX para terceiros e coincidencias de valor
+ * nao devem virar transferencia automatica — isso desajustava os saldos.
  */
 
 export interface MatchTransactionInput {
@@ -50,7 +56,7 @@ export interface MatchTransfersResult {
 const DATE_WINDOW_DAYS = 3;
 /** Tolerancia de centavos na comparacao de valores */
 const AMOUNT_EPS = 0.005;
-/** Score minimo para formar par (valor igual + 3 dias de diferenca, sem outros sinais, NAO pareia) */
+/** Score minimo para formar par (alem do sinal obrigatorio de transferencia interna) */
 const MIN_SCORE = 3;
 /** Score a partir do qual o par e considerado de alta confianca */
 const HIGH_CONFIDENCE_SCORE = 6;
@@ -134,6 +140,17 @@ export function matchTransfers(statements: MatchStatementInput[]): MatchTransfer
       if (Math.abs(out.tx.amount - inn.tx.amount) >= AMOUNT_EPS) continue;
       const dateDiff = dayDiff(out.tx.due_date, inn.tx.due_date);
       if (dateDiff > DATE_WINDOW_DAYS) continue;
+
+      // Sinal obrigatorio: a IA identificou pelo menos uma perna como
+      // transferencia entre contas do proprio titular. Sem isso, valor igual
+      // + data proxima e tratado como coincidencia (ex: PIX para terceiros).
+      const hasInternalSignal =
+        out.tx.line_kind === 'TRANSFERENCIA_INTERNA' ||
+        inn.tx.line_kind === 'TRANSFERENCIA_INTERNA' ||
+        out.tx.suggested_transfer_account_id === inn.account_id ||
+        inn.tx.suggested_transfer_account_id === out.account_id;
+      if (!hasInternalSignal) continue;
+
       const score = scoreEdge(out, inn, dateDiff);
       if (score < MIN_SCORE) continue;
       edges.push({ out, in: inn, score, dateDiff });

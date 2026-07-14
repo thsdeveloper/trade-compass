@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AIButton } from '@/components/ui/ai-button';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +40,7 @@ import {
   Loader2,
   Sparkles,
   Upload,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -68,6 +70,10 @@ interface ImportStatementDialogProps {
   creditCards: FinanceCreditCard[];
   categories: FinanceCategory[];
   onImported: () => void;
+  /** Trava o destino em uma conta específica (fluxo contextual da tela de Contas) */
+  defaultAccountId?: string;
+  /** Trava o destino em um cartão específico (fluxo contextual da tela de Cartões) */
+  defaultCreditCardId?: string;
 }
 
 interface ReviewRow extends ImportPreviewTransaction {
@@ -95,12 +101,18 @@ export function ImportStatementDialog({
   creditCards,
   categories,
   onImported,
+  defaultAccountId,
+  defaultCreditCardId,
 }: ImportStatementDialogProps) {
   const { session } = useAuth();
 
+  const lockedTarget = Boolean(defaultAccountId || defaultCreditCardId);
+  const initialTargetType: TargetType = defaultCreditCardId ? 'credit_card' : 'account';
+  const initialTargetId = defaultAccountId ?? defaultCreditCardId ?? '';
+
   const [step, setStep] = useState<'upload' | 'review'>('upload');
-  const [targetType, setTargetType] = useState<TargetType>('account');
-  const [targetId, setTargetId] = useState<string>('');
+  const [targetType, setTargetType] = useState<TargetType>(initialTargetType);
+  const [targetId, setTargetId] = useState<string>(initialTargetId);
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -143,8 +155,8 @@ export function ImportStatementDialog({
 
   const resetState = () => {
     setStep('upload');
-    setTargetType('account');
-    setTargetId('');
+    setTargetType(initialTargetType);
+    setTargetId(initialTargetId);
     setFile(null);
     setParsing(false);
     setImporting(false);
@@ -333,53 +345,73 @@ export function ImportStatementDialog({
         {step === 'upload' && (
           <div className="space-y-4">
             {/* Destino */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">
-                  Tipo de destino <span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={targetType}
-                  onValueChange={(value) => {
-                    setTargetType(value as TargetType);
-                    setTargetId('');
-                  }}
-                >
-                  <SelectTrigger className="h-9 text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="account">Conta bancária</SelectItem>
-                    <SelectItem value="credit_card">Cartão de crédito</SelectItem>
-                  </SelectContent>
-                </Select>
+            {lockedTarget ? (
+              <div className="flex items-center gap-2.5 rounded-lg border bg-muted/30 p-3">
+                {targetType === 'account' ? (
+                  <Wallet className="h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <CreditCard className="h-4 w-4 shrink-0 text-primary" />
+                )}
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Destino da importação
+                  </p>
+                  <p className="truncate text-sm font-medium">
+                    {(targetType === 'account'
+                      ? accounts.find((a) => a.id === targetId)?.name
+                      : creditCards.find((c) => c.id === targetId)?.name) || 'Destino'}
+                  </p>
+                </div>
               </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">
+                    Tipo de destino <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={targetType}
+                    onValueChange={(value) => {
+                      setTargetType(value as TargetType);
+                      setTargetId('');
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-[13px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="account">Conta bancária</SelectItem>
+                      <SelectItem value="credit_card">Cartão de crédito</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">
-                  {targetType === 'account' ? 'Conta' : 'Cartão'}{' '}
-                  <span className="text-red-500">*</span>
-                </Label>
-                <Select value={targetId} onValueChange={setTargetId}>
-                  <SelectTrigger className="h-9 text-[13px]">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {targetType === 'account'
-                      ? activeAccounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name}
-                          </SelectItem>
-                        ))
-                      : activeCards.map((card) => (
-                          <SelectItem key={card.id} value={card.id}>
-                            {card.name}
-                          </SelectItem>
-                        ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">
+                    {targetType === 'account' ? 'Conta' : 'Cartão'}{' '}
+                    <span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={targetId} onValueChange={setTargetId}>
+                    <SelectTrigger className="h-9 text-[13px]">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {targetType === 'account'
+                        ? activeAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.name}
+                            </SelectItem>
+                          ))
+                        : activeCards.map((card) => (
+                            <SelectItem key={card.id} value={card.id}>
+                              {card.name}
+                            </SelectItem>
+                          ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Upload */}
             <div className="space-y-2">
@@ -446,23 +478,13 @@ export function ImportStatementDialog({
               >
                 Cancelar
               </Button>
-              <Button
-                type="button"
+              <AIButton
                 onClick={handleParse}
-                disabled={!file || !targetId || parsing}
+                disabled={!file || !targetId}
+                loading={parsing}
               >
-                {parsing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analisando com IA...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Analisar com IA
-                  </>
-                )}
-              </Button>
+                {parsing ? 'Analisando com IA...' : 'Analisar com IA'}
+              </AIButton>
             </DialogFooter>
           </div>
         )}

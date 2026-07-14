@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -9,8 +9,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { AIButton } from '@/components/ui/ai-button';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -21,26 +31,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
-  ArrowRight,
   CreditCard,
   FileText,
+  Filter,
   Image as ImageIcon,
   Info,
   Loader2,
+  Scale,
   Sparkles,
-  Unlink,
   Upload,
+  Wand2,
   X,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,7 +53,6 @@ import {
   MAX_FILE_SIZE,
   getFileKind,
   readStatementContent,
-  formatStatementDate,
 } from '@/lib/statement-file-utils';
 import { toast } from '@/lib/toast';
 import type {
@@ -59,13 +61,23 @@ import type {
   ConfirmImportItem,
   ConfirmMatchedTransfer,
   ConfirmMultiGroup,
-  DetectedDocumentKind,
-  ImportPreviewTransaction,
   MatchStatementInput,
-  StatementFileKind,
   StatementLineKind,
 } from '@/types/finance';
 import { formatCurrency } from '@/types/finance';
+import {
+  KIND_LABELS,
+  MAX_FILES,
+  PARSE_CONCURRENCY,
+  guessAccountFromFilename,
+  runWithConcurrency,
+  similarityKeyFor,
+  type ImportFileEntry,
+  type MultiReviewRow,
+  type ReviewPair,
+  type RowRef,
+} from './import-multi/shared';
+import { ReviewList, type ReviewListItem } from './import-multi/ReviewList';
 
 interface ImportMultiStatementDialogProps {
   open: boolean;
@@ -75,102 +87,16 @@ interface ImportMultiStatementDialogProps {
   onImported: () => void;
 }
 
-type FileEntryStatus = 'detecting' | 'detected' | 'error';
-
-interface MultiReviewRow extends ImportPreviewTransaction {
-  selected: boolean;
-  /** Classificação editável (a IA sugere, o usuário pode corrigir) */
-  kind: StatementLineKind;
-  /** Conta contraparte para transferências internas não-pareadas */
-  transferAccountId: string | null;
-  /** Se != null, a linha está representada na seção de pares de transferência */
-  pairId: string | null;
-  /** Duplicata dentro do próprio lote (mesmo arquivo 2x / períodos sobrepostos) */
-  intraBatchDuplicate: boolean;
-}
-
-interface ImportFileEntry {
-  id: string;
-  file: File;
-  kind: StatementFileKind;
-  status: FileEntryStatus;
-  documentKind: DetectedDocumentKind | null;
-  accountId: string | null;
-  detectedBankName: string | null;
-  error: string | null;
-  rows: MultiReviewRow[];
-}
-
-interface RowRef {
-  fileId: string;
-  rowIndex: number;
-}
-
-interface ReviewPair {
-  id: string;
-  /** Perna DESPESA (conta origem) */
-  outRef: RowRef;
-  /** Perna RECEITA (conta destino) */
-  inRef: RowRef;
-  selected: boolean;
-  categoryId: string | null;
-  confidence: 'HIGH' | 'MEDIUM';
-}
-
-const KIND_LABELS: Record<StatementLineKind, string> = {
-  NORMAL: 'Normal',
-  TRANSFERENCIA_INTERNA: 'Transferência',
-  PAGAMENTO_FATURA: 'Pgto fatura',
-};
-
-const MAX_FILES = 6;
-const PARSE_CONCURRENCY = 3;
-
-/** Executa workers com limite de concorrência preservando a ordem dos resultados */
-async function runWithConcurrency<T, R>(
-  items: T[],
-  worker: (item: T, index: number) => Promise<R>,
-  limit: number
-): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
-  let next = 0;
-
-  async function runner() {
-    while (next < items.length) {
-      const index = next++;
-      try {
-        results[index] = { status: 'fulfilled', value: await worker(items[index], index) };
-      } catch (reason) {
-        results[index] = { status: 'rejected', reason };
-      }
-    }
+/** Linha exige ação do usuário antes de importar (ou é duplicata a revisar) */
+function isRowPending(row: MultiReviewRow): boolean {
+  if (row.pairId || row.kind === 'PAGAMENTO_FATURA') return false;
+  if (row.selected) {
+    return (
+      !row.category_id ||
+      (row.kind === 'TRANSFERENCIA_INTERNA' && !row.transferAccountId)
+    );
   }
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => runner())
-  );
-  return results;
-}
-
-/** Fallback quando a IA não identifica: tenta casar o nome do arquivo com conta/banco */
-function guessAccountFromFilename(filename: string, accounts: AccountWithBank[]): string | null {
-  const normalized = filename
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-  for (const account of accounts) {
-    const names = [account.name, account.bank?.name].filter(Boolean) as string[];
-    for (const name of names) {
-      const normalizedName = name
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '');
-      if (normalizedName.length >= 3 && normalized.includes(normalizedName)) {
-        return account.id;
-      }
-    }
-  }
-  return null;
+  return row.possible_duplicate || row.intraBatchDuplicate;
 }
 
 export function ImportMultiStatementDialog({
@@ -188,11 +114,50 @@ export function ImportMultiStatementDialog({
   const [analyzing, setAnalyzing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [onlyPending, setOnlyPending] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'close' | 'back' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Refs sempre em sincronia com o estado: permitem callbacks estáveis
+  // (useCallback sem dependências) para que as linhas memoizadas da lista
+  // virtualizada não re-renderizem quando os handlers mudariam de identidade.
+  const entriesRef = useRef<ImportFileEntry[]>(entries);
+  const pairsRef = useRef<ReviewPair[]>(pairs);
+
+  const commitEntries = useCallback(
+    (updater: (prev: ImportFileEntry[]) => ImportFileEntry[]) => {
+      entriesRef.current = updater(entriesRef.current);
+      setEntries(entriesRef.current);
+    },
+    []
+  );
+  const commitPairs = useCallback(
+    (updater: (prev: ReviewPair[]) => ReviewPair[]) => {
+      pairsRef.current = updater(pairsRef.current);
+      setPairs(pairsRef.current);
+    },
+    []
+  );
+
   const activeAccounts = useMemo(() => accounts.filter((a) => a.is_active), [accounts]);
-  const accountName = (id: string | null) =>
-    activeAccounts.find((a) => a.id === id)?.name || 'Conta';
+  const accountNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const account of accounts) map.set(account.id, account.name);
+    return map;
+  }, [accounts]);
+  const accountName = useCallback(
+    (id: string | null) => (id && accountNameById.get(id)) || 'Conta',
+    [accountNameById]
+  );
+
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.is_active && c.type === 'DESPESA'),
+    [categories]
+  );
+  const incomeCategories = useMemo(
+    () => categories.filter((c) => c.is_active && c.type === 'RECEITA'),
+    [categories]
+  );
 
   // ===== Derivados do passo files =====
   const invoiceEntries = useMemo(
@@ -248,41 +213,204 @@ export function ImportMultiStatementDialog({
     (r) => r.kind === 'TRANSFERENCIA_INTERNA' && !r.transferAccountId
   ).length;
 
-  const resetState = () => {
+  const pendingExpenseCount = useMemo(
+    () => unpairedSelectedRows.filter((r) => r.type === 'DESPESA' && !r.category_id).length,
+    [unpairedSelectedRows]
+  );
+  const pendingIncomeCount = useMemo(
+    () => unpairedSelectedRows.filter((r) => r.type === 'RECEITA' && !r.category_id).length,
+    [unpairedSelectedRows]
+  );
+  const pendingCount = useMemo(() => {
+    let count = pairs.filter((p) => p.selected && !p.categoryId).length;
+    for (const entry of entries) {
+      for (const row of entry.rows) if (isRowPending(row)) count++;
+    }
+    return count;
+  }, [entries, pairs]);
+
+  // Seleção global (barra de ações em massa)
+  const selectionStats = useMemo(() => {
+    let selectable = 0;
+    let selected = 0;
+    for (const entry of entries) {
+      for (const row of entry.rows) {
+        if (row.pairId || row.kind === 'PAGAMENTO_FATURA') continue;
+        if (!row.possible_duplicate && !row.intraBatchDuplicate) selectable++;
+        if (row.selected) selected++;
+      }
+    }
+    selectable += pairs.length;
+    selected += selectedPairs.length;
+    return { selectable, selected };
+  }, [entries, pairs, selectedPairs]);
+
+  // ===== Conciliação: saldo projetado por conta =====
+  const balanceProjections = useMemo(() => {
+    const deltas = new Map<string, number>();
+    const add = (accountId: string, value: number) =>
+      deltas.set(accountId, (deltas.get(accountId) ?? 0) + value);
+
+    for (const entry of entries) {
+      if (!entry.accountId) continue;
+      for (const row of entry.rows) {
+        if (!row.selected || row.pairId) continue;
+        const signed = row.type === 'RECEITA' ? row.amount : -row.amount;
+        add(entry.accountId, signed);
+        if (row.kind === 'TRANSFERENCIA_INTERNA' && row.transferAccountId) {
+          add(row.transferAccountId, -signed);
+        }
+      }
+    }
+    for (const pair of pairs) {
+      if (!pair.selected) continue;
+      const outAccountId = entries.find((e) => e.id === pair.outRef.fileId)?.accountId;
+      const inAccountId = entries.find((e) => e.id === pair.inRef.fileId)?.accountId;
+      const amount =
+        entries.find((e) => e.id === pair.outRef.fileId)?.rows[pair.outRef.rowIndex]
+          ?.amount ?? 0;
+      if (outAccountId) add(outAccountId, -amount);
+      if (inAccountId) add(inAccountId, amount);
+    }
+
+    return [...deltas.entries()]
+      .map(([accountId, delta]) => {
+        const account = accounts.find((a) => a.id === accountId);
+        if (!account) return null;
+        return {
+          accountId,
+          name: account.name,
+          current: account.current_balance,
+          delta,
+          projected: account.current_balance + delta,
+        };
+      })
+      .filter(Boolean) as {
+      accountId: string;
+      name: string;
+      current: number;
+      delta: number;
+      projected: number;
+    }[];
+  }, [entries, pairs, accounts]);
+
+  // ===== Itens da lista virtualizada =====
+  const listItems = useMemo(() => {
+    const items: ReviewListItem[] = [];
+
+    const visiblePairs = onlyPending
+      ? pairs.filter((p) => p.selected && !p.categoryId)
+      : pairs;
+    if (visiblePairs.length > 0) {
+      items.push({ type: 'pairs-header', count: visiblePairs.length });
+      for (const pair of visiblePairs) {
+        const outEntry = entries.find((e) => e.id === pair.outRef.fileId);
+        const inEntry = entries.find((e) => e.id === pair.inRef.fileId);
+        const outRow = outEntry?.rows[pair.outRef.rowIndex];
+        const inRow = inEntry?.rows[pair.inRef.rowIndex];
+        if (!outEntry || !inEntry || !outRow || !inRow) continue;
+        items.push({
+          type: 'pair',
+          pair,
+          outRow,
+          inRow,
+          outAccountName: accountName(outEntry.accountId),
+          inAccountName: accountName(inEntry.accountId),
+          outFileName: outEntry.file.name,
+          inFileName: inEntry.file.name,
+        });
+      }
+    }
+
+    for (const entry of entries) {
+      const visible: { row: MultiReviewRow; index: number }[] = [];
+      let selectableCount = 0;
+      let selectedCount = 0;
+      entry.rows.forEach((row, index) => {
+        if (row.pairId) return;
+        if (onlyPending && !isRowPending(row)) return;
+        visible.push({ row, index });
+        if (row.kind !== 'PAGAMENTO_FATURA') {
+          if (!row.possible_duplicate && !row.intraBatchDuplicate) selectableCount++;
+          if (row.selected) selectedCount++;
+        }
+      });
+      if (visible.length === 0) continue;
+      items.push({
+        type: 'file-header',
+        fileId: entry.id,
+        accountName: accountName(entry.accountId),
+        fileName: entry.file.name,
+        visibleCount: visible.length,
+        selectableCount,
+        selectedCount,
+      });
+      for (const { row, index } of visible) {
+        items.push({
+          type: 'row',
+          fileId: entry.id,
+          accountId: entry.accountId,
+          rowIndex: index,
+          row,
+        });
+      }
+    }
+    return items;
+  }, [entries, pairs, onlyPending, accountName]);
+
+  // ===== Ciclo de vida do modal =====
+
+  const resetState = useCallback(() => {
     setStep('files');
-    setEntries([]);
-    setPairs([]);
+    commitEntries(() => []);
+    commitPairs(() => []);
     setAnalyzing(false);
     setImporting(false);
     setError(null);
+    setOnlyPending(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [commitEntries, commitPairs]);
+
+  const closeNow = () => {
+    resetState();
+    onOpenChange(false);
+  };
+
+  /** Fechar só é permitido mediante confirmação quando há trabalho em andamento */
+  const requestClose = () => {
+    if (analyzing || importing) return;
+    if (entriesRef.current.length > 0) setConfirmAction('close');
+    else closeNow();
   };
 
   const handleOpenChange = (value: boolean) => {
-    if (!value) resetState();
-    onOpenChange(value);
+    if (value) onOpenChange(true);
+    else requestClose();
   };
 
-  const updateEntry = (id: string, updates: Partial<ImportFileEntry>) => {
-    setEntries((prev) =>
-      prev.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry))
-    );
+  const goBackToFiles = () => {
+    setStep('files');
+    commitPairs(() => []);
+    commitEntries((prev) => prev.map((entry) => ({ ...entry, rows: [] })));
+    setError(null);
+    setOnlyPending(false);
   };
 
-  const updateRowByRef = (ref: RowRef, updates: Partial<MultiReviewRow>) => {
-    setEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === ref.fileId
-          ? {
-              ...entry,
-              rows: entry.rows.map((row, i) =>
-                i === ref.rowIndex ? { ...row, ...updates } : row
-              ),
-            }
-          : entry
-      )
-    );
+  const handleConfirmAction = () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action === 'close') closeNow();
+    else if (action === 'back') goBackToFiles();
   };
+
+  const updateEntry = useCallback(
+    (id: string, updates: Partial<ImportFileEntry>) => {
+      commitEntries((prev) =>
+        prev.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry))
+      );
+    },
+    [commitEntries]
+  );
 
   // ===== Passo files: seleção + detecção =====
 
@@ -353,7 +481,7 @@ export function ImportMultiStatementDialog({
     }
 
     if (newEntries.length > 0) {
-      setEntries((prev) => [...prev, ...newEntries]);
+      commitEntries((prev) => [...prev, ...newEntries]);
       // Detecção em paralelo com concorrência limitada
       void runWithConcurrency(newEntries, (entry) => detectEntry(entry), PARSE_CONCURRENCY);
     }
@@ -361,7 +489,7 @@ export function ImportMultiStatementDialog({
   };
 
   const handleRemoveEntry = (id: string) => {
-    setEntries((prev) => prev.filter((entry) => entry.id !== id));
+    commitEntries((prev) => prev.filter((entry) => entry.id !== id));
     setError(null);
   };
 
@@ -414,6 +542,7 @@ export function ImportMultiStatementDialog({
             transferAccountId: tx.suggested_transfer_account_id,
             pairId: null,
             intraBatchDuplicate: false,
+            simKey: similarityKeyFor(tx.type, tx.description),
           }))
         );
       });
@@ -493,10 +622,10 @@ export function ImportMultiStatementDialog({
         });
       }
 
-      setEntries((prev) =>
+      commitEntries((prev) =>
         prev.map((entry) => ({ ...entry, rows: parsedRows.get(entry.id) ?? [] }))
       );
-      setPairs(reviewPairs);
+      commitPairs(() => reviewPairs);
       setStep('review');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao analisar os extratos');
@@ -505,37 +634,279 @@ export function ImportMultiStatementDialog({
     }
   };
 
+  // ===== Review: edição de linhas (callbacks estáveis p/ lista virtualizada) =====
+
+  const onRowSelectedChange = useCallback(
+    (fileId: string, rowIndex: number, selected: boolean) => {
+      commitEntries((prev) =>
+        prev.map((entry) =>
+          entry.id === fileId
+            ? {
+                ...entry,
+                rows: entry.rows.map((row, i) =>
+                  i === rowIndex ? { ...row, selected } : row
+                ),
+              }
+            : entry
+        )
+      );
+    },
+    [commitEntries]
+  );
+
+  const onRowKindChange = useCallback(
+    (fileId: string, rowIndex: number, kind: StatementLineKind) => {
+      const sourceEntry = entriesRef.current.find((e) => e.id === fileId);
+      const source = sourceEntry?.rows[rowIndex];
+      if (!sourceEntry || !source) return;
+
+      let propagated = 0;
+      commitEntries((prev) =>
+        prev.map((entry) => ({
+          ...entry,
+          rows: entry.rows.map((row, i) => {
+            const isSource = entry.id === fileId && i === rowIndex;
+            if (isSource) {
+              return {
+                ...row,
+                kind,
+                kindEdited: true,
+                selected: kind === 'PAGAMENTO_FATURA' ? false : row.selected,
+              };
+            }
+            // Propaga para transações semelhantes ainda não editadas manualmente
+            if (
+              source.simKey &&
+              row.simKey === source.simKey &&
+              !row.pairId &&
+              !row.kindEdited &&
+              row.kind !== kind
+            ) {
+              propagated++;
+              return {
+                ...row,
+                kind,
+                selected: kind === 'PAGAMENTO_FATURA' ? false : row.selected,
+                // Contraparte só é reaproveitável entre extratos da mesma conta
+                transferAccountId:
+                  kind === 'TRANSFERENCIA_INTERNA' &&
+                  !row.transferAccountId &&
+                  entry.accountId === sourceEntry.accountId
+                    ? source.transferAccountId
+                    : row.transferAccountId,
+              };
+            }
+            return row;
+          }),
+        }))
+      );
+      if (propagated > 0) {
+        toast.info(
+          `Tipo "${KIND_LABELS[kind]}" aplicado a mais ${propagated} transação(ões) semelhante(s)`
+        );
+      }
+    },
+    [commitEntries]
+  );
+
+  const onRowCategoryChange = useCallback(
+    (fileId: string, rowIndex: number, categoryId: string) => {
+      const source = entriesRef.current.find((e) => e.id === fileId)?.rows[rowIndex];
+      if (!source) return;
+
+      let propagated = 0;
+      commitEntries((prev) =>
+        prev.map((entry) => ({
+          ...entry,
+          rows: entry.rows.map((row, i) => {
+            if (entry.id === fileId && i === rowIndex) {
+              return { ...row, category_id: categoryId, categoryEdited: true };
+            }
+            // Preenche apenas semelhantes ainda sem categoria (nunca sobrescreve)
+            if (
+              source.simKey &&
+              row.simKey === source.simKey &&
+              !row.pairId &&
+              !row.category_id &&
+              !row.categoryEdited
+            ) {
+              propagated++;
+              return { ...row, category_id: categoryId };
+            }
+            return row;
+          }),
+        }))
+      );
+      if (propagated > 0) {
+        toast.info(
+          `Categoria aplicada a mais ${propagated} transação(ões) semelhante(s) sem categoria`
+        );
+      }
+    },
+    [commitEntries]
+  );
+
+  const onRowTransferAccountChange = useCallback(
+    (fileId: string, rowIndex: number, accountId: string) => {
+      const sourceEntry = entriesRef.current.find((e) => e.id === fileId);
+      const source = sourceEntry?.rows[rowIndex];
+      if (!sourceEntry || !source) return;
+
+      let propagated = 0;
+      commitEntries((prev) =>
+        prev.map((entry) => ({
+          ...entry,
+          rows: entry.rows.map((row, i) => {
+            if (entry.id === fileId && i === rowIndex) {
+              return { ...row, transferAccountId: accountId };
+            }
+            if (
+              source.simKey &&
+              row.simKey === source.simKey &&
+              !row.pairId &&
+              row.kind === 'TRANSFERENCIA_INTERNA' &&
+              !row.transferAccountId &&
+              entry.accountId === sourceEntry.accountId
+            ) {
+              propagated++;
+              return { ...row, transferAccountId: accountId };
+            }
+            return row;
+          }),
+        }))
+      );
+      if (propagated > 0) {
+        toast.info(
+          `Conta de contrapartida aplicada a mais ${propagated} transferência(s) semelhante(s)`
+        );
+      }
+    },
+    [commitEntries]
+  );
+
+  const onToggleFileRows = useCallback(
+    (fileId: string, selected: boolean) => {
+      commitEntries((prev) =>
+        prev.map((entry) =>
+          entry.id === fileId
+            ? {
+                ...entry,
+                rows: entry.rows.map((row) => {
+                  if (row.pairId || row.kind === 'PAGAMENTO_FATURA') return row;
+                  // Duplicatas só entram na seleção individualmente
+                  if (selected && (row.possible_duplicate || row.intraBatchDuplicate)) {
+                    return row;
+                  }
+                  return row.selected === selected ? row : { ...row, selected };
+                }),
+              }
+            : entry
+        )
+      );
+    },
+    [commitEntries]
+  );
+
+  const handleToggleAll = (selected: boolean) => {
+    commitEntries((prev) =>
+      prev.map((entry) => ({
+        ...entry,
+        rows: entry.rows.map((row) => {
+          if (row.pairId || row.kind === 'PAGAMENTO_FATURA') return row;
+          if (selected && (row.possible_duplicate || row.intraBatchDuplicate)) return row;
+          return row.selected === selected ? row : { ...row, selected };
+        }),
+      }))
+    );
+    commitPairs((prev) => prev.map((p) => (p.selected === selected ? p : { ...p, selected })));
+  };
+
+  const applyCategoryToPending = (type: 'RECEITA' | 'DESPESA', categoryId: string) => {
+    let count = 0;
+    commitEntries((prev) =>
+      prev.map((entry) => ({
+        ...entry,
+        rows: entry.rows.map((row) => {
+          if (
+            row.pairId ||
+            !row.selected ||
+            row.category_id ||
+            row.type !== type ||
+            row.kind === 'PAGAMENTO_FATURA'
+          ) {
+            return row;
+          }
+          count++;
+          return { ...row, category_id: categoryId };
+        }),
+      }))
+    );
+    if (count > 0) {
+      const categoryName = categories.find((c) => c.id === categoryId)?.name ?? 'Categoria';
+      toast.success(
+        `"${categoryName}" aplicada a ${count} ${
+          type === 'DESPESA' ? 'despesa(s)' : 'receita(s)'
+        } pendente(s)`
+      );
+    }
+  };
+
   // ===== Review: pares =====
 
-  const handleUnpair = (pair: ReviewPair) => {
-    const outRow = getRow(pair.outRef);
-    const inRow = getRow(pair.inRef);
-    const outEntry = entries.find((e) => e.id === pair.outRef.fileId);
-    const inEntry = entries.find((e) => e.id === pair.inRef.fileId);
+  const onPairSelectedChange = useCallback(
+    (pairId: string, selected: boolean) => {
+      commitPairs((prev) => prev.map((p) => (p.id === pairId ? { ...p, selected } : p)));
+    },
+    [commitPairs]
+  );
 
-    // As pernas voltam às tabelas como transferência interna com a ex-contraparte preenchida
-    if (outRow) {
-      updateRowByRef(pair.outRef, {
+  const onPairCategoryChange = useCallback(
+    (pairId: string, categoryId: string) => {
+      commitPairs((prev) => prev.map((p) => (p.id === pairId ? { ...p, categoryId } : p)));
+    },
+    [commitPairs]
+  );
+
+  const onUnpair = useCallback(
+    (pairId: string) => {
+      const pair = pairsRef.current.find((p) => p.id === pairId);
+      if (!pair) return;
+      const outEntry = entriesRef.current.find((e) => e.id === pair.outRef.fileId);
+      const inEntry = entriesRef.current.find((e) => e.id === pair.inRef.fileId);
+
+      // As pernas voltam às tabelas como transferência interna com a ex-contraparte preenchida
+      const restoreLeg = (
+        row: MultiReviewRow,
+        counterpartAccountId: string | null
+      ): MultiReviewRow => ({
+        ...row,
         pairId: null,
         kind: 'TRANSFERENCIA_INTERNA',
-        transferAccountId: inEntry?.accountId ?? null,
-        selected: !outRow.possible_duplicate && !outRow.intraBatchDuplicate,
+        transferAccountId: counterpartAccountId,
+        selected: !row.possible_duplicate && !row.intraBatchDuplicate,
       });
-    }
-    if (inRow) {
-      updateRowByRef(pair.inRef, {
-        pairId: null,
-        kind: 'TRANSFERENCIA_INTERNA',
-        transferAccountId: outEntry?.accountId ?? null,
-        selected: !inRow.possible_duplicate && !inRow.intraBatchDuplicate,
-      });
-    }
-    setPairs((prev) => prev.filter((p) => p.id !== pair.id));
-  };
 
-  const updatePair = (id: string, updates: Partial<ReviewPair>) => {
-    setPairs((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
-  };
+      commitEntries((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== pair.outRef.fileId && entry.id !== pair.inRef.fileId) return entry;
+          return {
+            ...entry,
+            rows: entry.rows.map((row, i) => {
+              if (entry.id === pair.outRef.fileId && i === pair.outRef.rowIndex) {
+                return restoreLeg(row, inEntry?.accountId ?? null);
+              }
+              if (entry.id === pair.inRef.fileId && i === pair.inRef.rowIndex) {
+                return restoreLeg(row, outEntry?.accountId ?? null);
+              }
+              return row;
+            }),
+          };
+        })
+      );
+      commitPairs((prev) => prev.filter((p) => p.id !== pairId));
+    },
+    [commitEntries, commitPairs]
+  );
 
   // ===== Confirmação =====
 
@@ -605,14 +976,17 @@ export function ImportMultiStatementDialog({
         });
       }
 
-      const result = await financeApi.confirmImportMulti({ groups, transfers }, session.access_token);
+      const result = await financeApi.confirmImportMulti(
+        { groups, transfers },
+        session.access_token
+      );
 
       const parts = [`${result.transactions_created} transação(ões)`];
       if (result.transfers_created > 0) {
         parts.push(`${result.transfers_created} transferência(s)`);
       }
       toast.success(`Importação concluída: ${parts.join(' e ')}`);
-      handleOpenChange(false);
+      closeNow();
       onImported();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao importar transações');
@@ -621,568 +995,401 @@ export function ImportMultiStatementDialog({
     }
   };
 
-  const categoriesForType = (type: 'RECEITA' | 'DESPESA') =>
-    categories.filter((c) => c.is_active && c.type === type);
-  const expenseCategories = useMemo(
-    () => categories.filter((c) => c.is_active && c.type === 'DESPESA'),
-    [categories]
-  );
+  const dirty = entries.length > 0;
+  const blockDismiss = dirty || analyzing || importing;
+  const allChecked =
+    selectionStats.selected === 0
+      ? false
+      : selectionStats.selected >= selectionStats.selectable
+        ? true
+        : ('indeterminate' as const);
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className={step === 'review' ? 'sm:max-w-[1080px]' : 'sm:max-w-[640px]'}
-      >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Importar Vários Extratos
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'files'
-              ? 'Envie extratos de várias contas de uma vez. A IA identifica a conta de cada arquivo e relaciona as transferências entre elas.'
-              : 'Revise as transações e as transferências entre contas identificadas antes de confirmar.'}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className={step === 'review' ? 'sm:max-w-[1080px]' : 'sm:max-w-[640px]'}
+          onPointerDownOutside={(e) => {
+            if (blockDismiss) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (blockDismiss) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (blockDismiss) {
+              e.preventDefault();
+              requestClose();
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Importar Vários Extratos
+            </DialogTitle>
+            <DialogDescription>
+              {step === 'files'
+                ? 'Envie extratos de várias contas de uma vez. A IA identifica a conta de cada arquivo e relaciona as transferências entre elas.'
+                : 'Revise as transações e as transferências entre contas identificadas antes de confirmar.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        {step === 'files' && (
-          <div className="space-y-4">
-            {/* Área de seleção */}
-            <div
-              className="border-2 border-dashed rounded-lg p-5 text-center cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                Clique para adicionar extratos (até {MAX_FILES} arquivos)
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                CSV, OFX, TXT, PDF ou imagem (máx. 10MB cada) — somente extratos de conta
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ACCEPT}
-                onChange={handleFilesSelect}
-                className="hidden"
-              />
-            </div>
-
-            {/* Lista de arquivos */}
-            {entries.length > 0 && (
-              <div className="space-y-2 max-h-[320px] overflow-auto">
-                {entries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
-                  >
-                    {entry.kind === 'image' ? (
-                      <ImageIcon className="h-7 w-7 shrink-0 text-blue-500" />
-                    ) : (
-                      <FileText className="h-7 w-7 shrink-0 text-primary" />
-                    )}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{entry.file.name}</p>
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {(entry.file.size / 1024).toFixed(0)} KB
-                        </span>
-                        {entry.detectedBankName && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
-                            {entry.detectedBankName}
-                          </Badge>
-                        )}
-                      </div>
-
-                      {entry.status === 'detecting' && (
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Detectando conta...
-                        </p>
-                      )}
-
-                      {entry.status === 'error' && (
-                        <p className="text-xs text-red-500">{entry.error}</p>
-                      )}
-
-                      {entry.documentKind === 'CREDIT_CARD_INVOICE' ? (
-                        <p className="flex items-start gap-1.5 text-xs text-violet-700">
-                          <CreditCard className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                          Parece uma fatura de cartão — remova e importe pelo fluxo
-                          individual (&quot;Importar Extrato&quot;).
-                        </p>
-                      ) : (
-                        entry.status !== 'detecting' && (
-                          <div className="flex items-center gap-2">
-                            {entry.documentKind === 'OTHER' && (
-                              <span className="text-xs text-amber-600 shrink-0">
-                                Documento não reconhecido:
-                              </span>
-                            )}
-                            <Select
-                              value={entry.accountId || ''}
-                              onValueChange={(value) =>
-                                updateEntry(entry.id, { accountId: value })
-                              }
-                            >
-                              <SelectTrigger
-                                className={`h-8 text-[12px] max-w-[260px] ${
-                                  !entry.accountId ? 'border-red-400' : ''
-                                }`}
-                              >
-                                <SelectValue placeholder="Qual conta é este extrato?" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {activeAccounts.map((account) => (
-                                  <SelectItem key={account.id} value={account.id}>
-                                    {account.name}
-                                    {account.bank?.name ? ` (${account.bank.name})` : ''}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveEntry(entry.id)}
-                      disabled={analyzing}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {invoiceEntries.length > 0 && (
-              <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 p-2 rounded">
-                Remova {invoiceEntries.length} arquivo(s) de fatura de cartão para continuar —
-                este fluxo é apenas para extratos de conta.
-              </p>
-            )}
-
-            {error && (
-              <p className="text-sm text-red-500 bg-red-50 p-2 rounded whitespace-pre-line">
-                {error}
-              </p>
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleOpenChange(false)}
-                disabled={analyzing}
+          {step === 'files' && (
+            <div className="space-y-4">
+              {/* Área de seleção */}
+              <div
+                className="border-2 border-dashed rounded-lg p-5 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
               >
-                Cancelar
-              </Button>
-              <Button type="button" onClick={handleAnalyze} disabled={!canAnalyze || analyzing}>
-                {analyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analisando {entries.length} arquivo(s)...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Analisar com IA
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
+                <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Clique para adicionar extratos (até {MAX_FILES} arquivos)
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  CSV, OFX, TXT, PDF ou imagem (máx. 10MB cada) — somente extratos de conta
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ACCEPT}
+                  onChange={handleFilesSelect}
+                  className="hidden"
+                />
+              </div>
 
-        {step === 'review' && (
-          <div className="space-y-4">
-            {/* Resumo agregado */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <span>
-                <strong>{totalSelected}</strong> item(ns) selecionado(s)
-              </span>
-              {selectedPairs.length > 0 && (
-                <span className="flex items-center gap-1 text-blue-600">
-                  <ArrowLeftRight className="h-3.5 w-3.5" />
-                  {selectedPairs.length} transferência(s) entre contas
-                </span>
-              )}
-              <span className="text-emerald-600">
-                Receitas: {formatCurrency(totals.receitas)}
-              </span>
-              <span className="text-red-600">
-                Despesas: {formatCurrency(totals.despesas)}
-              </span>
-              {duplicateCount > 0 && (
-                <span className="flex items-center gap-1 text-amber-600">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {duplicateCount} possível(is) duplicata(s) desmarcada(s)
-                </span>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5">
-              <p className="flex items-start gap-1.5 text-[12px] text-blue-700">
-                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                As transações serão registradas como PAGAS e os saldos atualizados. Cada
-                transferência pareada abaixo cria um único registro que ajusta as duas contas —
-                sem duplicar lançamentos.
-              </p>
-            </div>
-
-            <div className="max-h-[480px] overflow-auto space-y-4 pr-1">
-              {/* Transferências detectadas entre contas */}
-              {pairs.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                    <ArrowLeftRight className="h-4 w-4 text-blue-600" />
-                    Transferências detectadas entre contas
-                  </h3>
-                  {pairs.map((pair) => {
-                    const outRow = getRow(pair.outRef);
-                    const inRow = getRow(pair.inRef);
-                    const outEntry = entries.find((e) => e.id === pair.outRef.fileId);
-                    const inEntry = entries.find((e) => e.id === pair.inRef.fileId);
-                    if (!outRow || !inRow) return null;
-                    const isDuplicate =
-                      outRow.possible_duplicate ||
-                      inRow.possible_duplicate ||
-                      outRow.intraBatchDuplicate ||
-                      inRow.intraBatchDuplicate;
-
-                    return (
-                      <div
-                        key={pair.id}
-                        className={`rounded-lg border p-3 space-y-2 ${
-                          pair.selected ? 'border-blue-200 bg-blue-50/40' : 'opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <Checkbox
-                            checked={pair.selected}
-                            onCheckedChange={(checked) =>
-                              updatePair(pair.id, { selected: checked === true })
-                            }
-                            aria-label="Selecionar transferência"
-                          />
-                          <span className="flex items-center gap-1.5 text-sm font-medium">
-                            {accountName(outEntry?.accountId ?? null)}
-                            <ArrowRight className="h-3.5 w-3.5 text-blue-600" />
-                            {accountName(inEntry?.accountId ?? null)}
+              {/* Lista de arquivos */}
+              {entries.length > 0 && (
+                <div className="space-y-2 max-h-[320px] overflow-auto">
+                  {entries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
+                    >
+                      {entry.kind === 'image' ? (
+                        <ImageIcon className="h-7 w-7 shrink-0 text-blue-500" />
+                      ) : (
+                        <FileText className="h-7 w-7 shrink-0 text-primary" />
+                      )}
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium truncate">{entry.file.name}</p>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {(entry.file.size / 1024).toFixed(0)} KB
                           </span>
-                          <span className="text-sm font-semibold text-blue-700">
-                            {formatCurrency(outRow.amount)}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatStatementDate(outRow.due_date)}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 ${
-                              pair.confidence === 'HIGH'
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                : 'border-amber-300 bg-amber-50 text-amber-700'
-                            }`}
-                          >
-                            {pair.confidence === 'HIGH' ? 'Alta confiança' : 'Confira'}
-                          </Badge>
-                          {isDuplicate && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-300 bg-amber-50 text-amber-700 text-[10px] px-1.5"
-                            >
-                              Duplicata?
+                          {entry.detectedBankName && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
+                              {entry.detectedBankName}
                             </Badge>
                           )}
-                          <div className="ml-auto flex items-center gap-2">
-                            <Select
-                              value={pair.categoryId || ''}
-                              onValueChange={(value) =>
-                                updatePair(pair.id, { categoryId: value })
-                              }
-                            >
-                              <SelectTrigger
-                                className={`h-8 text-[12px] w-[180px] ${
-                                  pair.selected && !pair.categoryId ? 'border-red-400' : ''
-                                }`}
+                        </div>
+
+                        {entry.status === 'detecting' && (
+                          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Detectando conta...
+                          </p>
+                        )}
+
+                        {entry.status === 'error' && (
+                          <p className="text-xs text-red-500">{entry.error}</p>
+                        )}
+
+                        {entry.documentKind === 'CREDIT_CARD_INVOICE' ? (
+                          <p className="flex items-start gap-1.5 text-xs text-violet-700">
+                            <CreditCard className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            Parece uma fatura de cartão — remova e importe pelo fluxo
+                            individual (&quot;Importar Extrato&quot;).
+                          </p>
+                        ) : (
+                          entry.status !== 'detecting' && (
+                            <div className="flex items-center gap-2">
+                              {entry.documentKind === 'OTHER' && (
+                                <span className="text-xs text-amber-600 shrink-0">
+                                  Documento não reconhecido:
+                                </span>
+                              )}
+                              <Select
+                                value={entry.accountId || ''}
+                                onValueChange={(value) =>
+                                  updateEntry(entry.id, { accountId: value })
+                                }
                               >
-                                <SelectValue placeholder="Categoria..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {expenseCategories.map((category) => (
-                                  <SelectItem key={category.id} value={category.id}>
-                                    {category.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-[12px]"
-                              onClick={() => handleUnpair(pair)}
-                            >
-                              <Unlink className="h-3.5 w-3.5 mr-1" />
-                              Desfazer par
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground pl-7">
-                          <p className="truncate">
-                            ↑ {outEntry?.file.name}: {outRow.description}
-                          </p>
-                          <p className="truncate">
-                            ↓ {inEntry?.file.name}: {inRow.description}
-                          </p>
-                        </div>
+                                <SelectTrigger
+                                  className={`h-8 text-[12px] max-w-[260px] ${
+                                    !entry.accountId ? 'border-red-400' : ''
+                                  }`}
+                                >
+                                  <SelectValue placeholder="Qual conta é este extrato?" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {activeAccounts.map((account) => (
+                                    <SelectItem key={account.id} value={account.id}>
+                                      {account.name}
+                                      {account.bank?.name ? ` (${account.bank.name})` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )
+                        )}
                       </div>
-                    );
-                  })}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveEntry(entry.id)}
+                        disabled={analyzing}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* Tabelas por arquivo */}
-              {entries.map((entry) => {
-                const visibleRows = entry.rows
-                  .map((row, index) => ({ row, index }))
-                  .filter(({ row }) => !row.pairId);
-                if (visibleRows.length === 0) return null;
+              {invoiceEntries.length > 0 && (
+                <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 p-2 rounded">
+                  Remova {invoiceEntries.length} arquivo(s) de fatura de cartão para continuar —
+                  este fluxo é apenas para extratos de conta.
+                </p>
+              )}
 
-                return (
-                  <div key={entry.id} className="space-y-1.5">
-                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                      <FileText className="h-4 w-4 text-primary" />
-                      {accountName(entry.accountId)}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({entry.file.name} — {visibleRows.length} transação(ões))
-                      </span>
-                    </h3>
-                    <div className="rounded-lg border overflow-hidden">
-                      <Table>
-                        <TableHeader className="bg-white">
-                          <TableRow>
-                            <TableHead className="w-10" />
-                            <TableHead className="w-24">Data</TableHead>
-                            <TableHead>Descrição</TableHead>
-                            <TableHead className="w-36">Tipo</TableHead>
-                            <TableHead className="w-48">Categoria</TableHead>
-                            <TableHead className="w-28 text-right">Valor</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {visibleRows.map(({ row, index }) => {
-                            const ref: RowRef = { fileId: entry.id, rowIndex: index };
-                            return (
-                              <TableRow
-                                key={index}
-                                className={!row.selected ? 'opacity-50' : undefined}
-                              >
-                                <TableCell>
-                                  <Checkbox
-                                    checked={row.selected}
-                                    disabled={row.kind === 'PAGAMENTO_FATURA'}
-                                    onCheckedChange={(checked) =>
-                                      updateRowByRef(ref, { selected: checked === true })
-                                    }
-                                    aria-label="Selecionar transação"
-                                  />
-                                </TableCell>
-                                <TableCell className="text-[13px] whitespace-nowrap">
-                                  {formatStatementDate(row.due_date)}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[13px]">{row.description}</span>
-                                    {row.kind === 'TRANSFERENCIA_INTERNA' && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-blue-300 bg-blue-50 text-blue-700 text-[10px] px-1.5"
-                                      >
-                                        <ArrowLeftRight className="h-3 w-3 mr-0.5" />
-                                        Transferência
-                                      </Badge>
-                                    )}
-                                    {row.kind === 'PAGAMENTO_FATURA' && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-violet-300 bg-violet-50 text-violet-700 text-[10px] px-1.5"
-                                      >
-                                        <CreditCard className="h-3 w-3 mr-0.5" />
-                                        Pgto fatura
-                                      </Badge>
-                                    )}
-                                    {row.possible_duplicate && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-amber-300 bg-amber-50 text-amber-700 text-[10px] px-1.5"
-                                      >
-                                        Duplicata?
-                                      </Badge>
-                                    )}
-                                    {row.intraBatchDuplicate && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-amber-300 bg-amber-50 text-amber-700 text-[10px] px-1.5"
-                                      >
-                                        Duplicata no lote
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  {row.notes && (
-                                    <p className="text-[11px] text-muted-foreground">
-                                      {row.notes}
-                                    </p>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <Select
-                                    value={row.kind}
-                                    onValueChange={(value) =>
-                                      updateRowByRef(ref, {
-                                        kind: value as StatementLineKind,
-                                        selected:
-                                          value === 'PAGAMENTO_FATURA' ? false : row.selected,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8 text-[12px]">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(Object.keys(KIND_LABELS) as StatementLineKind[]).map(
-                                        (kind) => (
-                                          <SelectItem key={kind} value={kind}>
-                                            {KIND_LABELS[kind]}
-                                          </SelectItem>
-                                        )
-                                      )}
-                                    </SelectContent>
-                                  </Select>
-                                  {row.kind === 'TRANSFERENCIA_INTERNA' && (
-                                    <Select
-                                      value={row.transferAccountId || ''}
-                                      onValueChange={(value) =>
-                                        updateRowByRef(ref, { transferAccountId: value })
-                                      }
-                                    >
-                                      <SelectTrigger
-                                        className={`h-8 text-[12px] mt-1 ${
-                                          row.selected && !row.transferAccountId
-                                            ? 'border-red-400'
-                                            : ''
-                                        }`}
-                                      >
-                                        <SelectValue
-                                          placeholder={
-                                            row.type === 'DESPESA'
-                                              ? 'Para qual conta?'
-                                              : 'De qual conta?'
-                                          }
-                                        />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {activeAccounts
-                                          .filter((account) => account.id !== entry.accountId)
-                                          .map((account) => (
-                                            <SelectItem key={account.id} value={account.id}>
-                                              {account.name}
-                                            </SelectItem>
-                                          ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <Select
-                                    value={row.category_id || ''}
-                                    onValueChange={(value) =>
-                                      updateRowByRef(ref, { category_id: value })
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      className={`h-8 text-[12px] ${
-                                        row.selected && !row.category_id
-                                          ? 'border-red-300'
-                                          : ''
-                                      }`}
-                                    >
-                                      <SelectValue placeholder="Selecione..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {categoriesForType(row.type).map((category) => (
-                                        <SelectItem key={category.id} value={category.id}>
-                                          {category.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell
-                                  className={`text-right text-[13px] font-medium whitespace-nowrap ${
-                                    row.type === 'RECEITA'
-                                      ? 'text-emerald-600'
-                                      : 'text-red-600'
-                                  }`}
-                                >
-                                  {row.type === 'RECEITA' ? '+' : '-'}
-                                  {formatCurrency(row.amount)}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                );
-              })}
+              {error && (
+                <p className="text-sm text-red-500 bg-red-50 p-2 rounded whitespace-pre-line">
+                  {error}
+                </p>
+              )}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={requestClose}
+                  disabled={analyzing}
+                >
+                  Cancelar
+                </Button>
+                <AIButton onClick={handleAnalyze} disabled={!canAnalyze} loading={analyzing}>
+                  {analyzing
+                    ? `Analisando ${entries.length} arquivo(s)...`
+                    : 'Analisar com IA'}
+                </AIButton>
+              </DialogFooter>
             </div>
+          )}
 
-            {error && (
-              <p className="text-sm text-red-500 bg-red-50 p-2 rounded whitespace-pre-line">
-                {error}
-              </p>
-            )}
-
-            <DialogFooter className="gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setStep('files');
-                  setPairs([]);
-                  setEntries((prev) => prev.map((entry) => ({ ...entry, rows: [] })));
-                  setError(null);
-                }}
-                disabled={importing}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Voltar
-              </Button>
-              <Button
-                type="button"
-                onClick={handleImport}
-                disabled={importing || totalSelected === 0}
-              >
-                {importing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Importando...
-                  </>
-                ) : (
-                  `Importar ${totalSelected} item(ns)`
+          {step === 'review' && (
+            <div className="space-y-3">
+              {/* Resumo agregado */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span>
+                  <strong>{totalSelected}</strong> item(ns) selecionado(s)
+                </span>
+                {selectedPairs.length > 0 && (
+                  <span className="flex items-center gap-1 text-blue-600">
+                    <ArrowLeftRight className="h-3.5 w-3.5" />
+                    {selectedPairs.length} transferência(s) entre contas
+                  </span>
                 )}
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+                <span className="text-emerald-600">
+                  Receitas: {formatCurrency(totals.receitas)}
+                </span>
+                <span className="text-red-600">
+                  Despesas: {formatCurrency(totals.despesas)}
+                </span>
+                {duplicateCount > 0 && (
+                  <span className="flex items-center gap-1 text-amber-600">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {duplicateCount} possível(is) duplicata(s) desmarcada(s)
+                  </span>
+                )}
+              </div>
+
+              {/* Conciliação: saldo projetado por conta após a importação */}
+              {balanceProjections.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-muted/30 p-2 text-xs">
+                  <span className="flex items-center gap-1 font-medium">
+                    <Scale className="h-3.5 w-3.5 text-primary" />
+                    Saldo projetado:
+                  </span>
+                  {balanceProjections.map((projection) => (
+                    <span key={projection.accountId} className="whitespace-nowrap">
+                      {projection.name}: {formatCurrency(projection.current)} →{' '}
+                      <strong
+                        className={
+                          projection.delta >= 0 ? 'text-emerald-600' : 'text-red-600'
+                        }
+                      >
+                        {formatCurrency(projection.projected)}
+                      </strong>
+                    </span>
+                  ))}
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Info className="h-3 w-3 shrink-0" />
+                    Confira se bate com o saldo final de cada extrato.
+                  </span>
+                </div>
+              )}
+
+              {/* Barra de ações em massa */}
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
+                <Checkbox
+                  checked={allChecked}
+                  onCheckedChange={(value) => handleToggleAll(value === true)}
+                  aria-label="Selecionar todas as transações"
+                />
+                <span className="text-xs text-muted-foreground">
+                  {selectionStats.selected} de {selectionStats.selectable} marcada(s)
+                </span>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {pendingExpenseCount > 0 && (
+                    <Select
+                      value=""
+                      onValueChange={(value) => applyCategoryToPending('DESPESA', value)}
+                    >
+                      <SelectTrigger className="h-8 w-[240px] text-[12px]">
+                        <span className="flex items-center gap-1.5 truncate">
+                          <Wand2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          Categoria p/ {pendingExpenseCount} despesa(s) pendente(s)
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {expenseCategories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {pendingIncomeCount > 0 && (
+                    <Select
+                      value=""
+                      onValueChange={(value) => applyCategoryToPending('RECEITA', value)}
+                    >
+                      <SelectTrigger className="h-8 w-[240px] text-[12px]">
+                        <span className="flex items-center gap-1.5 truncate">
+                          <Wand2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          Categoria p/ {pendingIncomeCount} receita(s) pendente(s)
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {incomeCategories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={onlyPending ? 'default' : 'outline'}
+                    className="h-8 text-[12px]"
+                    onClick={() => setOnlyPending((v) => !v)}
+                  >
+                    <Filter className="h-3.5 w-3.5 mr-1" />
+                    Só pendências ({pendingCount})
+                  </Button>
+                </div>
+              </div>
+
+              {onlyPending && pendingCount === 0 ? (
+                <div className="flex min-h-[200px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
+                  Nenhuma pendência — tudo pronto para importar.
+                </div>
+              ) : (
+                <ReviewList
+                  items={listItems}
+                  activeAccounts={activeAccounts}
+                  expenseCategories={expenseCategories}
+                  incomeCategories={incomeCategories}
+                  onRowSelectedChange={onRowSelectedChange}
+                  onRowKindChange={onRowKindChange}
+                  onRowCategoryChange={onRowCategoryChange}
+                  onRowTransferAccountChange={onRowTransferAccountChange}
+                  onToggleFileRows={onToggleFileRows}
+                  onPairSelectedChange={onPairSelectedChange}
+                  onPairCategoryChange={onPairCategoryChange}
+                  onUnpair={onUnpair}
+                />
+              )}
+
+              <p className="flex items-start gap-1.5 text-[12px] text-muted-foreground">
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                As transações serão registradas como PAGAS e os saldos atualizados. Cada
+                transferência pareada cria um único registro que ajusta as duas contas.
+                Alterar tipo ou categoria de uma linha aplica automaticamente às
+                semelhantes ainda pendentes.
+              </p>
+
+              {error && (
+                <p className="text-sm text-red-500 bg-red-50 p-2 rounded whitespace-pre-line">
+                  {error}
+                </p>
+              )}
+
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmAction('back')}
+                  disabled={importing}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Voltar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={importing || totalSelected === 0}
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Importando...
+                    </>
+                  ) : (
+                    `Importar ${totalSelected} item(ns)`
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação antes de descartar o trabalho de revisão */}
+      <AlertDialog
+        open={confirmAction !== null}
+        onOpenChange={(value) => {
+          if (!value) setConfirmAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === 'back'
+                ? 'Voltar para a seleção de arquivos?'
+                : 'Descartar importação?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === 'back'
+                ? 'A análise e todos os ajustes feitos nesta revisão serão perdidos. Será necessário analisar os arquivos novamente.'
+                : 'Os arquivos enviados e todos os ajustes feitos nesta revisão serão perdidos.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Continuar editando</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmAction}>
+              {confirmAction === 'back' ? 'Voltar mesmo assim' : 'Descartar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

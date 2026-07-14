@@ -30,6 +30,9 @@ export interface ParseStatementContext {
   categories: FinanceCategory[];
   accounts: AccountWithBank[];
   creditCards: FinanceCreditCard[];
+  /** Nome completo do titular das contas (perfil do usuario) — usado para
+   * distinguir transferencia entre contas proprias de PIX para terceiros */
+  ownerName: string | null;
 }
 
 export interface ParsedStatementTransaction {
@@ -91,7 +94,7 @@ const EXTRACTION_SCHEMA = {
               type: 'string',
               enum: ['NORMAL', 'TRANSFERENCIA_INTERNA', 'PAGAMENTO_FATURA'],
               description:
-                'NORMAL para transacao comum; TRANSFERENCIA_INTERNA quando o dinheiro foi movido entre contas do proprio usuario; PAGAMENTO_FATURA quando a linha e pagamento de fatura de cartao de credito',
+                'NORMAL para transacao comum (incluindo PIX/TED para terceiros); TRANSFERENCIA_INTERNA SOMENTE quando ha evidencia explicita de que a contraparte e o proprio titular do extrato; PAGAMENTO_FATURA quando a linha e pagamento de fatura de cartao de credito',
             },
             transfer_account_index: {
               type: ['integer', 'null'],
@@ -149,10 +152,23 @@ function buildSystemPrompt(context: ParseStatementContext, target: StatementTarg
 - Pagamento de fatura de cartao, PIX, TED, boletos e compras no debito DEVEM ser extraidos
 
 CLASSIFICACAO DA LINHA (line_kind):
-- TRANSFERENCIA_INTERNA: PIX/TED/DOC/transferencia em que a contraparte e claramente uma das CONTAS DO USUARIO listadas abaixo (mesmo titular movendo dinheiro entre as proprias contas). Preencha transfer_account_index com o indice da conta contraparte, ou null se identificar que e transferencia propria mas nao souber qual conta
+- TRANSFERENCIA_INTERNA: SOMENTE quando ha evidencia explicita de que a transferencia (PIX/TED/DOC) e entre contas do MESMO titular. Evidencias aceitas:
+  * o nome da contraparte que aparece na linha e o proprio TITULAR DO EXTRATO (abaixo); ou
+  * a linha diz explicitamente que e movimentacao entre contas proprias (ex: "transferencia entre contas", "mesma titularidade")
+  Nesses casos preencha transfer_account_index com o indice da conta contraparte, ou null se nao souber qual conta
+- PIX/TED/DOC para OUTRA pessoa ou empresa (nome da contraparte diferente do titular) NUNCA e TRANSFERENCIA_INTERNA: classifique como NORMAL e escolha a categoria mais adequada (se o usuario tiver uma categoria de transferencia/PIX, use-a)
+- Se a linha NAO mostra o nome da contraparte, use NORMAL. NAO deduza transferencia interna so porque a linha parece uma transferencia
 - PAGAMENTO_FATURA: pagamento de fatura de cartao de credito ("PGTO FATURA", "pagamento cartao", debito automatico de fatura). Preencha payment_card_index com o indice do cartao, ou null se nao souber qual
 - NORMAL: todo o resto (compras, salario, PIX para terceiros, boletos, etc.)
 - Na duvida entre NORMAL e os outros tipos, use NORMAL`;
+
+  const ownerSection = context.ownerName
+    ? `TITULAR DO EXTRATO (dono das contas):
+${context.ownerName}
+Compare o nome da contraparte de cada transferencia com este nome (ignore diferencas de caixa, acentos e abreviacoes). So e transferencia interna se for a MESMA pessoa.`
+    : `TITULAR DO EXTRATO (dono das contas):
+(nao informado)
+Sem o nome do titular, so classifique TRANSFERENCIA_INTERNA quando a linha disser explicitamente que e movimentacao entre contas proprias.`;
 
   return `Voce e um extrator de transacoes financeiras do Trade Compass. Sua tarefa e ler o extrato bancario fornecido e extrair TODAS as transacoes reais em JSON estruturado.
 
@@ -166,6 +182,8 @@ REGRAS GERAIS:
 5. Para cada transacao escolha a categoria mais adequada da lista abaixo pelo indice (category_index). Respeite o tipo: categoria RECEITA para transacoes RECEITA, categoria DESPESA para DESPESA. Se nenhuma se encaixar bem, use null
 6. Nao duplique transacoes
 7. Se o documento nao parecer um extrato bancario ou fatura, retorne transactions vazio
+
+${ownerSection}
 
 CATEGORIAS DISPONIVEIS DO USUARIO:
 ${categoryList || '(nenhuma categoria cadastrada)'}

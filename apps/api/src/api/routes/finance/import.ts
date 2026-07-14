@@ -3,6 +3,7 @@ import type { ApiError } from '../../../domain/types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import { getCategoriesByUser } from '../../../data/finance/category-repository.js';
 import { getAccountsByUser } from '../../../data/finance/account-repository.js';
+import { getProfileByUserId } from '../../../data/profile-repository.js';
 import { getCreditCardById, getCreditCardsByUser } from '../../../data/finance/credit-card-repository.js';
 import {
   getTransactionsByUser,
@@ -101,10 +102,11 @@ export async function importRoutes(app: FastifyInstance) {
     }
 
     try {
-      const [categories, accounts, creditCards] = await Promise.all([
+      const [categories, accounts, creditCards, profile] = await Promise.all([
         getCategoriesByUser(user.id, accessToken),
         getAccountsByUser(user.id, accessToken),
         getCreditCardsByUser(user.id, accessToken),
+        getProfileByUserId(user.id, accessToken).catch(() => null),
       ]);
 
       const parsed = await parseStatement(
@@ -116,7 +118,7 @@ export async function importRoutes(app: FastifyInstance) {
           target: body.credit_card_id ? 'credit_card' : 'account',
           targetAccountId: body.account_id,
         },
-        { categories, accounts, creditCards }
+        { categories, accounts, creditCards, ownerName: profile?.full_name ?? null }
       );
 
       if (parsed.length === 0) {

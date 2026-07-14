@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageShell } from '@/components/organisms/PageShell';
@@ -34,6 +35,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Upload,
 } from 'lucide-react';
 import { CartoesPageSkeleton } from '@/components/organisms/skeletons/CartoesPageSkeleton';
 import { financeApi } from '@/lib/finance-api';
@@ -47,7 +49,17 @@ import type {
   CreditCardInvoice,
   AccountWithBank,
   PayInvoiceFormData,
+  FinanceCategory,
 } from '@/types/finance';
+import { toast } from '@/lib/toast';
+
+const ImportStatementDialog = dynamic(
+  () =>
+    import('@/components/organisms/finance/ImportStatementDialog').then((m) => ({
+      default: m.ImportStatementDialog,
+    })),
+  { ssr: false }
+);
 import {
   formatCurrency,
   CREDIT_CARD_BRAND_LABELS,
@@ -80,6 +92,11 @@ export default function CartoesPage() {
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
+  // Import Statement Dialog state (importação de fatura contextual por cartão)
+  const [importCard, setImportCard] = useState<FinanceCreditCard | null>(null);
+  const [importCategories, setImportCategories] = useState<FinanceCategory[]>([]);
+  const [preparingImportId, setPreparingImportId] = useState<string | null>(null);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -193,6 +210,24 @@ export default function CartoesPage() {
     } catch (err) {
       console.error('Error deleting card:', err);
     }
+  };
+
+  const openImportDialog = async (card: FinanceCreditCard) => {
+    if (!session?.access_token || preparingImportId) return;
+
+    // Categorias são necessárias para a revisão da importação; carrega uma vez
+    if (importCategories.length === 0) {
+      setPreparingImportId(card.id);
+      try {
+        setImportCategories(await financeApi.getCategories(session.access_token));
+      } catch (err) {
+        toast.apiError(err);
+        return;
+      } finally {
+        setPreparingImportId(null);
+      }
+    }
+    setImportCard(card);
   };
 
   const openInvoiceDialog = async (card: FinanceCreditCard) => {
@@ -458,9 +493,24 @@ export default function CartoesPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            openImportDialog(card);
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+                          title="Importar fatura"
+                        >
+                          {preparingImportId === card.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             openEditDialog(card);
                           }}
                           className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+                          title="Editar"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
@@ -851,6 +901,21 @@ export default function CartoesPage() {
           onOpenChange={setExportDialogOpen}
           creditCards={creditCards}
           accessToken={session.access_token}
+        />
+      )}
+
+      {/* Import Statement Dialog (destino travado no cartão do card) */}
+      {importCard && (
+        <ImportStatementDialog
+          open
+          onOpenChange={(value) => {
+            if (!value) setImportCard(null);
+          }}
+          accounts={accounts}
+          creditCards={creditCards}
+          categories={importCategories}
+          defaultCreditCardId={importCard.id}
+          onImported={() => loadData(true)}
         />
       )}
     </PageShell>

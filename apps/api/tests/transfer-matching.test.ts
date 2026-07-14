@@ -130,15 +130,53 @@ describe('matchTransfers()', () => {
     expect(result.pairs).toHaveLength(0);
   });
 
-  it('score minimo: valor igual + mesma data pareia mesmo sem sinais (score 3)', () => {
+  it('NAO pareia sem sinal de transferencia interna, mesmo com valor e data iguais', () => {
     const result = matchTransfers(
       makeStatements(
         [makeTx({ type: 'DESPESA', line_kind: 'NORMAL', description: 'Debito avulso' })],
         [makeTx({ type: 'RECEITA', line_kind: 'NORMAL', description: 'Credito avulso' })]
       )
     );
+    expect(result.pairs).toHaveLength(0);
+  });
+
+  it('NAO pareia PIX para terceiros (descricao de PIX mas line_kind NORMAL nas duas pernas)', () => {
+    // Ex: PIX enviado para outra pessoa + PIX recebido de outra pessoa,
+    // mesmo valor no mesmo dia por coincidencia — nao e transferencia propria
+    const result = matchTransfers(
+      makeStatements(
+        [makeTx({ type: 'DESPESA', line_kind: 'NORMAL', description: 'PIX enviado Maria Souza' })],
+        [makeTx({ type: 'RECEITA', line_kind: 'NORMAL', description: 'PIX recebido Joao Lima' })]
+      )
+    );
+    expect(result.pairs).toHaveLength(0);
+  });
+
+  it('pareia quando apenas UMA perna tem sinal de transferencia interna da IA', () => {
+    const result = matchTransfers(
+      makeStatements(
+        [makeTx({ type: 'DESPESA', description: 'PIX enviado Thiago Pereira' })],
+        [makeTx({ type: 'RECEITA', line_kind: 'NORMAL', description: 'PIX recebido Thiago Pereira' })]
+      )
+    );
     expect(result.pairs).toHaveLength(1);
-    expect(result.pairs[0].confidence).toBe('MEDIUM');
+  });
+
+  it('sugestao de conta contraparte correta e sinal suficiente para parear', () => {
+    const result = matchTransfers(
+      makeStatements(
+        [
+          makeTx({
+            type: 'DESPESA',
+            line_kind: 'NORMAL',
+            description: 'Transferencia enviada',
+            suggested_transfer_account_id: ITAU,
+          }),
+        ],
+        [makeTx({ type: 'RECEITA', line_kind: 'NORMAL', description: 'Credito recebido' })]
+      )
+    );
+    expect(result.pairs).toHaveLength(1);
   });
 
   it('line_kind TRANSFERENCIA_INTERNA nos dois lados + mesma data + descricao PIX = HIGH', () => {

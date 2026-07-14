@@ -9,6 +9,7 @@ import type {
   ExpensesByCategory,
   UpcomingPayment,
   BudgetSummary,
+  GlobalCategoryWithChildren,
 } from '@/types/finance';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
@@ -92,7 +93,9 @@ export async function getTransactions(filters?: {
   account_id?: string;
   type?: string;
   status?: string;
+  search?: string;
   limit?: number;
+  offset?: number;
 }): Promise<TransactionWithDetails[]> {
   const params = new URLSearchParams();
   if (filters) {
@@ -156,4 +159,9 @@ export async function getBudgetAllocation(month?: string): Promise<BudgetSummary
   }
   const query = params.toString();
   return authFetch(`/finance/dashboard/budget-allocation${query ? `?${query}` : ''}`);
+}
+
+// Global categories (catálogo compartilhado, somente leitura)
+export async function getGlobalCategories(): Promise<GlobalCategoryWithChildren[]> {
+  return authFetch('/finance/global-categories');
 }

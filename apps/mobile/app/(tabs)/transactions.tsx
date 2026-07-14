@@ -2,56 +2,70 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   SectionList,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
-import { MonthSlider } from '@/components/finance/MonthSlider';
+import { useTransactionsFeed, type FeedTypeFilter } from '@/hooks/use-transactions-feed';
 import { TransactionListItem } from '@/components/finance/TransactionListItem';
 import { TransactionDetailModal } from '@/components/finance/TransactionDetailModal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
+import { AskNorteBar } from '@/components/agent/AskNorteBar';
 import {
   groupTransactionsByDate,
   formatCurrency,
   type TransactionWithDetails,
 } from '@/types/finance';
 
+const BALANCE_VISIBILITY_KEY = '@balance_visibility';
+
 interface SectionData {
   title: string;
   data: TransactionWithDetails[];
 }
 
-type FilterType = 'ALL' | 'RECEITA' | 'DESPESA';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
-  { key: 'ALL', label: 'Todas' },
-  { key: 'RECEITA', label: 'Receitas' },
-  { key: 'DESPESA', label: 'Despesas' },
-];
-
+/** "Hoje", "Ontem", dia da semana (últimos/próximos 7 dias) ou "10 de julho" */
 function formatSectionDate(dateString: string): string {
   const date = new Date(dateString + 'T12:00:00');
-  return date.toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).toUpperCase().replace('.', '');
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  const diffDays = Math.round((today.getTime() - date.getTime()) / DAY_MS);
+
+  if (diffDays === 0) return 'Hoje';
+  if (diffDays === 1) return 'Ontem';
+  if (diffDays === -1) return 'Amanhã';
+
+  if (Math.abs(diffDays) < 7) {
+    const weekday = date.toLocaleDateString('pt-BR', { weekday: 'long' });
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  }
+
+  const label = date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+  const sameYear = date.getFullYear() === today.getFullYear();
+  return sameYear ? label : `${label} de ${date.getFullYear()}`;
 }
 
 export default function TransactionsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
-  const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithDetails | null>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
 
@@ -62,36 +76,47 @@ export default function TransactionsScreen() {
     }, [colorScheme])
   );
 
+  // Feed paginado (carrega por demanda, filtros no servidor)
   const {
-    transactions,
-    selectedMonth,
+    items,
     isLoading,
+    isLoadingMore,
+    isRefreshing,
     error,
-    setSelectedMonth,
-    loadTransactions,
-    refreshAll,
-  } = useFinance();
+    typeFilter,
+    search,
+    loadMore,
+    refresh,
+    setTypeFilter,
+    setSearch,
+  } = useTransactionsFeed();
+
+  // Totais do mês corrente para os chips (mesma fonte do dashboard da Home)
+  const { dashboardSummary, loadDashboard } = useFinance();
 
   useEffect(() => {
-    refreshAll();
+    if (!dashboardSummary) {
+      loadDashboard();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mesma preferência de visibilidade usada na Home
   useEffect(() => {
-    loadTransactions();
-  }, [selectedMonth, loadTransactions]);
+    AsyncStorage.getItem(BALANCE_VISIBILITY_KEY)
+      .then((stored) => {
+        if (stored !== null) setIsBalanceVisible(stored === 'true');
+      })
+      .catch(() => {});
+  }, []);
 
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    await loadTransactions();
-    setIsRefreshing(false);
-  }, [loadTransactions]);
-
-  const handleMonthChange = useCallback(
-    (date: Date) => {
-      setSelectedMonth(date);
-    },
-    [setSelectedMonth]
-  );
+  const toggleBalanceVisibility = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsBalanceVisible((prev) => {
+      AsyncStorage.setItem(BALANCE_VISIBILITY_KEY, String(!prev)).catch(() => {});
+      return !prev;
+    });
+  }, []);
 
   const handleTransactionPress = useCallback((transaction: TransactionWithDetails) => {
     setSelectedTransaction(transaction);
@@ -103,102 +128,84 @@ export default function TransactionsScreen() {
     setSelectedTransaction(null);
   }, []);
 
-  const filteredTransactions = useMemo(() => {
-    if (activeFilter === 'ALL') return transactions;
-    return transactions.filter((t) => t.type === activeFilter);
-  }, [transactions, activeFilter]);
-
-  const monthTotals = useMemo(() => {
-    const income = transactions
-      .filter((t) => t.type === 'RECEITA')
-      .reduce((sum, t) => sum + t.amount, 0);
-    const expense = transactions
-      .filter((t) => t.type === 'DESPESA')
-      .reduce((sum, t) => sum + t.amount, 0);
-    return { income, expense };
-  }, [transactions]);
+  const toggleFilter = useCallback(
+    (filter: Exclude<FeedTypeFilter, 'ALL'>) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setTypeFilter(typeFilter === filter ? 'ALL' : filter);
+    },
+    [typeFilter, setTypeFilter]
+  );
 
   const sections: SectionData[] = useMemo(() => {
-    const grouped = groupTransactionsByDate(filteredTransactions);
+    const grouped = groupTransactionsByDate(items);
     return Object.entries(grouped)
       .sort(([a], [b]) => b.localeCompare(a))
-      .map(([date, items]) => ({
+      .map(([date, data]) => ({
         title: formatSectionDate(date),
-        data: items,
+        data,
       }));
-  }, [filteredTransactions]);
+  }, [items]);
+
+  const monthIncome = dashboardSummary?.month_income ?? 0;
+  const monthExpenses = dashboardSummary?.month_expenses ?? 0;
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Title */}
-      <Text style={[styles.title, { color: colors.text }]}>Transações</Text>
-
-      {/* Month Slider */}
-      <MonthSlider
-        selectedDate={selectedMonth}
-        onMonthChange={handleMonthChange}
-      />
-
-      {/* Summary Cards */}
-      <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
-          <View style={styles.summaryIconContainer}>
-            <View style={[styles.summaryIcon, { backgroundColor: colors.successLight }]}>
-              <IconSymbol name="arrow.down" size={16} color={colors.success} />
-            </View>
-          </View>
-          <View style={styles.summaryTextContainer}>
-            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-              Receitas
-            </Text>
-            <Text style={[styles.summaryValue, { color: colors.success }]}>
-              {formatCurrency(monthTotals.income)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
-          <View style={styles.summaryIconContainer}>
-            <View style={[styles.summaryIcon, { backgroundColor: colors.dangerLight }]}>
-              <IconSymbol name="arrow.up" size={16} color={colors.danger} />
-            </View>
-          </View>
-          <View style={styles.summaryTextContainer}>
-            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-              Despesas
-            </Text>
-            <Text style={[styles.summaryValue, { color: colors.danger }]}>
-              {formatCurrency(monthTotals.expense)}
-            </Text>
-          </View>
-        </View>
+      {/* Busca (server-side, com debounce) */}
+      <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
+        <IconSymbol name="magnifyingglass" size={18} color={colors.textSecondary} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.text }]}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Buscar"
+          placeholderTextColor={colors.textSecondary}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
       </View>
 
-      {/* Filter Tabs */}
-      <View style={[styles.filterContainer, { backgroundColor: colors.card }]}>
-        {FILTER_OPTIONS.map((filter) => {
-          const isActive = activeFilter === filter.key;
-          return (
-            <TouchableOpacity
-              key={filter.key}
-              style={[
-                styles.filterTab,
-                isActive && { backgroundColor: colors.primary },
-              ]}
-              onPress={() => setActiveFilter(filter.key)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  { color: isActive ? colors.textOnPrimary : colors.textSecondary },
-                ]}
-              >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      {/* Chips com totais do mês — tocar filtra por tipo */}
+      <View style={styles.chipsRow}>
+        <TouchableOpacity
+          style={[
+            styles.chip,
+            typeFilter === 'RECEITA' && {
+              backgroundColor: colors.successLight,
+              borderColor: colors.success,
+            },
+          ]}
+          onPress={() => toggleFilter('RECEITA')}
+          activeOpacity={0.7}
+          accessibilityLabel="Filtrar receitas"
+        >
+          <View style={[styles.chipIcon, { backgroundColor: colors.successLight }]}>
+            <IconSymbol name="arrow.down" size={13} color={colors.success} />
+          </View>
+          <Text style={[styles.chipValue, { color: colors.text }]}>
+            {isBalanceVisible ? formatCurrency(monthIncome) : 'R$ ••••'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.chip,
+            typeFilter === 'DESPESA' && {
+              backgroundColor: colors.dangerLight,
+              borderColor: colors.danger,
+            },
+          ]}
+          onPress={() => toggleFilter('DESPESA')}
+          activeOpacity={0.7}
+          accessibilityLabel="Filtrar despesas"
+        >
+          <View style={[styles.chipIcon, { backgroundColor: colors.dangerLight }]}>
+            <IconSymbol name="arrow.up" size={13} color={colors.danger} />
+          </View>
+          <Text style={[styles.chipValue, { color: colors.text }]}>
+            {isBalanceVisible ? formatCurrency(monthExpenses) : 'R$ ••••'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Error Message */}
@@ -214,7 +221,7 @@ export default function TransactionsScreen() {
   const renderSectionHeader = useCallback(
     ({ section }: { section: SectionData }) => (
       <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
           {section.title}
         </Text>
       </View>
@@ -228,9 +235,10 @@ export default function TransactionsScreen() {
         transaction={item}
         onPress={() => handleTransactionPress(item)}
         showDivider={index < section.data.length - 1}
+        hideAmount={!isBalanceVisible}
       />
     ),
-    [handleTransactionPress]
+    [handleTransactionPress, isBalanceVisible]
   );
 
   const keyExtractor = useCallback(
@@ -238,15 +246,21 @@ export default function TransactionsScreen() {
     []
   );
 
+  const ListFooterComponent = useCallback(
+    () =>
+      isLoadingMore ? (
+        <View style={styles.footerLoading}>
+          <ActivityIndicator size="small" color={colors.textSecondary} />
+        </View>
+      ) : null,
+    [isLoadingMore, colors]
+  );
+
   const ListEmptyComponent = useCallback(
     () => (
       <View style={styles.emptyContainer}>
         <View style={[styles.emptyIconContainer, { backgroundColor: colors.card }]}>
-          <IconSymbol
-            name="doc.text"
-            size={48}
-            color={colors.textSecondary}
-          />
+          <IconSymbol name="doc.text" size={48} color={colors.textSecondary} />
         </View>
         <Text style={[styles.emptyTitle, { color: colors.text }]}>
           {isLoading ? 'Carregando...' : 'Nenhuma transação'}
@@ -254,13 +268,15 @@ export default function TransactionsScreen() {
         <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
           {isLoading
             ? 'Aguarde enquanto buscamos suas transações'
-            : activeFilter === 'ALL'
-              ? 'Você não tem transações neste mês'
-              : `Você não tem ${activeFilter === 'RECEITA' ? 'receitas' : 'despesas'} neste mês`}
+            : search
+              ? 'Nada encontrado para essa busca'
+              : typeFilter === 'ALL'
+                ? 'Você ainda não tem transações'
+                : `Você não tem ${typeFilter === 'RECEITA' ? 'receitas' : 'despesas'}`}
         </Text>
       </View>
     ),
-    [isLoading, colors, activeFilter]
+    [isLoading, colors, typeFilter, search]
   );
 
   return (
@@ -270,6 +286,34 @@ export default function TransactionsScreen() {
         { backgroundColor: colors.background, paddingTop: insets.top },
       ]}
     >
+      {/* Barra superior fixa: permanece visível durante o scroll */}
+      <View style={[styles.topBar, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          style={[styles.topBarButton, { backgroundColor: colors.surface }]}
+          onPress={toggleBalanceVisibility}
+          accessibilityLabel={isBalanceVisible ? 'Ocultar valores' : 'Mostrar valores'}
+        >
+          <IconSymbol
+            name={isBalanceVisible ? 'eye' : 'eye.slash'}
+            size={20}
+            color={colors.text}
+          />
+        </TouchableOpacity>
+
+        <Text style={[styles.topBarTitle, { color: colors.text }]}>Atividades</Text>
+
+        <TouchableOpacity
+          style={[styles.topBarButton, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push('/new-transaction');
+          }}
+          accessibilityLabel="Nova transação"
+        >
+          <IconSymbol name="plus" size={22} color={colors.textOnPrimary} />
+        </TouchableOpacity>
+      </View>
+
       <SectionList
         sections={sections}
         keyExtractor={keyExtractor}
@@ -277,13 +321,23 @@ export default function TransactionsScreen() {
         renderSectionHeader={renderSectionHeader}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={ListEmptyComponent}
+        ListFooterComponent={ListFooterComponent}
         contentContainerStyle={styles.listContent}
         stickySectionHeadersEnabled
         showsVerticalScrollIndicator={false}
-        onRefresh={handleRefresh}
+        onRefresh={refresh}
         refreshing={isRefreshing}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        keyboardDismissMode="on-drag"
+        initialNumToRender={12}
+        maxToRenderPerBatch={16}
+        windowSize={7}
+        removeClippedSubviews
       />
-      <FloatingActionButton />
+
+      <AskNorteBar />
+
       <TransactionDetailModal
         transaction={selectedTransaction}
         visible={isDetailModalVisible}
@@ -297,67 +351,71 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerContainer: {
-    paddingHorizontal: Spacing.lg,
-  },
-  title: {
-    fontSize: FontSize['3xl'],
-    fontWeight: 'bold',
-    paddingTop: Spacing.lg,
-    marginBottom: Spacing.xs,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  summaryCard: {
-    flex: 1,
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: Spacing.md,
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    zIndex: 10,
   },
-  summaryIconContainer: {},
-  summaryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.sm,
+  topBarButton: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  summaryTextContainer: {
-    flex: 1,
+  topBarTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
   },
-  summaryLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '500',
-    marginBottom: 2,
+  headerContainer: {
+    paddingHorizontal: Spacing.lg,
   },
-  summaryValue: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-  },
-  filterContainer: {
+  searchBar: {
     flexDirection: 'row',
-    padding: 4,
-    borderRadius: BorderRadius.lg,
-    marginBottom: Spacing.lg,
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
     alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    height: 44,
   },
-  filterText: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
+  searchInput: {
+    flex: 1,
+    fontSize: FontSize.md,
+    paddingVertical: 0,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  chipIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipValue: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
   },
   listContent: {
-    paddingBottom: 120,
+    paddingBottom: 160,
     flexGrow: 1,
   },
   sectionHeader: {
@@ -366,9 +424,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+  },
+  footerLoading: {
+    paddingVertical: Spacing.xl,
+    alignItems: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -387,7 +448,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: FontSize.lg,
-    fontWeight: '600',
+    fontWeight: FontWeight.semibold,
     marginBottom: Spacing.sm,
     textAlign: 'center',
   },

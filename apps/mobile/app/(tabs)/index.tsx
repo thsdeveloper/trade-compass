@@ -31,7 +31,7 @@ import { MonthNavigator } from '@/components/finance/MonthNavigator';
 import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
 import { CategoryExpenseItem } from '@/components/finance/CategoryExpenseItem';
 import { UpcomingPaymentItem } from '@/components/finance/UpcomingPaymentItem';
-import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
+import { AgentFab } from '@/components/agent/AgentFab';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
@@ -377,7 +377,7 @@ export default function DashboardScreen() {
         <View style={styles.bottomSpacer} />
       </Animated.ScrollView>
 
-      <FloatingActionButton />
+      <AgentFab />
     </View>
   );
 }

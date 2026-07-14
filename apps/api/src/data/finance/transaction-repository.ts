@@ -94,7 +94,12 @@ export async function getTransactionsByUser(
     query = query.ilike('description', `%${filters.search.trim()}%`);
   }
 
-  query = query.order('due_date', { ascending: false });
+  // Desempate por id: com muitas transacoes no mesmo due_date, a ordem entre
+  // linhas empatadas nao e deterministica no Postgres — paginacao por offset
+  // repetiria/pularia registros na fronteira das paginas.
+  query = query
+    .order('due_date', { ascending: false })
+    .order('id', { ascending: false });
 
   if (filters.limit) {
     query = query.limit(filters.limit);

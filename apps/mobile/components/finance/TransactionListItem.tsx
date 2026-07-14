@@ -1,5 +1,6 @@
+import { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Colors, Spacing, FontSize, BorderRadius } from '@/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import type { TransactionWithDetails } from '@/types/finance';
@@ -9,6 +10,7 @@ interface TransactionListItemProps {
   transaction: TransactionWithDetails;
   onPress?: () => void;
   showDivider?: boolean;
+  hideAmount?: boolean;
 }
 
 // Map Lucide icon names to SF Symbols (matching frontend CategoryIcon)
@@ -165,24 +167,37 @@ const CATEGORY_ICON_MAP: Record<string, IconSymbolName> = {
   'default': 'tag.fill',
 };
 
-function getCategoryIcon(iconName: string): IconSymbolName {
+export function getCategoryIcon(iconName: string): IconSymbolName {
   return CATEGORY_ICON_MAP[iconName] || CATEGORY_ICON_MAP['default'];
 }
 
-export function TransactionListItem({ transaction, onPress, showDivider = true }: TransactionListItemProps) {
+function formatItemDate(dateString: string): string {
+  const date = new Date(dateString.split('T')[0] + 'T12:00:00');
+  return date
+    .toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })
+    .replace('.', '');
+}
+
+export const TransactionListItem = memo(function TransactionListItem({
+  transaction,
+  onPress,
+  showDivider = true,
+  hideAmount = false,
+}: TransactionListItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
 
   const isIncome = transaction.type === 'RECEITA';
-  const amountColor = isIncome ? colors.success : colors.text;
-  const amountPrefix = isIncome ? '+ ' : '';
+  const amountColor = isIncome ? colors.success : colors.danger;
+  const amountPrefix = isIncome ? '+' : '-';
 
   const categoryIconName = getCategoryIcon(transaction.category.icon);
-  const iconColor = isIncome ? colors.success : colors.textSecondary;
-  const iconBgColor = isIncome
-    ? (isDark ? colors.success + '20' : '#E6F7EF')
-    : (isDark ? colors.textSecondary + '15' : '#F5F5F5');
+  const categoryColor = transaction.category.color || colors.textSecondary;
+  const iconBgColor = isDark ? colors.card : `${categoryColor}1A`;
+
+  const account = transaction.account;
+  const accountInitial = account?.name?.trim().charAt(0).toUpperCase();
 
   return (
     <TouchableOpacity
@@ -192,13 +207,24 @@ export function TransactionListItem({ transaction, onPress, showDivider = true }
       disabled={!onPress}
     >
       <View style={styles.row}>
-        {/* Icon */}
-        <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}>
-          <IconSymbol
-            name={categoryIconName}
-            size={22}
-            color={iconColor}
-          />
+        {/* Icon + badge da conta */}
+        <View>
+          <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}>
+            <IconSymbol name={categoryIconName} size={22} color={categoryColor} />
+          </View>
+          {accountInitial && (
+            <View
+              style={[
+                styles.accountBadge,
+                {
+                  backgroundColor: account?.color || colors.primary,
+                  borderColor: colors.background,
+                },
+              ]}
+            >
+              <Text style={styles.accountBadgeText}>{accountInitial}</Text>
+            </View>
+          )}
         </View>
 
         {/* Content */}
@@ -209,14 +235,27 @@ export function TransactionListItem({ transaction, onPress, showDivider = true }
           >
             {transaction.description}
           </Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            {transaction.category.name}
+          <Text
+            style={[styles.subtitle, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {formatItemDate(transaction.due_date)} • {transaction.category.name}
           </Text>
+          {account?.name && (
+            <Text
+              style={[styles.accountName, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              {account.name}
+            </Text>
+          )}
         </View>
 
         {/* Amount */}
         <Text style={[styles.amount, { color: amountColor }]}>
-          {amountPrefix}{formatCurrency(transaction.amount)}
+          {hideAmount
+            ? 'R$ ••••'
+            : `${amountPrefix}${formatCurrency(transaction.amount)}`}
         </Text>
       </View>
 
@@ -225,7 +264,7 @@ export function TransactionListItem({ transaction, onPress, showDivider = true }
       )}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -244,20 +283,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  accountBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 20,
+    height: 20,
+    borderRadius: BorderRadius.full,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountBadgeText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
   content: {
     flex: 1,
     gap: 2,
   },
   description: {
     fontSize: FontSize.md,
-    fontWeight: '600',
+    fontWeight: FontWeight.bold,
   },
   subtitle: {
     fontSize: FontSize.sm,
   },
+  accountName: {
+    fontSize: FontSize.sm,
+  },
   amount: {
     fontSize: FontSize.md,
-    fontWeight: '600',
+    fontWeight: FontWeight.bold,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

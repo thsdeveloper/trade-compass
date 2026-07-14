@@ -1,5 +1,6 @@
 import type {
   FinanceCategory,
+  GlobalCategoryWithChildren,
   FinanceTag,
   FinanceAccount,
   AccountWithBank,
@@ -144,6 +145,13 @@ class FinanceApiClient {
   // Categories
   async getCategories(accessToken: string): Promise<FinanceCategory[]> {
     return this.authFetch('/finance/categories', accessToken);
+  }
+
+  // Global categories (catálogo compartilhado, somente leitura)
+  async getGlobalCategories(
+    accessToken: string
+  ): Promise<GlobalCategoryWithChildren[]> {
+    return this.authFetch('/finance/global-categories', accessToken);
   }
 
   async createCategory(

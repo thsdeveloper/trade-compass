@@ -36,6 +36,7 @@ import type {
 } from '@/types/finance';
 import { BudgetCategorySelect, BudgetCategoryBadge } from '@/components/molecules/BudgetCategorySelect';
 import { CategoryIcon, IconSelector, ColorPicker } from '@/components/atoms/CategoryIcon';
+import { GlobalCategoryCatalog } from '@/components/organisms/finance/GlobalCategoryCatalog';
 import { DeleteConfirm, useAlert } from '@/components/molecules/ConfirmDialog';
 
 export default function CategoriasPage() {
@@ -288,6 +289,8 @@ export default function CategoriasPage() {
           </div>
         </div>
       </div>
+
+      <GlobalCategoryCatalog />
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

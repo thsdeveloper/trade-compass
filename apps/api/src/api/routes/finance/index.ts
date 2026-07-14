@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { categoryRoutes } from './categories.js';
+import { globalCategoryRoutes } from './global-categories.js';
 import { accountRoutes } from './accounts.js';
 import { creditCardRoutes } from './credit-cards.js';
 import { transactionRoutes } from './transactions.js';
@@ -25,6 +26,7 @@ export async function financeRoutes(app: FastifyInstance) {
 
   // Register all finance sub-routes
   await categoryRoutes(app);
+  await globalCategoryRoutes(app);
   await accountRoutes(app);
   await creditCardRoutes(app);
   await transactionRoutes(app);

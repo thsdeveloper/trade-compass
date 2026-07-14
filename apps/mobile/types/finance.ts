@@ -270,3 +270,24 @@ export function groupTransactionsByDate(
     {} as Record<string, TransactionWithDetails[]>
   );
 }
+
+// ==================== GLOBAL CATEGORIES ====================
+
+export type GlobalCategoryType = 'DESPESA' | 'RECEITA';
+
+export interface GlobalCategory {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  icon: string;
+  color: string;
+  type: GlobalCategoryType;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GlobalCategoryWithChildren extends GlobalCategory {
+  children: GlobalCategory[];
+}

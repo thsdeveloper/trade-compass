@@ -8,6 +8,7 @@ import {
 import * as Haptics from 'expo-haptics';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -57,9 +58,19 @@ export function ContentSection({
   };
 
   const alertColors = getAlertColors();
+  const isDark = colorScheme === 'dark';
 
   return (
-    <View style={[styles.container, { borderTopColor: colors.border }]}>
+    <GlassSurface
+      variant="material"
+      style={[
+        styles.container,
+        {
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
+        },
+      ]}
+    >
       <TouchableOpacity
         style={styles.header}
         onPress={handlePress}
@@ -108,26 +119,29 @@ export function ContentSection({
           </Text>
         </TouchableOpacity>
       )}
-    </View>
+    </GlassSurface>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    borderTopWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.xl,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
   },
   titleContainer: {
     flex: 1,
   },
   title: {
-    fontSize: FontSize.lg,
+    fontSize: FontSize.md,
     fontWeight: '600',
   },
   subtitle: {
@@ -135,17 +149,17 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   alertContainer: {
-    marginHorizontal: Spacing.xl,
-    marginBottom: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
     padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
+    borderRadius: BorderRadius.md,
   },
   alertText: {
     fontSize: FontSize.sm,
     fontWeight: '500',
   },
   content: {
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
   },
   actionButton: {

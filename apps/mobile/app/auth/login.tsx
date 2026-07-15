@@ -8,8 +8,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Colors, BorderRadius, FontSize } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
 
 type LoginMode = 'password' | 'magic-link';
@@ -24,6 +30,11 @@ export default function LoginScreen() {
     type: 'success' | 'error';
   } | null>(null);
   const { signIn, signInWithMagicLink } = useAuth();
+
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+  const { height } = useWindowDimensions();
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,12 +82,27 @@ export default function LoginScreen() {
     }
   };
 
+  const screenBg = isDark ? colors.background : '#F6F7F9';
+  const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: screenBg }]}
     >
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
+
+      {/* Gradiente ambiente hero, edge-to-edge (camada de conteudo) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={[styles.ambientBackground, { height: height * 0.6 }]}
+        pointerEvents="none"
+      />
 
       <View style={styles.content}>
         <View style={styles.header}>
@@ -88,105 +114,155 @@ export default function LoginScreen() {
           </Text>
         </View>
 
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, mode === 'password' && styles.tabActive]}
-            onPress={() => {
-              setMode('password');
-              setMessage(null);
-            }}
+        {/* Cartao do formulario: material frosted (camada de conteudo) */}
+        <GlassSurface
+          variant="material"
+          style={[styles.formCard, { borderColor: hairlineColor }]}
+        >
+          <View
+            style={[
+              styles.tabs,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(118,118,128,0.12)',
+              },
+            ]}
           >
-            <Text
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                mode === 'password' && styles.tabTextActive,
+                styles.tab,
+                mode === 'password' && [
+                  styles.tabActive,
+                  { backgroundColor: isDark ? colors.card : '#FFFFFF' },
+                ],
               ]}
-            >
-              Senha
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, mode === 'magic-link' && styles.tabActive]}
-            onPress={() => {
-              setMode('magic-link');
-              setMessage(null);
-            }}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                mode === 'magic-link' && styles.tabTextActive,
-              ]}
-            >
-              Magic Link
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="seu@email.com"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isSubmitting}
-          />
-
-          {mode === 'password' && (
-            <TextInput
-              style={styles.input}
-              placeholder="Senha"
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!isSubmitting}
-            />
-          )}
-
-          <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {mode === 'password' ? 'Entrar' : 'Enviar link de acesso'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {message && (
-            <View
-              style={[
-                styles.messageContainer,
-                message.type === 'success'
-                  ? styles.successMessage
-                  : styles.errorMessage,
-              ]}
+              onPress={() => {
+                setMode('password');
+                setMessage(null);
+              }}
             >
               <Text
                 style={[
-                  styles.messageText,
-                  message.type === 'success'
-                    ? styles.successText
-                    : styles.errorText,
+                  styles.tabText,
+                  { color: mode === 'password' ? colors.primary : colors.textSecondary },
                 ]}
               >
-                {message.text}
+                Senha
               </Text>
-            </View>
-          )}
-        </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                mode === 'magic-link' && [
+                  styles.tabActive,
+                  { backgroundColor: isDark ? colors.card : '#FFFFFF' },
+                ],
+              ]}
+              onPress={() => {
+                setMode('magic-link');
+                setMessage(null);
+              }}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: mode === 'magic-link' ? colors.primary : colors.textSecondary },
+                ]}
+              >
+                Magic Link
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.form}>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
+              placeholder="seu@email.com"
+              placeholderTextColor={colors.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isSubmitting}
+            />
+
+            {mode === 'password' && (
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                    borderColor: colors.border,
+                    color: colors.text,
+                  },
+                ]}
+                placeholder="Senha"
+                placeholderTextColor={colors.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                editable={!isSubmitting}
+              />
+            )}
+
+            {/* Botao primario: conteudo solido, nunca vidro */}
+            <TouchableOpacity
+              style={[
+                styles.button,
+                { backgroundColor: colors.primary },
+                isSubmitting && styles.buttonDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>
+                  {mode === 'password' ? 'Entrar' : 'Enviar link de acesso'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {message && (
+              <View
+                style={[
+                  styles.messageContainer,
+                  {
+                    backgroundColor:
+                      message.type === 'success'
+                        ? colors.successLight
+                        : colors.dangerLight,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.messageText,
+                    {
+                      color:
+                        message.type === 'success' ? colors.success : colors.danger,
+                    },
+                  ]}
+                >
+                  {message.text}
+                </Text>
+              </View>
+            )}
+          </View>
+        </GlassSurface>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>
             Ao continuar, você concorda com nossos Termos de Serviço e Política
             de Privacidade.
           </Text>
@@ -199,7 +275,12 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   content: {
     flex: 1,
@@ -213,19 +294,23 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.85)',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  formCard: {
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 20,
   },
   tabs: {
     flexDirection: 'row',
     marginBottom: 24,
-    backgroundColor: '#f0f0f0',
     borderRadius: 12,
     padding: 4,
   },
@@ -236,7 +321,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   tabActive: {
-    backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -246,10 +330,6 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#666',
-  },
-  tabTextActive: {
-    color: '#007AFF',
   },
   form: {
     gap: 16,
@@ -257,22 +337,18 @@ const styles = StyleSheet.create({
   input: {
     height: 56,
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
-    color: '#1a1a1a',
   },
   button: {
     height: 56,
-    backgroundColor: '#007AFF',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonDisabled: {
-    backgroundColor: '#99c9ff',
+    opacity: 0.6,
   },
   buttonText: {
     color: '#fff',
@@ -283,29 +359,16 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
   },
-  successMessage: {
-    backgroundColor: '#d4edda',
-  },
-  errorMessage: {
-    backgroundColor: '#f8d7da',
-  },
   messageText: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  successText: {
-    color: '#155724',
-  },
-  errorText: {
-    color: '#721c24',
   },
   footer: {
     marginTop: 40,
     paddingHorizontal: 16,
   },
   footerText: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: FontSize.xs,
     textAlign: 'center',
     lineHeight: 18,
   },

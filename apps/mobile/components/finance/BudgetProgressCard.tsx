@@ -41,15 +41,7 @@ export function BudgetProgressCard({
   const statusColors = getStatusColors();
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <View style={[styles.colorDot, { backgroundColor: categoryColor }]} />
@@ -107,10 +99,7 @@ export function BudgetProgressCard({
 
 const styles = StyleSheet.create({
   container: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -145,13 +134,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   progressBackground: {
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   valuesRow: {
     flexDirection: 'row',

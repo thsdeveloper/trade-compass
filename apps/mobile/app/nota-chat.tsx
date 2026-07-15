@@ -30,6 +30,7 @@ import {
   payTransaction,
 } from '@/lib/finance-api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { QrScannerModal } from '@/components/agent/QrScannerModal';
 import {
   ReceiptDraftCard,
@@ -310,16 +311,15 @@ export default function NotaChatScreen() {
         return (
           <View style={styles.assistantRow}>
             <AvatarBadge />
-            <View
-              style={[styles.bubble, styles.assistantBubble, { backgroundColor: colors.surface }]}
-            >
+            {/* Bolha do assistente em material frosted (camada de conteúdo) */}
+            <GlassSurface variant="material" style={[styles.bubble, styles.assistantBubble]}>
               <View style={styles.thinkingRow}>
                 <ActivityIndicator size="small" color="#14B8A6" />
                 <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>
                   Lendo a nota...
                 </Text>
               </View>
-            </View>
+            </GlassSurface>
           </View>
         );
       }
@@ -328,11 +328,9 @@ export default function NotaChatScreen() {
         <View style={styles.assistantRow}>
           <AvatarBadge />
           <View style={styles.assistantColumn}>
-            <View
-              style={[styles.bubble, styles.assistantBubble, { backgroundColor: colors.surface }]}
-            >
+            <GlassSurface variant="material" style={[styles.bubble, styles.assistantBubble]}>
               <Text style={[styles.bubbleText, { color: colors.text }]}>{item.content}</Text>
-            </View>
+            </GlassSurface>
             {item.draft && (
               <ReceiptDraftCard
                 draft={item.draft}
@@ -352,37 +350,59 @@ export default function NotaChatScreen() {
 
   const canSend = input.trim().length > 0 && !isLoading;
 
+  const isDark = colorScheme === 'dark';
+  const ambientColors = isDark
+    ? (['#115E59', '#132a28', colors.background] as const)
+    : (['#0D9488', '#7DD8CE', '#F6F7F9'] as const);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.headerLeft}>
-          <AvatarBadge size={34} />
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Nota</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-              Lance gastos por nota fiscal
-            </Text>
+      {/* Gradiente ambiente da identidade da Nota: a camada de conteúdo dá
+          ao vidro algo para refratar (edge-to-edge, atrás de tudo) */}
+      <LinearGradient
+        colors={ambientColors}
+        locations={[0, 0.5, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
+
+      {/* Header: cápsula de Liquid Glass flutuando sobre o gradiente */}
+      <View style={styles.header}>
+        <GlassSurface variant="glass" style={styles.headerCapsule}>
+          <View style={styles.headerLeft}>
+            <AvatarBadge size={34} />
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Nota</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                Lance gastos por nota fiscal
+              </Text>
+            </View>
           </View>
-        </View>
-        <View style={styles.headerActions}>
-          {messages.length > 0 && (
+          <View style={styles.headerActions}>
+            {messages.length > 0 && (
+              <Pressable
+                onPress={() => setMessages([])}
+                accessibilityLabel="Limpar conversa"
+                style={({ pressed }) => [
+                  styles.headerButton,
+                  pressed && styles.pressedScale,
+                ]}
+              >
+                <IconSymbol name="trash" size={20} color={colors.text} />
+              </Pressable>
+            )}
             <Pressable
-              onPress={() => setMessages([])}
-              style={styles.headerButton}
-              accessibilityLabel="Limpar conversa"
+              onPress={() => router.back()}
+              accessibilityLabel="Fechar chat"
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.pressedScale,
+              ]}
             >
-              <IconSymbol name="trash" size={20} color={colors.textSecondary} />
+              <IconSymbol name="xmark" size={20} color={colors.text} />
             </Pressable>
-          )}
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.headerButton}
-            accessibilityLabel="Fechar chat"
-          >
-            <IconSymbol name="xmark" size={20} color={colors.textSecondary} />
-          </Pressable>
-        </View>
+          </View>
+        </GlassSurface>
       </View>
 
       <KeyboardAvoidingView
@@ -403,35 +423,26 @@ export default function NotaChatScreen() {
             <View style={styles.emptyActions}>
               <Pressable
                 onPress={() => setScannerVisible(true)}
-                style={({ pressed }) => [
-                  styles.emptyAction,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
+                style={({ pressed }) => [pressed && styles.pressedScale]}
               >
-                <IconSymbol name="qrcode.viewfinder" size={20} color="#14B8A6" />
-                <Text style={[styles.emptyActionText, { color: colors.text }]}>
-                  Escanear QR code da nota
-                </Text>
+                {/* Ação em material frosted (camada de conteúdo) */}
+                <GlassSurface variant="material" style={styles.emptyAction}>
+                  <IconSymbol name="qrcode.viewfinder" size={20} color="#14B8A6" />
+                  <Text style={[styles.emptyActionText, { color: colors.text }]}>
+                    Escanear QR code da nota
+                  </Text>
+                </GlassSurface>
               </Pressable>
               <Pressable
                 onPress={handleAttachImage}
-                style={({ pressed }) => [
-                  styles.emptyAction,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
+                style={({ pressed }) => [pressed && styles.pressedScale]}
               >
-                <IconSymbol name="camera.fill" size={20} color="#14B8A6" />
-                <Text style={[styles.emptyActionText, { color: colors.text }]}>
-                  Fotografar nota ou comprovante
-                </Text>
+                <GlassSurface variant="material" style={styles.emptyAction}>
+                  <IconSymbol name="camera.fill" size={20} color="#14B8A6" />
+                  <Text style={[styles.emptyActionText, { color: colors.text }]}>
+                    Fotografar nota ou comprovante
+                  </Text>
+                </GlassSurface>
               </Pressable>
             </View>
           </View>
@@ -455,58 +466,66 @@ export default function NotaChatScreen() {
           </View>
         )}
 
-        {/* Input bar */}
+        {/* Input bar: controles flutuando sobre o gradiente, sem borda sólida */}
         <View
           style={[
             styles.inputBar,
-            {
-              borderTopColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, Spacing.md),
-            },
+            { paddingBottom: Math.max(insets.bottom, Spacing.md) },
           ]}
         >
+          {/* Botões de ferramenta: círculos de Liquid Glass; feedback por
+              escala e ícone esmaecido quando desabilitado (nunca opacity
+              em ancestral de GlassSurface) */}
           <Pressable
             onPress={() => setScannerVisible(true)}
             disabled={isLoading}
             accessibilityLabel="Escanear QR code"
-            style={({ pressed }) => [
-              styles.toolButton,
-              { backgroundColor: colors.surface },
-              (pressed || isLoading) && { opacity: 0.6 },
-            ]}
+            style={({ pressed }) => [pressed && styles.pressedScale]}
           >
-            <IconSymbol name="qrcode.viewfinder" size={22} color="#14B8A6" />
+            <GlassSurface variant="glass" isInteractive style={styles.toolButton}>
+              <IconSymbol
+                name="qrcode.viewfinder"
+                size={22}
+                color={isLoading ? colors.textSecondary : '#14B8A6'}
+              />
+            </GlassSurface>
           </Pressable>
           <Pressable
             onPress={handleAttachImage}
             disabled={isLoading}
             accessibilityLabel="Anexar foto da nota"
-            style={({ pressed }) => [
-              styles.toolButton,
-              { backgroundColor: colors.surface },
-              (pressed || isLoading) && { opacity: 0.6 },
-            ]}
+            style={({ pressed }) => [pressed && styles.pressedScale]}
           >
-            <IconSymbol name="camera.fill" size={20} color="#14B8A6" />
+            <GlassSurface variant="glass" isInteractive style={styles.toolButton}>
+              <IconSymbol
+                name="camera.fill"
+                size={20}
+                color={isLoading ? colors.textSecondary : '#14B8A6'}
+              />
+            </GlassSurface>
           </Pressable>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.surface, color: colors.text }]}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Descreva a compra..."
-            placeholderTextColor={colors.textSecondary}
-            maxLength={MAX_MESSAGE_LENGTH}
-            multiline
-            editable={!isLoading}
-            onSubmitEditing={handleSend}
-            submitBehavior="submit"
-            returnKeyType="send"
-          />
+          {/* Campo de texto em cápsula de material frosted */}
+          <GlassSurface variant="material" style={styles.inputCapsule}>
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Descreva a compra..."
+              placeholderTextColor={colors.textSecondary}
+              maxLength={MAX_MESSAGE_LENGTH}
+              multiline
+              editable={!isLoading}
+              onSubmitEditing={handleSend}
+              submitBehavior="submit"
+              returnKeyType="send"
+            />
+          </GlassSurface>
+          {/* Enviar mantém o gradiente da marca (identidade em conteúdo) */}
           <Pressable
             onPress={handleSend}
             disabled={!canSend}
             accessibilityLabel="Enviar mensagem"
-            style={({ pressed }) => [pressed && canSend && { opacity: 0.8 }]}
+            style={({ pressed }) => [pressed && canSend && styles.pressedScale]}
           >
             <LinearGradient
               colors={NOTA_GRADIENT}
@@ -540,13 +559,25 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 380,
+  },
   header: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  headerCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    height: 56,
+    paddingHorizontal: Spacing.md,
+    // Cápsula: radius = altura / 2
+    borderRadius: 28,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -565,7 +596,15 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   headerButton: {
-    padding: Spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressedScale: {
+    // Feedback de toque por escala (opacity quebraria o Liquid Glass)
+    transform: [{ scale: 0.94 }],
   },
   avatar: {
     alignItems: 'center',
@@ -645,7 +684,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    borderWidth: 1,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
@@ -674,20 +712,22 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   toolButton: {
     width: 44,
     height: 44,
-    borderRadius: BorderRadius.full,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  input: {
+  inputCapsule: {
     flex: 1,
+    // Cápsula: radius = altura mínima / 2
+    borderRadius: 22,
+  },
+  input: {
     minHeight: 44,
     maxHeight: 120,
-    borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,

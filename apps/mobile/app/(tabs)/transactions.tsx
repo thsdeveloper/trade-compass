@@ -5,9 +5,15 @@ import {
   TextInput,
   SectionList,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +27,8 @@ import { useTransactionsFeed, type FeedTypeFilter } from '@/hooks/use-transactio
 import { TransactionListItem } from '@/components/finance/TransactionListItem';
 import { TransactionDetailModal } from '@/components/finance/TransactionDetailModal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { ScrollEdgeEffect } from '@/components/ui/ScrollEdgeEffect';
 import { AskNorteBar } from '@/components/agent/AskNorteBar';
 import {
   groupTransactionsByDate,
@@ -62,12 +70,28 @@ function formatSectionDate(dateString: string): string {
 export default function TransactionsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const screenBg = isDark ? colors.background : '#F6F7F9';
+  // Sticky headers translúcidos: não "cortam" o gradiente ambiente
+  const sectionHeaderBg = isDark
+    ? 'rgba(18, 18, 18, 0.92)'
+    : 'rgba(246, 247, 249, 0.92)';
 
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithDetails | null>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
+  const scrollY = useSharedValue(0);
+
+  // Branco sobre o gradiente azul em repouso; escurece junto com a
+  // materialização do edge effect para manter contraste sobre o material claro
+  const titleAnimatedStyle = useAnimatedStyle(() => ({
+    color: isDark
+      ? colors.text
+      : interpolateColor(scrollY.value, [0, 40], ['#FFFFFF', colors.text]),
+  }));
 
   // Set status bar style when screen gains focus
   useFocusEffect(
@@ -151,8 +175,8 @@ export default function TransactionsScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Busca (server-side, com debounce) */}
-      <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
+      {/* Busca (server-side, com debounce) — superfície de conteúdo (material) */}
+      <GlassSurface variant="material" style={styles.searchBar}>
         <IconSymbol name="magnifyingglass" size={18} color={colors.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
@@ -163,49 +187,65 @@ export default function TransactionsScreen() {
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
-      </View>
+      </GlassSurface>
 
       {/* Chips com totais do mês — tocar filtra por tipo */}
       <View style={styles.chipsRow}>
-        <TouchableOpacity
-          style={[
-            styles.chip,
-            typeFilter === 'RECEITA' && {
-              backgroundColor: colors.successLight,
-              borderColor: colors.success,
-            },
-          ]}
+        <Pressable
           onPress={() => toggleFilter('RECEITA')}
-          activeOpacity={0.7}
+          accessibilityRole="button"
           accessibilityLabel="Filtrar receitas"
         >
-          <View style={[styles.chipIcon, { backgroundColor: colors.successLight }]}>
-            <IconSymbol name="arrow.down" size={13} color={colors.success} />
-          </View>
-          <Text style={[styles.chipValue, { color: colors.text }]}>
-            {isBalanceVisible ? formatCurrency(monthIncome) : 'R$ ••••'}
-          </Text>
-        </TouchableOpacity>
+          {({ pressed }) => (
+            <View style={pressed && styles.chipPressed}>
+              <GlassSurface
+                variant="material"
+                style={[
+                  styles.chip,
+                  typeFilter === 'RECEITA' && {
+                    borderWidth: 1,
+                    borderColor: colors.success,
+                  },
+                ]}
+              >
+                <View style={[styles.chipIcon, { backgroundColor: colors.successLight }]}>
+                  <IconSymbol name="arrow.down" size={13} color={colors.success} />
+                </View>
+                <Text style={[styles.chipValue, { color: colors.text }]}>
+                  {isBalanceVisible ? formatCurrency(monthIncome) : 'R$ ••••'}
+                </Text>
+              </GlassSurface>
+            </View>
+          )}
+        </Pressable>
 
-        <TouchableOpacity
-          style={[
-            styles.chip,
-            typeFilter === 'DESPESA' && {
-              backgroundColor: colors.dangerLight,
-              borderColor: colors.danger,
-            },
-          ]}
+        <Pressable
           onPress={() => toggleFilter('DESPESA')}
-          activeOpacity={0.7}
+          accessibilityRole="button"
           accessibilityLabel="Filtrar despesas"
         >
-          <View style={[styles.chipIcon, { backgroundColor: colors.dangerLight }]}>
-            <IconSymbol name="arrow.up" size={13} color={colors.danger} />
-          </View>
-          <Text style={[styles.chipValue, { color: colors.text }]}>
-            {isBalanceVisible ? formatCurrency(monthExpenses) : 'R$ ••••'}
-          </Text>
-        </TouchableOpacity>
+          {({ pressed }) => (
+            <View style={pressed && styles.chipPressed}>
+              <GlassSurface
+                variant="material"
+                style={[
+                  styles.chip,
+                  typeFilter === 'DESPESA' && {
+                    borderWidth: 1,
+                    borderColor: colors.danger,
+                  },
+                ]}
+              >
+                <View style={[styles.chipIcon, { backgroundColor: colors.dangerLight }]}>
+                  <IconSymbol name="arrow.up" size={13} color={colors.danger} />
+                </View>
+                <Text style={[styles.chipValue, { color: colors.text }]}>
+                  {isBalanceVisible ? formatCurrency(monthExpenses) : 'R$ ••••'}
+                </Text>
+              </GlassSurface>
+            </View>
+          )}
+        </Pressable>
       </View>
 
       {/* Error Message */}
@@ -220,13 +260,13 @@ export default function TransactionsScreen() {
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: SectionData }) => (
-      <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+      <View style={[styles.sectionHeader, { backgroundColor: sectionHeaderBg }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           {section.title}
         </Text>
       </View>
     ),
-    [colors]
+    [colors, sectionHeaderBg]
   );
 
   const renderItem = useCallback(
@@ -280,50 +320,82 @@ export default function TransactionsScreen() {
   );
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.background, paddingTop: insets.top },
-      ]}
-    >
-      {/* Barra superior fixa: permanece visível durante o scroll */}
-      <View style={[styles.topBar, { backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          style={[styles.topBarButton, { backgroundColor: colors.surface }]}
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      {/* Gradiente ambiente edge-to-edge: a cor de marca vive no fundo,
+          dando ao vidro algo para refratar */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
+
+      {/* Barra superior fixa (camada funcional): botões em Liquid Glass.
+          O ScrollEdgeEffect materializa o fundo da barra ao rolar a lista */}
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
+        <ScrollEdgeEffect scrollY={scrollY} />
+        <Pressable
           onPress={toggleBalanceVisibility}
+          accessibilityRole="button"
           accessibilityLabel={isBalanceVisible ? 'Ocultar valores' : 'Mostrar valores'}
         >
-          <IconSymbol
-            name={isBalanceVisible ? 'eye' : 'eye.slash'}
-            size={20}
-            color={colors.text}
-          />
-        </TouchableOpacity>
+          {({ pressed }) => (
+            // Escala no press (opacidade quebraria o Liquid Glass nativo)
+            <View style={pressed && styles.buttonPressed}>
+              <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
+                <IconSymbol
+                  name={isBalanceVisible ? 'eye' : 'eye.slash'}
+                  size={20}
+                  color={colors.text}
+                />
+              </GlassSurface>
+            </View>
+          )}
+        </Pressable>
 
-        <Text style={[styles.topBarTitle, { color: colors.text }]}>Atividades</Text>
+        <Animated.Text style={[styles.topBarTitle, titleAnimatedStyle]}>
+          Atividades
+        </Animated.Text>
 
         <View style={styles.topBarActions}>
-          <TouchableOpacity
-            style={[styles.topBarButton, { backgroundColor: colors.surface }]}
+          <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push('/nota-chat');
             }}
+            accessibilityRole="button"
             accessibilityLabel="Lançar por nota fiscal"
           >
-            <IconSymbol name="qrcode.viewfinder" size={20} color={colors.text} />
-          </TouchableOpacity>
+            {({ pressed }) => (
+              <View style={pressed && styles.buttonPressed}>
+                <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
+                  <IconSymbol name="qrcode.viewfinder" size={20} color={colors.text} />
+                </GlassSurface>
+              </View>
+            )}
+          </Pressable>
 
-          <TouchableOpacity
-            style={[styles.topBarButton, { backgroundColor: colors.primary }]}
+          <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push('/new-transaction');
             }}
+            accessibilityRole="button"
             accessibilityLabel="Nova transação"
           >
-            <IconSymbol name="plus" size={22} color={colors.textOnPrimary} />
-          </TouchableOpacity>
+            {({ pressed }) => (
+              <View style={pressed && styles.buttonPressed}>
+                {/* Destaque da ação primária pela cor do ícone, não por fundo sólido */}
+                <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
+                  <IconSymbol name="plus" size={22} color={colors.primary} />
+                </GlassSurface>
+              </View>
+            )}
+          </Pressable>
         </View>
       </View>
 
@@ -338,6 +410,10 @@ export default function TransactionsScreen() {
         contentContainerStyle={styles.listContent}
         stickySectionHeadersEnabled
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => {
+          scrollY.value = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         onRefresh={refresh}
         refreshing={isRefreshing}
         onEndReached={loadMore}
@@ -364,6 +440,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 420,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -379,9 +462,13 @@ const styles = StyleSheet.create({
   topBarButton: {
     width: 40,
     height: 40,
-    borderRadius: BorderRadius.full,
+    // Cápsula: radius = altura / 2
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.92 }],
   },
   topBarTitle: {
     fontSize: FontSize.xl,
@@ -419,6 +506,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  chipPressed: {
+    transform: [{ scale: 0.97 }],
   },
   chipIcon: {
     width: 26,

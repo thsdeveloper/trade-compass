@@ -1,22 +1,24 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useReducedMotion,
   withRepeat,
   withTiming,
   withSequence,
   Easing,
 } from 'react-native-reanimated';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Spacing, BorderRadius } from '@/constants/theme';
 
-// Paleta "IA" (violeta -> fucsia), a mesma linguagem visual do AIButton do web.
-const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
+// Cor "IA" (violeta), a mesma linguagem visual do AIButton do web.
+// Tint com alpha baixo: tint forte mata o efeito do Liquid Glass.
+const AI_TINT = 'rgba(168, 85, 247, 0.55)';
 const GLOW_COLOR = '#A855F7';
 
 const FAB_SIZE = 56;
@@ -26,11 +28,17 @@ const BOTTOM_OFFSET = 80;
 export function AgentFab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
 
   const glowScale = useSharedValue(1);
   const glowOpacity = useSharedValue(0.35);
 
   useEffect(() => {
+    if (reduceMotion) {
+      glowScale.value = 1;
+      glowOpacity.value = 0.2;
+      return;
+    }
     glowScale.value = withRepeat(
       withSequence(
         withTiming(1.35, { duration: 1600, easing: Easing.out(Easing.quad) }),
@@ -45,7 +53,7 @@ export function AgentFab() {
       ),
       -1
     );
-  }, [glowScale, glowOpacity]);
+  }, [glowScale, glowOpacity, reduceMotion]);
 
   const glowStyle = useAnimatedStyle(() => ({
     transform: [{ scale: glowScale.value }],
@@ -69,14 +77,9 @@ export function AgentFab() {
         accessibilityLabel="Abrir o Norte, seu assistente financeiro"
         style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
       >
-        <LinearGradient
-          colors={AI_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.button}
-        >
+        <GlassSurface variant="glass" isInteractive tintColor={AI_TINT} style={styles.button}>
           <IconSymbol name="sparkles" size={26} color="#FFFFFF" />
-        </LinearGradient>
+        </GlassSurface>
       </Pressable>
     </View>
   );

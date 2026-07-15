@@ -4,42 +4,37 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  View,
 } from 'react-native';
-import Animated, {
-  SharedValue,
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const SCROLL_THRESHOLD = 80;
+/** Altura da cápsula, sem contar o inset superior (usada pelo layout da home) */
+export const HEADER_BAR_HEIGHT = 56;
 
 interface NubankHeaderProps {
   userName?: string;
   userPhoto?: string | null;
   isBalanceVisible: boolean;
   onToggleBalance: () => void;
-  onHelpPress?: () => void;
-  onMenuPress?: () => void;
   onProfilePress?: () => void;
-  scrollOffset?: SharedValue<number>;
 }
 
+/**
+ * Cabeçalho em cápsula de Liquid Glass flutuando sobre o conteúdo,
+ * conforme a camada funcional do novo design system da Apple.
+ */
 export function NubankHeader({
   userName = 'Usuario',
   userPhoto,
   isBalanceVisible,
   onToggleBalance,
-  onHelpPress,
-  onMenuPress,
   onProfilePress,
-  scrollOffset,
 }: NubankHeaderProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -50,9 +45,9 @@ export function NubankHeader({
     onToggleBalance();
   };
 
-  const handlePress = (callback?: () => void) => {
+  const handleProfilePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    callback?.();
+    onProfilePress?.();
   };
 
   const getGreeting = () => {
@@ -64,197 +59,84 @@ export function NubankHeader({
 
   const firstName = userName.split(' ')[0];
 
-  // Animated styles for shrinking header effect
-  const containerAnimatedStyle = useAnimatedStyle(() => {
-    if (!scrollOffset) return {};
-    const paddingBottom = interpolate(
-      scrollOffset.value,
-      [0, SCROLL_THRESHOLD],
-      [Spacing['2xl'], Spacing.sm],
-      Extrapolation.CLAMP
-    );
-    return { paddingBottom };
-  });
-
-  const topRowAnimatedStyle = useAnimatedStyle(() => {
-    if (!scrollOffset) return {};
-    const marginBottom = interpolate(
-      scrollOffset.value,
-      [0, SCROLL_THRESHOLD],
-      [Spacing.lg, Spacing.sm],
-      Extrapolation.CLAMP
-    );
-    return { marginBottom };
-  });
-
-  const profileAnimatedStyle = useAnimatedStyle(() => {
-    if (!scrollOffset) return {};
-    const scale = interpolate(
-      scrollOffset.value,
-      [0, SCROLL_THRESHOLD],
-      [1, 0.7],
-      Extrapolation.CLAMP
-    );
-    return { transform: [{ scale }] };
-  });
-
-  const iconsAnimatedStyle = useAnimatedStyle(() => {
-    if (!scrollOffset) return {};
-    const scale = interpolate(
-      scrollOffset.value,
-      [0, SCROLL_THRESHOLD],
-      [1, 0.83],
-      Extrapolation.CLAMP
-    );
-    return { transform: [{ scale }] };
-  });
-
-  const greetingAnimatedStyle = useAnimatedStyle(() => {
-    if (!scrollOffset) return {};
-    const opacity = interpolate(
-      scrollOffset.value,
-      [0, 40],
-      [1, 0],
-      Extrapolation.CLAMP
-    );
-    const height = interpolate(
-      scrollOffset.value,
-      [0, 40],
-      [28, 0],
-      Extrapolation.CLAMP
-    );
-    const marginTop = interpolate(
-      scrollOffset.value,
-      [0, 40],
-      [Spacing.sm, 0],
-      Extrapolation.CLAMP
-    );
-    return { opacity, height, marginTop };
-  });
-
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.primary,
-          paddingTop: insets.top + Spacing.md,
-        },
-        containerAnimatedStyle,
-      ]}
+    <View
+      style={[styles.wrapper, { top: insets.top + Spacing.sm }]}
+      pointerEvents="box-none"
     >
-      {/* Top Row - Profile and Icons */}
-      <Animated.View style={[styles.topRow, topRowAnimatedStyle]}>
-        <Animated.View style={profileAnimatedStyle}>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => handlePress(onProfilePress)}
-            activeOpacity={0.7}
-          >
-            {userPhoto ? (
-              <Image source={{ uri: userPhoto }} style={styles.profileImage} />
-            ) : (
-              <Animated.View style={styles.profilePlaceholder}>
-                <IconSymbol name="person.circle.fill" size={40} color="#FFFFFF" />
-              </Animated.View>
-            )}
-            <Animated.View style={[styles.profileIndicator, { borderColor: colors.primary }]} />
-          </TouchableOpacity>
-        </Animated.View>
+      <GlassSurface variant="glass" style={styles.capsule}>
+        <TouchableOpacity
+          onPress={handleProfilePress}
+          activeOpacity={0.7}
+          accessibilityLabel="Abrir perfil"
+        >
+          {userPhoto ? (
+            <Image source={{ uri: userPhoto }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
+              <IconSymbol name="person.circle.fill" size={24} color="#FFFFFF" />
+            </View>
+          )}
+        </TouchableOpacity>
 
-        <Animated.View style={[styles.iconsRow, iconsAnimatedStyle]}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={handleToggleBalance}
-            activeOpacity={0.7}
-          >
-            <IconSymbol
-              name={isBalanceVisible ? 'eye.fill' : 'eye.slash.fill'}
-              size={24}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => handlePress(onHelpPress)}
-            activeOpacity={0.7}
-          >
-            <IconSymbol name="questionmark.circle" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => handlePress(onMenuPress)}
-            activeOpacity={0.7}
-          >
-            <IconSymbol name="person.circle" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
-
-      {/* Greeting */}
-      <Animated.View style={[styles.greetingContainer, greetingAnimatedStyle]}>
-        <Text style={styles.greeting}>
+        <Text style={[styles.greeting, { color: colors.text }]} numberOfLines={1}>
           {getGreeting()}, {firstName}
         </Text>
-      </Animated.View>
-    </Animated.View>
+
+        <TouchableOpacity
+          onPress={handleToggleBalance}
+          style={styles.iconButton}
+          activeOpacity={0.7}
+          accessibilityLabel={isBalanceVisible ? 'Ocultar valores' : 'Mostrar valores'}
+        >
+          <IconSymbol
+            name={isBalanceVisible ? 'eye.fill' : 'eye.slash.fill'}
+            size={20}
+            color={colors.text}
+          />
+        </TouchableOpacity>
+      </GlassSurface>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['2xl'],
-  },
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  profileButton: {
-    position: 'relative',
-  },
-  profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  profilePlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileIndicator: {
+  wrapper: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#00A651',
-    borderWidth: 2,
+    left: Spacing.xl,
+    right: Spacing.xl,
+    zIndex: 10,
   },
-  iconsRow: {
+  capsule: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.md,
+    height: HEADER_BAR_HEIGHT,
+    paddingHorizontal: Spacing.md,
+    borderRadius: HEADER_BAR_HEIGHT / 2,
   },
-  iconButton: {
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.full,
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
-  greetingContainer: {
-    marginTop: Spacing.sm,
+  avatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   greeting: {
-    fontSize: FontSize.xl,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    flex: 1,
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

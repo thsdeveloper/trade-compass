@@ -7,7 +7,8 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Href } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -16,6 +17,7 @@ import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -76,7 +78,9 @@ const createMenuSections = (signOut: () => Promise<void>): { title?: string; ite
 export default function MoreScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, profile, signOut, refreshProfile } = useAuth();
 
   const MENU_SECTIONS = createMenuSections(signOut);
@@ -107,13 +111,25 @@ export default function MoreScreen() {
   const displayName = profile?.full_name || 'Usuario';
   const displayEmail = user?.email || '';
 
+  const screenBg = isDark ? colors.background : '#F6F7F9';
+  const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
+
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={['top']}
-    >
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      {/* Gradiente ambiente edge-to-edge (camada de conteudo) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
+
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.xl }]}>
         <TouchableOpacity style={styles.profileSection} onPress={handleAvatarPress} activeOpacity={0.8}>
           <View style={styles.avatarContainer}>
             {profile?.avatar_url ? (
@@ -139,20 +155,15 @@ export default function MoreScreen() {
       >
         {MENU_SECTIONS.map((section, sectionIndex) => (
           <View key={sectionIndex} style={styles.section}>
-            {section.title && (
-              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                {section.title}
-              </Text>
-            )}
-            <View
-              style={[
-                styles.sectionContent,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
+            <GlassSurface
+              variant="material"
+              style={[styles.sectionContent, { borderColor: hairlineColor }]}
             >
+              {section.title && (
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                  {section.title}
+                </Text>
+              )}
               {section.items.map((item, itemIndex) => (
                 <TouchableOpacity
                   key={item.id}
@@ -188,7 +199,7 @@ export default function MoreScreen() {
                   />
                 </TouchableOpacity>
               ))}
-            </View>
+            </GlassSurface>
           </View>
         ))}
 
@@ -199,7 +210,7 @@ export default function MoreScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -207,8 +218,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 420,
+  },
   header: {
-    paddingVertical: Spacing['2xl'],
+    paddingBottom: Spacing['2xl'],
     paddingHorizontal: Spacing.xl,
   },
   profileSection: {
@@ -246,11 +264,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '600',
     textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
-    marginLeft: Spacing.sm,
+    paddingTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
   },
   sectionContent: {
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   menuItem: {

@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatCurrency } from '@/types/finance';
 
@@ -21,6 +21,7 @@ interface BalanceSectionProps {
   showChevron?: boolean;
 }
 
+/** Cartão-herói do saldo: superfície elevada que ancora o topo da home */
 export function BalanceSection({
   title,
   balance,
@@ -30,6 +31,7 @@ export function BalanceSection({
 }: BalanceSectionProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -38,61 +40,84 @@ export function BalanceSection({
 
   return (
     <TouchableOpacity
-      style={[styles.container, { backgroundColor: colors.background }]}
       onPress={handlePress}
-      activeOpacity={onPress ? 0.7 : 1}
+      activeOpacity={onPress ? 0.85 : 1}
       disabled={!onPress}
     >
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        {showChevron && (
-          <IconSymbol name="chevron.right" size={20} color={colors.icon} />
-        )}
-      </View>
+      <GlassSurface
+        variant="material"
+        style={[
+          styles.card,
+          {
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
+          },
+        ]}
+      >
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <View style={[styles.titleIcon, { backgroundColor: colors.primaryLight }]}>
+              <IconSymbol name="wallet.pass.fill" size={14} color={colors.primary} />
+            </View>
+            <Text style={[styles.title, { color: colors.textSecondary }]}>{title}</Text>
+          </View>
+          {showChevron && (
+            <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+          )}
+        </View>
 
-      <View style={styles.balanceContainer}>
         {isVisible ? (
           <Text style={[styles.balance, { color: colors.text }]}>
             {formatCurrency(balance)}
           </Text>
         ) : (
-          <View style={styles.hiddenBalance}>
-            <View style={[styles.hiddenBar, { backgroundColor: colors.border }]} />
-          </View>
+          <Text style={[styles.hiddenBalance, { color: colors.textSecondary }]}>
+            R$ ••••••
+          </Text>
         )}
-      </View>
+      </GlassSurface>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: Spacing.xl,
+  card: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    gap: Spacing.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  title: {
-    fontSize: FontSize.md,
-    fontWeight: '500',
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
-  balanceContainer: {
-    marginTop: Spacing.sm,
+  titleIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
   },
   balance: {
     fontSize: FontSize['3xl'],
-    fontWeight: '700',
+    fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
   },
   hiddenBalance: {
-    height: 36,
-    justifyContent: 'center',
-  },
-  hiddenBar: {
-    height: 24,
-    width: 160,
-    borderRadius: BorderRadius.sm,
+    fontSize: FontSize['3xl'],
+    fontWeight: FontWeight.bold,
+    letterSpacing: 2,
   },
 });

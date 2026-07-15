@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -126,12 +127,29 @@ export default function NewTransactionScreen() {
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.background, paddingTop: insets.top },
+        { backgroundColor: isDark ? colors.background : '#F6F7F9' },
       ]}
     >
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
 
-      <View style={styles.header}>
+      {/* Gradiente ambiente sutil, edge-to-edge (modal de formulario) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['rgba(29,78,216,0.35)', 'rgba(22,35,63,0.55)', colors.background]
+            : ['rgba(0,102,255,0.16)', 'rgba(127,176,255,0.10)', '#F6F7F9']
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
+
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 16, borderBottomColor: colors.border },
+        ]}
+      >
         <TouchableOpacity
           onPress={() => router.back()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -278,14 +296,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 380,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: {
     fontSize: 18,

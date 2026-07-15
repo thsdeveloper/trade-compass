@@ -3,14 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface QuickAction {
@@ -19,14 +20,23 @@ interface QuickAction {
   icon: IconSymbolName;
   route?: string;
   onPress?: () => void;
+  /** Destaca a ação com o fundo primário */
+  highlight?: boolean;
 }
 
 const DEFAULT_ACTIONS: QuickAction[] = [
   {
     id: 'new-transaction',
-    label: 'Nova\nTransacao',
-    icon: 'plus.circle',
+    label: 'Nova\ntransação',
+    icon: 'plus',
     route: '/new-transaction',
+    highlight: true,
+  },
+  {
+    id: 'scan-receipt',
+    label: 'Escanear\nnota',
+    icon: 'qrcode.viewfinder',
+    route: '/nota-chat',
   },
   {
     id: 'accounts',
@@ -42,7 +52,7 @@ const DEFAULT_ACTIONS: QuickAction[] = [
   },
   {
     id: 'reports',
-    label: 'Relatorios',
+    label: 'Relatórios',
     icon: 'chart.bar',
     route: '/relatorios',
   },
@@ -67,41 +77,41 @@ export function QuickActions({ actions = DEFAULT_ACTIONS }: QuickActionsProps) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
         {actions.map((action) => (
-          <TouchableOpacity
+          <Pressable
             key={action.id}
             style={styles.actionButton}
             onPress={() => handlePress(action)}
-            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={action.label.replace('\n', ' ')}
           >
-            <View
-              style={[
-                styles.iconContainer,
-                {
-                  borderColor: colors.border,
-                  backgroundColor: colors.background,
-                },
-              ]}
-            >
-              <IconSymbol
-                name={action.icon}
-                size={24}
-                color={colors.text}
-              />
-            </View>
-            <Text
-              style={[styles.label, { color: colors.text }]}
-              numberOfLines={2}
-            >
-              {action.label}
-            </Text>
-          </TouchableOpacity>
+            {({ pressed }) => (
+              <>
+                {/* Escala no press (opacidade quebraria o Liquid Glass nativo) */}
+                <View style={pressed && styles.iconPressed}>
+                  <GlassSurface variant="glass" isInteractive style={styles.iconContainer}>
+                    <IconSymbol
+                      name={action.icon}
+                      size={24}
+                      color={action.highlight ? colors.primary : colors.text}
+                    />
+                  </GlassSurface>
+                </View>
+                <Text
+                  style={[styles.label, { color: colors.text }]}
+                  numberOfLines={2}
+                >
+                  {action.label}
+                </Text>
+              </>
+            )}
+          </Pressable>
         ))}
       </ScrollView>
     </View>
@@ -114,25 +124,27 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    gap: Spacing.xl,
+    gap: Spacing.lg,
   },
   actionButton: {
     alignItems: 'center',
-    width: 72,
+    width: 76,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
+  iconPressed: {
+    transform: [{ scale: 0.92 }],
+  },
   label: {
     fontSize: FontSize.xs,
-    fontWeight: '500',
+    fontWeight: FontWeight.medium,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 15,
   },
 });

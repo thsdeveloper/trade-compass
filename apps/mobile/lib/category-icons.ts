@@ -1,0 +1,163 @@
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+
+/**
+ * Mapeia os nomes de ícone Lucide (persistidos nas categorias) para os
+ * SF Symbols usados pelo IconSymbol. Fonte única — antes duplicado em
+ * TransactionListItem, CategoryExpenseItem e TransactionDetailModal.
+ */
+const CATEGORY_ICON_MAP: Record<string, IconSymbolName> = {
+  // Financas
+  'Wallet': 'wallet.pass.fill',
+  'CreditCard': 'creditcard.fill',
+  'Banknote': 'banknote.fill',
+  'DollarSign': 'dollarsign.circle.fill',
+  'PiggyBank': 'banknote.fill',
+  'TrendingUp': 'chart.line.uptrend.xyaxis',
+  'TrendingDown': 'chart.line.downtrend.xyaxis',
+  'Receipt': 'doc.text.fill',
+  'Landmark': 'building.columns.fill',
+  'Coins': 'dollarsign.circle.fill',
+  'HandCoins': 'dollarsign.circle.fill',
+  // Casa & Moradia
+  'Home': 'house.fill',
+  'Building': 'building.columns.fill',
+  'Building2': 'building.columns.fill',
+  'Key': 'key.fill',
+  'Lightbulb': 'bolt.fill',
+  'Plug': 'bolt.fill',
+  'Flame': 'bolt.fill',
+  'Droplets': 'drop.fill',
+  // Alimentacao
+  'ShoppingCart': 'cart.fill',
+  'Utensils': 'fork.knife',
+  'Coffee': 'cup.and.saucer.fill',
+  'Pizza': 'fork.knife',
+  'Apple': 'fork.knife',
+  'Cake': 'fork.knife',
+  'UtensilsCrossed': 'fork.knife',
+  // Transporte
+  'Car': 'car.fill',
+  'CarFront': 'car.fill',
+  'Bus': 'bus',
+  'Train': 'tram.fill',
+  'Plane': 'airplane',
+  'Bike': 'bicycle',
+  'Fuel': 'fuelpump.fill',
+  'MapPin': 'mappin.and.ellipse',
+  'Navigation': 'location.fill',
+  'Truck': 'truck.box.fill',
+  // Saude
+  'Heart': 'heart.fill',
+  'HeartPulse': 'heart.fill',
+  'Pill': 'pills.fill',
+  'Stethoscope': 'stethoscope',
+  'Activity': 'heart.fill',
+  'Hospital': 'cross.fill',
+  'Cross': 'cross.fill',
+  'Dumbbell': 'dumbbell.fill',
+  'PersonStanding': 'figure.stand',
+  // Entretenimento & Lazer
+  'Gamepad2': 'gamecontroller.fill',
+  'Music': 'music.note',
+  'Music2': 'music.note',
+  'Headphones': 'headphones',
+  'Tv': 'tv.fill',
+  'Film': 'film',
+  'Camera': 'camera.fill',
+  'Gift': 'gift.fill',
+  'PartyPopper': 'sparkles',
+  'Sparkles': 'sparkles',
+  // Educacao
+  'GraduationCap': 'graduationcap.fill',
+  'BookOpen': 'book.fill',
+  'Book': 'book.fill',
+  'Library': 'books.vertical.fill',
+  'Notebook': 'book.fill',
+  'FileText': 'doc.text.fill',
+  'Award': 'star.fill',
+  'Medal': 'star.fill',
+  'Brain': 'brain.head.profile',
+  // Vestuario & Compras
+  'Shirt': 'tshirt.fill',
+  'ShoppingBag': 'bag.fill',
+  'Store': 'storefront.fill',
+  'Package': 'shippingbox.fill',
+  'Tag': 'tag.fill',
+  'Tags': 'tag.fill',
+  'Gem': 'star.fill',
+  'Watch': 'clock.fill',
+  'Glasses': 'eyeglasses',
+  'Umbrella': 'umbrella.fill',
+  // Trabalho & Negocios
+  'Briefcase': 'briefcase.fill',
+  'Users': 'person.2.fill',
+  'UserCircle': 'person.circle.fill',
+  'Monitor': 'desktopcomputer',
+  'Laptop': 'laptopcomputer',
+  'Printer': 'printer.fill',
+  'Phone': 'phone.fill',
+  'Mail': 'envelope.fill',
+  'Send': 'paperplane.fill',
+  'Calendar': 'calendar',
+  'Clock': 'clock.fill',
+  'Timer': 'timer',
+  // Tecnologia
+  'Code': 'chevron.left.forwardslash.chevron.right',
+  'Wifi': 'wifi',
+  'Smartphone': 'iphone',
+  'Tablet': 'ipad',
+  'Globe': 'globe',
+  'Cloud': 'cloud.fill',
+  'Zap': 'bolt.fill',
+  // Servicos & Utilidades
+  'Wrench': 'wrench.and.screwdriver.fill',
+  'Settings': 'gearshape.fill',
+  'Hammer': 'hammer.fill',
+  'Scissors': 'scissors',
+  'Shield': 'shield.fill',
+  'Lock': 'lock.fill',
+  'Bell': 'bell.fill',
+  // Viagem
+  'Hotel': 'bed.double.fill',
+  'Map': 'map.fill',
+  'Compass': 'safari.fill',
+  'Mountain': 'mountain.2.fill',
+  'Tent': 'tent.fill',
+  'Luggage': 'suitcase.fill',
+  'Sun': 'sun.max.fill',
+  'Moon': 'moon.fill',
+  // Pets & Natureza
+  'Dog': 'pawprint.fill',
+  'Cat': 'pawprint.fill',
+  'Bird': 'bird.fill',
+  'Fish': 'fish.fill',
+  'Leaf': 'leaf.fill',
+  'Flower': 'camera.macro',
+  // Comunicacao
+  'MessageCircle': 'message.fill',
+  'MessageSquare': 'message.fill',
+  'AtSign': 'at',
+  'Link': 'link',
+  // Status
+  'AlertCircle': 'exclamationmark.circle.fill',
+  'AlertTriangle': 'exclamationmark.triangle.fill',
+  'CheckCircle': 'checkmark.circle.fill',
+  'Star': 'star.fill',
+  'Bookmark': 'bookmark.fill',
+  'Flag': 'flag.fill',
+  'Target': 'target',
+  // Outros
+  'MoreHorizontal': 'ellipsis',
+  'Box': 'shippingbox.fill',
+  'Archive': 'archivebox.fill',
+  'Folder': 'folder.fill',
+  'Trash2': 'trash.fill',
+  'Recycle': 'arrow.triangle.2.circlepath',
+  'RefreshCw': 'arrow.clockwise',
+};
+
+const DEFAULT_ICON: IconSymbolName = 'tag.fill';
+
+export function getCategoryIcon(iconName: string): IconSymbolName {
+  return CATEGORY_ICON_MAP[iconName] ?? DEFAULT_ICON;
+}

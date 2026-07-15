@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  SectionList,
+  FlatList,
+  Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { getCategoryIcon } from '@/components/finance/TransactionListItem';
 import { getGlobalCategories } from '@/lib/finance-api';
 import type {
@@ -29,6 +31,7 @@ interface SectionData {
 export default function CategoriasScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -65,81 +68,103 @@ export default function CategoriasScreen() {
     [categories, activeType]
   );
 
-  const renderSectionHeader = useCallback(
-    ({ section }: { section: SectionData }) => (
-      <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-        <View
-          style={[styles.parentIcon, { backgroundColor: `${section.parent.color}22` }]}
-        >
-          <IconSymbol
-            name={getCategoryIcon(section.parent.icon)}
-            size={18}
-            color={section.parent.color}
-          />
-        </View>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          {section.title}
-        </Text>
-      </View>
-    ),
-    [colors]
-  );
+  const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
+  const screenBg = isDark ? colors.background : '#F6F7F9';
 
-  const renderItem = useCallback(
-    ({ item }: { item: GlobalCategory }) => (
-      <View style={styles.childRow}>
-        <View style={[styles.childIcon, { backgroundColor: `${item.color}15` }]}>
-          <IconSymbol name={getCategoryIcon(item.icon)} size={16} color={item.color} />
+  // Cada grupo de categorias vira um cartao "material" (camada de conteudo);
+  // itens internos sao planos, conforme a HIG.
+  const renderSection = useCallback(
+    ({ item }: { item: SectionData }) => (
+      <GlassSurface
+        variant="material"
+        style={[styles.sectionCard, { borderColor: hairlineColor }]}
+      >
+        <View style={styles.sectionHeader}>
+          <View
+            style={[styles.parentIcon, { backgroundColor: `${item.parent.color}22` }]}
+          >
+            <IconSymbol
+              name={getCategoryIcon(item.parent.icon)}
+              size={18}
+              color={item.parent.color}
+            />
+          </View>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            {item.title}
+          </Text>
         </View>
-        <Text style={[styles.childName, { color: colors.text }]}>{item.name}</Text>
-      </View>
+        {item.data.map((child) => (
+          <View key={child.id} style={styles.childRow}>
+            <View style={[styles.childIcon, { backgroundColor: `${child.color}15` }]}>
+              <IconSymbol name={getCategoryIcon(child.icon)} size={16} color={child.color} />
+            </View>
+            <Text style={[styles.childName, { color: colors.text }]}>{child.name}</Text>
+          </View>
+        ))}
+      </GlassSurface>
     ),
-    [colors]
+    [colors, hairlineColor]
   );
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.background, paddingTop: insets.top },
-      ]}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={[styles.headerButton, { backgroundColor: colors.surface }]}
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      {/* Gradiente ambiente edge-to-edge (camada de conteudo) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
+
+      {/* Header: controles flutuantes em Liquid Glass */}
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+        <Pressable
           onPress={() => router.back()}
           accessibilityLabel="Voltar"
+          style={({ pressed }) => pressed && styles.pressedControl}
         >
-          <IconSymbol name="chevron.left" size={20} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Categorias</Text>
+          <GlassSurface variant="glass" isInteractive style={styles.headerButton}>
+            <IconSymbol name="chevron.left" size={20} color={colors.text} />
+          </GlassSurface>
+        </Pressable>
+        <Text
+          style={[styles.headerTitle, { color: isDark ? colors.text : '#FFFFFF' }]}
+        >
+          Categorias
+        </Text>
         <View style={styles.headerButton} />
       </View>
 
-      {/* Toggle Despesas / Receitas */}
-      <View style={[styles.typeToggle, { backgroundColor: colors.card }]}>
+      {/* Toggle Despesas / Receitas: capsula de vidro na camada funcional */}
+      <GlassSurface variant="glass" style={styles.typeToggle}>
         {(['DESPESA', 'RECEITA'] as const).map((type) => {
           const isActive = activeType === type;
           return (
-            <TouchableOpacity
+            <Pressable
               key={type}
-              style={[styles.typeTab, isActive && { backgroundColor: colors.primary }]}
+              style={({ pressed }) => [
+                styles.typeTab,
+                isActive && { backgroundColor: colors.primary },
+                pressed && styles.pressedTab,
+              ]}
               onPress={() => setActiveType(type)}
-              activeOpacity={0.7}
             >
               <Text
                 style={[
                   styles.typeTabText,
-                  { color: isActive ? colors.textOnPrimary : colors.textSecondary },
+                  { color: isActive ? colors.textOnPrimary : colors.text },
                 ]}
               >
                 {type === 'DESPESA' ? 'Despesas' : 'Receitas'}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
-      </View>
+      </GlassSurface>
 
       {error && (
         <View style={[styles.errorContainer, { backgroundColor: colors.dangerLight }]}>
@@ -153,13 +178,14 @@ export default function CategoriasScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          contentContainerStyle={styles.listContent}
-          stickySectionHeadersEnabled
+        <FlatList
+          data={sections}
+          keyExtractor={(item) => item.parent.id}
+          renderItem={renderSection}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 40 },
+          ]}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -171,12 +197,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 400,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.sm,
   },
   headerButton: {
     width: 40,
@@ -185,6 +218,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pressedControl: {
+    transform: [{ scale: 0.92 }],
+  },
   headerTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
@@ -192,15 +228,18 @@ const styles = StyleSheet.create({
   typeToggle: {
     flexDirection: 'row',
     padding: 4,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.full,
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   typeTab: {
     flex: 1,
     paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.full,
     alignItems: 'center',
+  },
+  pressedTab: {
+    transform: [{ scale: 0.97 }],
   },
   typeTabText: {
     fontSize: FontSize.sm,
@@ -212,14 +251,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   listContent: {
-    paddingBottom: 40,
+    paddingTop: Spacing.sm,
+  },
+  sectionCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingBottom: Spacing.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.lg,
     paddingBottom: Spacing.sm,
   },
   parentIcon: {
@@ -239,7 +285,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    marginLeft: Spacing['2xl'],
+    marginLeft: Spacing.xl,
   },
   childIcon: {
     width: 28,

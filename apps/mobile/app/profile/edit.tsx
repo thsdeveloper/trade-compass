@@ -13,10 +13,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,6 +42,9 @@ function formatPhone(value: string): string {
 export default function EditProfileScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+  const screenBg = isDark ? colors.background : '#F6F7F9';
+  const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
   const router = useRouter();
   const { user } = useAuth();
 
@@ -144,7 +149,7 @@ export default function EditProfileScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -153,7 +158,18 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
+      {/* Gradiente ambiente edge-to-edge (camada de conteudo) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -171,13 +187,16 @@ export default function EditProfileScreen() {
               onAvatarChange={handleAvatarChange}
               size={120}
             />
-            <Text style={[styles.avatarHint, { color: colors.textSecondary }]}>
+            <Text style={styles.avatarHint}>
               Toque para alterar a foto
             </Text>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
+          {/* Form: cartao material frosted (camada de conteudo) */}
+          <GlassSurface
+            variant="material"
+            style={[styles.form, { borderColor: hairlineColor }]}
+          >
             {/* Name Input */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: colors.text }]}>Nome completo</Text>
@@ -254,7 +273,7 @@ export default function EditProfileScreen() {
               </View>
               <IconSymbol name="chevron.right" size={18} color={colors.icon} />
             </TouchableOpacity>
-          </View>
+          </GlassSurface>
         </ScrollView>
 
         {/* Save Button */}
@@ -291,6 +310,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 400,
+  },
   keyboardView: {
     flex: 1,
   },
@@ -312,9 +338,13 @@ const styles = StyleSheet.create({
   avatarHint: {
     marginTop: Spacing.md,
     fontSize: FontSize.sm,
+    color: 'rgba(255, 255, 255, 0.92)',
   },
   form: {
     gap: Spacing.lg,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   inputGroup: {
     gap: Spacing.sm,

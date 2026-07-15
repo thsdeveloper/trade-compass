@@ -1,6 +1,8 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { getCategoryIcon } from '@/lib/category-icons';
 import { formatCurrency, formatDate, type UpcomingPayment } from '@/types/finance';
 
 interface UpcomingPaymentItemProps {
@@ -10,47 +12,47 @@ interface UpcomingPaymentItemProps {
 export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
 
-  const getUrgencyColor = () => {
-    if (payment.days_until_due <= 0) {
-      return colors.danger; // Vencido
-    }
-    if (payment.days_until_due <= 3) {
-      return colors.warning; // Muito urgente
-    }
-    if (payment.days_until_due <= 7) {
-      return colors.warning; // Urgente
-    }
-    return colors.textSecondary; // Normal
-  };
-
-  const getDaysLabel = () => {
+  const getUrgency = () => {
     if (payment.days_until_due < 0) {
-      return `${Math.abs(payment.days_until_due)} dias atrasado`;
+      return {
+        label: `${Math.abs(payment.days_until_due)}d atrasado`,
+        text: colors.danger,
+        bg: colors.dangerLight,
+      };
     }
     if (payment.days_until_due === 0) {
-      return 'Vence hoje';
+      return { label: 'Vence hoje', text: colors.danger, bg: colors.dangerLight };
     }
     if (payment.days_until_due === 1) {
-      return 'Vence amanha';
+      return { label: 'Vence amanhã', text: colors.warning, bg: colors.warningLight };
     }
-    return `${payment.days_until_due} dias`;
+    if (payment.days_until_due <= 7) {
+      return {
+        label: `Em ${payment.days_until_due} dias`,
+        text: colors.warning,
+        bg: colors.warningLight,
+      };
+    }
+    return {
+      label: `Em ${payment.days_until_due} dias`,
+      text: colors.textSecondary,
+      bg: colors.card,
+    };
   };
+
+  const urgency = getUrgency();
+  const iconBg = payment.category.color + (isDark ? '30' : '15');
 
   return (
     <View style={styles.container}>
       <View style={styles.leftContent}>
-        <View
-          style={[
-            styles.iconContainer,
-            { backgroundColor: payment.category.color + '20' },
-          ]}
-        >
-          <View
-            style={[
-              styles.colorDot,
-              { backgroundColor: payment.category.color },
-            ]}
+        <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
+          <IconSymbol
+            name={getCategoryIcon(payment.category.icon)}
+            size={18}
+            color={payment.category.color}
           />
         </View>
         <View style={styles.textContent}>
@@ -65,14 +67,14 @@ export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
               {formatDate(payment.due_date)}
             </Text>
             {payment.credit_card && (
-              <View
-                style={[
-                  styles.cardBadge,
-                  { backgroundColor: payment.credit_card.color + '20' },
-                ]}
-              >
+              <View style={styles.cardBadge}>
+                <IconSymbol
+                  name="creditcard"
+                  size={11}
+                  color={colors.textSecondary}
+                />
                 <Text
-                  style={[styles.cardText, { color: payment.credit_card.color }]}
+                  style={[styles.cardText, { color: colors.textSecondary }]}
                   numberOfLines={1}
                 >
                   {payment.credit_card.name}
@@ -83,12 +85,14 @@ export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
         </View>
       </View>
       <View style={styles.rightContent}>
-        <Text style={[styles.amount, { color: colors.danger }]}>
-          -{formatCurrency(payment.amount)}
+        <Text style={[styles.amount, { color: colors.text }]}>
+          {formatCurrency(payment.amount)}
         </Text>
-        <Text style={[styles.daysLeft, { color: getUrgencyColor() }]}>
-          {getDaysLabel()}
-        </Text>
+        <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
+          <Text style={[styles.urgencyText, { color: urgency.text }]}>
+            {urgency.label}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -108,17 +112,12 @@ const styles = StyleSheet.create({
     marginRight: Spacing.md,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.sm,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
-  },
-  colorDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
   },
   textContent: {
     flex: 1,
@@ -137,25 +136,31 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
   },
   cardBadge: {
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-    maxWidth: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    maxWidth: 120,
   },
   cardText: {
-    fontSize: 10,
+    fontSize: FontSize.xs,
     fontWeight: '500',
   },
   rightContent: {
     alignItems: 'flex-end',
+    gap: Spacing.xs,
   },
   amount: {
     fontSize: FontSize.sm,
     fontWeight: '600',
-    marginBottom: 2,
+    fontVariant: ['tabular-nums'],
   },
-  daysLeft: {
+  urgencyBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  urgencyText: {
     fontSize: FontSize.xs,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });

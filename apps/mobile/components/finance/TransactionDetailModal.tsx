@@ -14,11 +14,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useReducedMotion } from 'react-native-reanimated';
 
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
@@ -249,13 +251,13 @@ function BottomSheet({ visible, title, onClose, children }: BottomSheetProps) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Pressable style={styles.sheetBackdrop} onPress={onClose} />
-        <View
+        {/* Painel em Liquid Glass (camada funcional flutuante); o conteúdo
+            interno permanece plano — nunca vidro dentro de vidro */}
+        <GlassSurface
+          variant="glass"
           style={[
             styles.sheetPanel,
-            {
-              backgroundColor: colors.background,
-              paddingBottom: Math.max(insets.bottom, Spacing.lg),
-            },
+            { paddingBottom: Math.max(insets.bottom, Spacing.lg) },
           ]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
@@ -270,7 +272,7 @@ function BottomSheet({ visible, title, onClose, children }: BottomSheetProps) {
             </TouchableOpacity>
           </View>
           {children}
-        </View>
+        </GlassSurface>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -519,13 +521,25 @@ export function TransactionDetailModal({
         style={[
           styles.modalContainer,
           {
-            backgroundColor: colors.background,
+            backgroundColor: isDark ? colors.background : '#F6F7F9',
             // pageSheet no iOS já abre abaixo da status bar; só o Android
             // (fullscreen) precisa compensar o inset superior
             paddingTop: Platform.OS === 'ios' ? 0 : insets.top,
           },
         ]}
       >
+        {/* Gradiente ambiente sutil no topo do sheet (mesma paleta azul) */}
+        <LinearGradient
+          colors={
+            isDark
+              ? ['rgba(29, 78, 216, 0.35)', 'rgba(22, 35, 63, 0.25)', 'rgba(18, 18, 18, 0)']
+              : ['rgba(0, 102, 255, 0.28)', 'rgba(127, 176, 255, 0.16)', 'rgba(246, 247, 249, 0)']
+          }
+          locations={[0, 0.55, 1]}
+          style={styles.ambientGradient}
+          pointerEvents="none"
+        />
+
         {/* Header compacto no topo do sheet */}
         <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#374151' : '#e5e7eb' }]}>
           <View style={styles.headerLeft}>
@@ -604,8 +618,17 @@ export function TransactionDetailModal({
             </View>
           )}
 
-          {/* Detalhes: lista agrupada única */}
-          <View style={[styles.card, { backgroundColor: colors.card }]}>
+          {/* Detalhes: lista agrupada única — cartão de conteúdo (material) */}
+          <GlassSurface
+            variant="material"
+            style={[
+              styles.card,
+              {
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
+              },
+            ]}
+          >
             {/* Categoria (editável, exceto em transferências) */}
             <TouchableOpacity
               style={styles.detailRow}
@@ -700,31 +723,43 @@ export function TransactionDetailModal({
                 </View>
               </>
             )}
-          </View>
+          </GlassSurface>
 
-          {/* Observações: toque abre o editor */}
-          <TouchableOpacity
-            style={[styles.card, { backgroundColor: colors.card }]}
+          {/* Observações: toque abre o editor — feedback por escala, nunca
+              opacidade sobre ancestral de GlassSurface */}
+          <Pressable
             onPress={() => {
               setNotesDraft(current.notes ?? '');
               setNotesSheetOpen(true);
             }}
+            accessibilityRole="button"
             accessibilityLabel="Editar observações"
-            activeOpacity={0.6}
+            style={({ pressed }) => pressed && styles.cardPressed}
           >
-            <View style={styles.notesHeader}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Observações</Text>
-              <IconSymbol name="pencil" size={16} color={colors.icon} />
-            </View>
-            <Text
+            <GlassSurface
+              variant="material"
               style={[
-                styles.notesText,
-                { color: current.notes ? colors.text : colors.textSecondary },
+                styles.card,
+                {
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
+                },
               ]}
             >
-              {current.notes || 'Adicionar observações...'}
-            </Text>
-          </TouchableOpacity>
+              <View style={styles.notesHeader}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Observações</Text>
+                <IconSymbol name="pencil" size={16} color={colors.icon} />
+              </View>
+              <Text
+                style={[
+                  styles.notesText,
+                  { color: current.notes ? colors.text : colors.textSecondary },
+                ]}
+              >
+                {current.notes || 'Adicionar observações...'}
+              </Text>
+            </GlassSurface>
+          </Pressable>
         </ScrollView>
 
         {/* Sheet: categoria */}
@@ -895,6 +930,13 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
   },
+  ambientGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 300,
+  },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -987,8 +1029,11 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.xl,
     gap: Spacing.md,
+  },
+  cardPressed: {
+    transform: [{ scale: 0.98 }],
   },
   cardTitle: {
     fontSize: FontSize.md,

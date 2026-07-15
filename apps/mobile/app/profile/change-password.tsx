@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { changePassword } from '@/lib/profile-api';
@@ -23,6 +25,9 @@ import { changePassword } from '@/lib/profile-api';
 export default function ChangePasswordScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+  const screenBg = isDark ? colors.background : '#F6F7F9';
+  const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
   const router = useRouter();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -141,7 +146,18 @@ export default function ChangePasswordScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
+      {/* Gradiente ambiente edge-to-edge (camada de conteudo) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#1D4ED8', '#16233F', colors.background]
+            : ['#0066FF', '#7FB0FF', screenBg]
+        }
+        locations={[0, 0.55, 1]}
+        style={styles.ambientBackground}
+        pointerEvents="none"
+      />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -160,8 +176,11 @@ export default function ChangePasswordScreen() {
             </Text>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
+          {/* Form: cartao material frosted (camada de conteudo) */}
+          <GlassSurface
+            variant="material"
+            style={[styles.form, { borderColor: hairlineColor }]}
+          >
             {renderPasswordInput(
               'Senha atual',
               currentPassword,
@@ -191,7 +210,7 @@ export default function ChangePasswordScreen() {
               'Confirme a nova senha',
               getConfirmPasswordError()
             )}
-          </View>
+          </GlassSurface>
         </ScrollView>
 
         {/* Submit Button */}
@@ -228,6 +247,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 400,
+  },
   keyboardView: {
     flex: 1,
   },
@@ -252,6 +278,9 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: Spacing.lg,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   inputGroup: {
     gap: Spacing.sm,

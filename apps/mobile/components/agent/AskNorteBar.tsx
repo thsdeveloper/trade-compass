@@ -4,14 +4,19 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
+// Tint violeta "IA" — único elemento com tintColor na tela (alpha baixo:
+// tint forte mata o efeito do Liquid Glass).
+const AI_TINT = 'rgba(168, 85, 247, 0.45)';
 
 /**
  * Barra flutuante "Pergunte ao Norte" — entrada do agente de IA em telas de
- * lista, no lugar do FAB circular.
+ * lista, no lugar do FAB circular. Cápsula de Liquid Glass (camada funcional);
+ * o badge de gradiente é conteúdo dentro do vidro, não outro vidro.
  */
 export function AskNorteBar() {
   const router = useRouter();
@@ -33,26 +38,27 @@ export function AskNorteBar() {
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel="Abrir o Norte, seu assistente financeiro"
-        style={({ pressed }) => [
-          styles.pill,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-          pressed && styles.pressed,
-        ]}
+        // Feedback por escala: opacidade quebraria o Liquid Glass nativo
+        style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
       >
-        <LinearGradient
-          colors={AI_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.iconBadge}
+        <GlassSurface
+          variant="glass"
+          isInteractive
+          tintColor={AI_TINT}
+          style={styles.pill}
         >
-          <IconSymbol name="sparkles" size={14} color="#FFFFFF" />
-        </LinearGradient>
-        <Text style={[styles.label, { color: colors.text }]}>
-          Pergunte ao Norte
-        </Text>
+          <LinearGradient
+            colors={AI_GRADIENT}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.iconBadge}
+          >
+            <IconSymbol name="sparkles" size={14} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Pergunte ao Norte
+          </Text>
+        </GlassSurface>
       </Pressable>
     </View>
   );
@@ -66,14 +72,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 100,
   },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
+  pressable: {
     borderRadius: BorderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
@@ -82,6 +82,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     transform: [{ scale: 0.97 }],
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.full,
   },
   iconBadge: {
     width: 24,

@@ -45,6 +45,15 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="categorias" options={{ headerShown: false }} />
+        <Stack.Screen name="contas" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="orcamento"
+          options={{
+            presentation: 'modal',
+            title: 'Orçamento',
+            headerShown: false,
+          }}
+        />
         <Stack.Screen
           name="agent-chat"
           options={{

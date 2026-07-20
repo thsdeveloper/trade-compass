@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { FinanceProvider } from '@/contexts/FinanceContext';
 import { AgentProvider } from '@/contexts/AgentContext';
@@ -17,7 +16,6 @@ export const unstable_settings = {
 };
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
   const { isLoading } = useAuth();
 
   useEffect(() => {
@@ -31,26 +29,34 @@ function RootLayoutNav() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={DarkTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen
           name="new-transaction"
           options={{
-            presentation: 'modal',
+            presentation: 'transparentModal',
             title: 'Nova Transacao',
             headerShown: false,
           }}
         />
-        <Stack.Screen name="categorias" options={{ headerShown: false }} />
         <Stack.Screen name="contas" options={{ headerShown: false }} />
         <Stack.Screen
           name="orcamento"
           options={{
-            presentation: 'modal',
+            presentation: 'transparentModal',
             title: 'Orçamento',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="orcamento-categoria"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Categoria do orçamento',
             headerShown: false,
           }}
         />
@@ -71,7 +77,7 @@ function RootLayoutNav() {
           }}
         />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </ThemeProvider>
   );
 }

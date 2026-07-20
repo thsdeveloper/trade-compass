@@ -5,7 +5,10 @@ import type {
   ExpensesByCategory,
   CashFlowPoint,
   UpcomingPayment,
+  BudgetCategory,
   BudgetSummary,
+  BudgetBreakdown,
+  BudgetTransactionsPage,
   YearSummary,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
@@ -16,6 +19,8 @@ import {
   getUpcomingPayments,
   getUpcomingPaymentsByMonth,
   getBudgetAllocation,
+  getBudgetBreakdown,
+  getBudgetTransactions,
   getYearSummary,
 } from '../../../data/finance/dashboard-repository.js';
 
@@ -185,6 +190,106 @@ export async function dashboardRoutes(app: FastifyInstance) {
       return allocation;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao buscar alocacao de orcamento';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/dashboard/budget-breakdown - Gastos por bucket → categoria → transações
+  app.get<{
+    Querystring: { month?: string };
+    Reply: BudgetBreakdown | ApiError;
+  }>('/finance/dashboard/budget-breakdown', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { month } = request.query;
+
+    const targetMonth =
+      month || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+    if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Mes deve estar no formato YYYY-MM',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const breakdown = await getBudgetBreakdown(user.id, targetMonth, accessToken);
+      return breakdown;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar detalhamento do orcamento';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /finance/dashboard/budget-transactions - Transações paginadas de um bucket 50-30-20
+  app.get<{
+    Querystring: {
+      bucket: string;
+      month?: string;
+      search?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    };
+    Reply: BudgetTransactionsPage | ApiError;
+  }>('/finance/dashboard/budget-transactions', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { bucket, month, search, status } = request.query;
+
+    const validBuckets: BudgetCategory[] = ['ESSENCIAL', 'ESTILO_VIDA', 'INVESTIMENTO'];
+    if (!validBuckets.includes(bucket as BudgetCategory)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Bucket deve ser ESSENCIAL, ESTILO_VIDA ou INVESTIMENTO',
+        statusCode: 400,
+      });
+    }
+
+    const targetMonth =
+      month || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+    if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Mes deve estar no formato YYYY-MM',
+        statusCode: 400,
+      });
+    }
+
+    if (status !== undefined && status !== 'PAGO' && status !== 'PENDENTE') {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Status deve ser PAGO ou PENDENTE',
+        statusCode: 400,
+      });
+    }
+
+    const rawLimit = Number(request.query.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 30;
+
+    const rawOffset = Number(request.query.offset);
+    const offset = Number.isFinite(rawOffset) ? Math.max(Math.trunc(rawOffset), 0) : 0;
+
+    try {
+      const page = await getBudgetTransactions(
+        user.id,
+        targetMonth,
+        bucket as BudgetCategory,
+        accessToken,
+        { search: search || undefined, status, limit, offset }
+      );
+      return page;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar transacoes do orcamento';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

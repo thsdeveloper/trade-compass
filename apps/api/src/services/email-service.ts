@@ -50,7 +50,7 @@ function generateEmailHTML(params: SendReportEmailParams): string {
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0f172a; border-radius: 12px 12px 0 0; padding: 32px;">
           <tr>
             <td style="text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">Trade Compass</h1>
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">Money Compass</h1>
               <p style="margin: 8px 0 0; color: #94a3b8; font-size: 14px;">Seu relatorio financeiro</p>
             </td>
           </tr>
@@ -93,7 +93,7 @@ function generateEmailHTML(params: SendReportEmailParams): string {
           <tr>
             <td style="text-align: center;">
               <p style="margin: 0 0 8px; color: #64748b; font-size: 12px;">
-                Este e-mail foi enviado automaticamente pelo Trade Compass.
+                Este e-mail foi enviado automaticamente pelo Money Compass.
               </p>
               <p style="margin: 0; color: #94a3b8; font-size: 12px;">
                 Gerado em ${new Date().toLocaleDateString('pt-BR')} as ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -144,7 +144,7 @@ export async function sendReportEmail(params: SendReportEmailParams): Promise<{ 
         from: EMAIL_CONFIG.from,
         ...(EMAIL_CONFIG.replyTo && { replyTo: EMAIL_CONFIG.replyTo }),
         to,
-        subject: `Relatorio de ${reportLabel} - Trade Compass`,
+        subject: `Relatorio de ${reportLabel} - Money Compass`,
         html: generateEmailHTML(params),
         attachments: [
           {

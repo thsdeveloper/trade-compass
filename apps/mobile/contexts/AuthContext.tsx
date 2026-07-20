@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { sendMagicLink, loginWithPassword } from '@/lib/api';
 import { getProfile } from '@/lib/profile-api';
@@ -17,6 +18,8 @@ export interface Profile {
   full_name: string | null;
   phone: string | null;
   avatar_url: string | null;
+  monthly_income: number | null;
+  onboarding_goals: string[] | null;
 }
 
 interface AuthContextType {
@@ -25,11 +28,16 @@ interface AuthContextType {
   profile: Profile | null;
   isLoading: boolean;
   isLoggedIn: boolean;
+  /** true entre o envio do OTP de cadastro e a conclusão do onboarding */
+  pendingOnboarding: boolean;
+  setPendingOnboarding: (pending: boolean) => void;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInWithMagicLink: (email: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
+
+const ONBOARDING_PENDING_KEY = '@trade-compass/onboarding-pending';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -38,10 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [pendingOnboarding, setPendingOnboardingState] = useState(false);
   const router = useRouter();
   const segments = useSegments();
 
   const isLoggedIn = !!session;
+
+  const setPendingOnboarding = useCallback((pending: boolean) => {
+    setPendingOnboardingState(pending);
+    // Persistência assíncrona; o estado em memória guia a navegação.
+    if (pending) {
+      AsyncStorage.setItem(ONBOARDING_PENDING_KEY, 'true').catch(() => undefined);
+    } else {
+      AsyncStorage.removeItem(ONBOARDING_PENDING_KEY).catch(() => undefined);
+    }
+  }, []);
 
   const refreshProfile = useCallback(async () => {
     if (!session) {
@@ -114,6 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const getInitialSession = async () => {
       try {
+        const pending = await AsyncStorage.getItem(ONBOARDING_PENDING_KEY);
+        setPendingOnboardingState(pending === 'true');
+
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -172,14 +194,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = (segments as string[])[0] === 'auth';
+    const rootSegment = (segments as string[])[0];
+    const inAuthGroup = rootSegment === 'auth';
+    const inOnboardingGroup = rootSegment === 'onboarding';
 
     if (!isLoggedIn && !inAuthGroup) {
-      router.replace('/auth/login' as never);
+      router.replace('/auth/welcome' as never);
     } else if (isLoggedIn && inAuthGroup) {
+      // Cadastro recém-verificado continua no onboarding; login normal vai às tabs.
+      router.replace(
+        (pendingOnboarding ? '/onboarding/name' : '/(tabs)') as never
+      );
+    } else if (isLoggedIn && inOnboardingGroup && !pendingOnboarding) {
       router.replace('/(tabs)');
     }
-  }, [isLoggedIn, segments, isLoading, router]);
+  }, [isLoggedIn, segments, isLoading, pendingOnboarding, router]);
 
   const signIn = async (
     email: string,
@@ -227,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setUser(null);
     setProfile(null);
+    setPendingOnboarding(false);
   };
 
   return (
@@ -237,6 +267,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         isLoading,
         isLoggedIn,
+        pendingOnboarding,
+        setPendingOnboarding,
         signIn,
         signInWithMagicLink,
         signOut,

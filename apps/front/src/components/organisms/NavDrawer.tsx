@@ -9,7 +9,6 @@ import {
   Receipt,
   Building2,
   CreditCard,
-  Tags,
   CandlestickChart,
   BarChart3,
   Eye,
@@ -46,7 +45,6 @@ const navigationConfig = [
       { id: 'financiamentos', label: 'Financiamentos', href: '/financas/financiamentos', icon: Home },
       { id: 'contas', label: 'Contas', href: '/financas/contas', icon: Building2 },
       { id: 'cartoes', label: 'Cartoes', href: '/financas/cartoes', icon: CreditCard },
-      { id: 'categorias', label: 'Categorias', href: '/financas/categorias', icon: Tags },
     ],
   },
   {

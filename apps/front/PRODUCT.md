@@ -10,13 +10,13 @@ web
 
 ## Users
 
-Brasileiros que querem organizar a vida financeira — controlar transações, planejar orçamento e acompanhar metas e investimentos — sem planilhas. Usam o Trade Compass no dia a dia pelo navegador e, em breve, pelo app mobile (iOS e Android). Na fase atual de pré-lançamento, o visitante da landing é um potencial early adopter que ainda não conhece o produto e decide em segundos se vale deixar o e-mail.
+Brasileiros que querem organizar a vida financeira — controlar transações, planejar orçamento e acompanhar metas e investimentos — sem planilhas. Usam o Money Compass no dia a dia pelo navegador e, em breve, pelo app mobile (iOS e Android). Na fase atual de pré-lançamento, o visitante da landing é um potencial early adopter que ainda não conhece o produto e decide em segundos se vale deixar o e-mail.
 
 Nota de registro: o app em si (rotas `/financas`, `/investimentos`, `/perfil`) é registro **product**; a landing pública (`/`) é uma superfície **brand** e é tratada nesse registro em tarefas que a envolvem.
 
 ## Product Purpose
 
-Trade Compass reúne finanças pessoais e investimentos em um só lugar: transações, regra 50/30/20, metas, dívidas, financiamentos, renda fixa e day trade. Na fase de lançamento, o objetivo da superfície pública é capturar leads para a lista de espera e comunicar que o app mobile está chegando. Sucesso = e-mails qualificados na lista de espera.
+Money Compass reúne finanças pessoais e investimentos em um só lugar: transações, regra 50/30/20, metas, dívidas, financiamentos, renda fixa e day trade. Na fase de lançamento, o objetivo da superfície pública é capturar leads para a lista de espera e comunicar que o app mobile está chegando. Sucesso = e-mails qualificados na lista de espera.
 
 ## Positioning
 

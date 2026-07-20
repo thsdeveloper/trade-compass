@@ -170,7 +170,7 @@ Compare o nome da contraparte de cada transferencia com este nome (ignore difere
 (nao informado)
 Sem o nome do titular, so classifique TRANSFERENCIA_INTERNA quando a linha disser explicitamente que e movimentacao entre contas proprias.`;
 
-  return `Voce e um extrator de transacoes financeiras do Trade Compass. Sua tarefa e ler o extrato bancario fornecido e extrair TODAS as transacoes reais em JSON estruturado.
+  return `Voce e um extrator de transacoes financeiras do Money Compass. Sua tarefa e ler o extrato bancario fornecido e extrair TODAS as transacoes reais em JSON estruturado.
 
 ${targetRules}
 
@@ -460,7 +460,7 @@ function buildDetectPrompt(accounts: AccountWithBank[]): string {
     .map((a, i) => `[${i}] ${a.name}${a.bank?.name ? ` (${a.bank.name})` : ''}`)
     .join('\n');
 
-  return `Voce e um classificador de documentos financeiros do Trade Compass. Analise o documento fornecido e responda:
+  return `Voce e um classificador de documentos financeiros do Money Compass. Analise o documento fornecido e responda:
 
 1. document_kind: e um EXTRATO DE CONTA BANCARIA (ACCOUNT_STATEMENT), uma FATURA DE CARTAO DE CREDITO (CREDIT_CARD_INVOICE) ou outro tipo de documento (OTHER)?
    - Fatura de cartao: tem "fatura", data de vencimento da fatura, limite do cartao, lista de compras no credito

@@ -1,23 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type { ApiError } from '../../../domain/types.js';
-import type {
-  FinanceCategory,
-  CreateCategoryDTO,
-  UpdateCategoryDTO,
-} from '../../../domain/finance-types.js';
+import type { FinanceCategory } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   getCategoriesByUser,
   getCategoryById,
-  createCategory,
-  updateCategory,
-  deleteCategory,
   getOrCreateAdjustmentCategory,
 } from '../../../data/finance/category-repository.js';
 import type { FinanceCategoryType } from '../../../domain/finance-types.js';
 
+// Categorias são somente leitura (catálogo global do sistema). Não há mais
+// criação/edição/exclusão de categorias por usuário.
 export async function categoryRoutes(app: FastifyInstance) {
-  // GET /finance/categories - List user categories
+  // GET /finance/categories - Lista o catálogo global de categorias
   app.get<{
     Reply: FinanceCategory[] | ApiError;
   }>('/finance/categories', async (request, reply) => {
@@ -36,7 +31,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     }
   });
 
-  // GET /finance/categories/:id - Get category by ID
+  // GET /finance/categories/:id - Categoria por ID
   app.get<{
     Params: { id: string };
     Reply: FinanceCategory | ApiError;
@@ -66,84 +61,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     }
   });
 
-  // POST /finance/categories - Create category
-  app.post<{
-    Body: CreateCategoryDTO;
-    Reply: FinanceCategory | ApiError;
-  }>('/finance/categories', async (request, reply) => {
-    const { user, accessToken } = request as AuthenticatedRequest;
-    const body = request.body;
-
-    if (!body.name || !body.type) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Nome e tipo sao obrigatorios',
-        statusCode: 400,
-      });
-    }
-
-    try {
-      const category = await createCategory(user.id, body, accessToken);
-      return reply.status(201).send(category);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao criar categoria';
-      return reply.status(500).send({
-        error: 'Internal Server Error',
-        message,
-        statusCode: 500,
-      });
-    }
-  });
-
-  // PATCH /finance/categories/:id - Update category
-  app.patch<{
-    Params: { id: string };
-    Body: UpdateCategoryDTO;
-    Reply: FinanceCategory | ApiError;
-  }>('/finance/categories/:id', async (request, reply) => {
-    const { user, accessToken } = request as AuthenticatedRequest;
-    const { id } = request.params;
-    const updates = request.body;
-
-    try {
-      const category = await updateCategory(id, user.id, updates, accessToken);
-      return category;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao atualizar categoria';
-      const status = message.includes('nao encontrada') ? 404 : 500;
-      return reply.status(status).send({
-        error: status === 404 ? 'Not Found' : 'Internal Server Error',
-        message,
-        statusCode: status,
-      });
-    }
-  });
-
-  // DELETE /finance/categories/:id - Delete category (soft delete)
-  app.delete<{
-    Params: { id: string };
-    Reply: { success: boolean } | ApiError;
-  }>('/finance/categories/:id', async (request, reply) => {
-    const { user, accessToken } = request as AuthenticatedRequest;
-    const { id } = request.params;
-
-    try {
-      await deleteCategory(id, user.id, accessToken);
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao remover categoria';
-      // Retorna 400 para erros de validacao de negocio (transacoes vinculadas)
-      const isBusinessError = message.includes('transacao');
-      const status = isBusinessError ? 400 : 500;
-      return reply.status(status).send({
-        error: isBusinessError ? 'Bad Request' : 'Internal Server Error',
-        message,
-        statusCode: status,
-      });
-    }
-  });
-
-  // GET /finance/categories/system/adjustment/:type - Get or create adjustment category
+  // GET /finance/categories/system/adjustment/:type - Categoria de ajuste de saldo
   app.get<{
     Params: { type: FinanceCategoryType };
     Reply: FinanceCategory | ApiError;

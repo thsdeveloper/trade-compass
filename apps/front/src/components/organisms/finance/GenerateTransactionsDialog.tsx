@@ -26,7 +26,6 @@ import type {
   DebtWithNegotiation,
   FinanceCategory,
   AccountWithBank,
-  CategoryFormData,
 } from '@/types/finance';
 import { formatCurrency, NEGOTIATION_PAYMENT_METHOD_LABELS } from '@/types/finance';
 
@@ -34,7 +33,6 @@ interface GenerateTransactionsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onGenerate: (data: GenerateTransactionsFormData) => Promise<void>;
-  onCreateCategory?: (data: CategoryFormData) => Promise<FinanceCategory>;
   debt: DebtWithNegotiation;
   negotiation: FinanceDebtNegotiation;
   categories: FinanceCategory[];
@@ -45,7 +43,6 @@ export function GenerateTransactionsDialog({
   open,
   onOpenChange,
   onGenerate,
-  onCreateCategory,
   debt,
   negotiation,
   categories,
@@ -181,7 +178,6 @@ export function GenerateTransactionsDialog({
               value={formData.category_id}
               onChange={(value) => setFormData({ ...formData, category_id: value })}
               categories={categories}
-              onCreateCategory={onCreateCategory}
               placeholder="Selecione uma categoria"
             />
           </div>

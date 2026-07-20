@@ -770,13 +770,6 @@ export function TransactionsClient({
     loadData(true);
   };
 
-  const handleCreateCategory = async (data: CategoryFormData): Promise<FinanceCategory> => {
-    if (!session?.access_token) throw new Error('Not authenticated');
-    const created = await financeApi.createCategory(data, session.access_token);
-    setCategories((prev) => [...prev, created]);
-    return created;
-  };
-
   const handleCreateTag = async (data: TagFormData): Promise<FinanceTag> => {
     if (!session?.access_token) throw new Error('Not authenticated');
     const created = await financeApi.createTag(data, session.access_token);
@@ -1114,7 +1107,6 @@ export function TransactionsClient({
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           onSave={handleSaveTransaction}
-          onCreateCategory={handleCreateCategory}
           onCreateTag={handleCreateTag}
           onCreateRecurrence={handleCreateRecurrence}
           onCreateTransfer={handleCreateTransfer}

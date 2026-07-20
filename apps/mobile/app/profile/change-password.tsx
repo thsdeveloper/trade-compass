@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -16,8 +15,10 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { TextField } from '@/components/atoms/TextField';
+import { Button } from '@/components/atoms/Button';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { changePassword } from '@/lib/profile-api';
@@ -92,38 +93,28 @@ export default function ChangePasswordScreen() {
     error?: string
   ) => (
     <View style={styles.inputGroup}>
-      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={[
-            styles.input,
-            styles.passwordInput,
-            {
-              backgroundColor: colors.card,
-              color: colors.text,
-              borderColor: error ? colors.danger : colors.border,
-            },
-          ]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textSecondary}
-          secureTextEntry={!showPassword}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <TouchableOpacity
-          style={styles.eyeButton}
-          onPress={() => setShowPassword(!showPassword)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <IconSymbol
-            name={showPassword ? 'eye.slash.fill' : 'eye.fill'}
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
+      <TextField
+        label={label}
+        value={value}
+        onChangeText={onChangeText}
+        error={!!error}
+        secureTextEntry={!showPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        rightElement={
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+          >
+            <IconSymbol
+              name={showPassword ? 'eye.slash.fill' : 'eye.fill'}
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        }
+      />
       {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
     </View>
   );
@@ -215,28 +206,13 @@ export default function ChangePasswordScreen() {
 
         {/* Submit Button */}
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              { backgroundColor: isValid ? colors.primary : colors.card },
-            ]}
+          <Button
+            label="Alterar Senha"
             onPress={handleSubmit}
-            disabled={!isValid || isSubmitting}
-            activeOpacity={0.8}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text
-                style={[
-                  styles.submitButtonText,
-                  { color: isValid ? '#FFFFFF' : colors.textSecondary },
-                ]}
-              >
-                Alterar Senha
-              </Text>
-            )}
-          </TouchableOpacity>
+            variant="primary"
+            loading={isSubmitting}
+            disabled={!isValid}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -317,15 +293,5 @@ const styles = StyleSheet.create({
   footer: {
     padding: Spacing.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  submitButton: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitButtonText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
   },
 });

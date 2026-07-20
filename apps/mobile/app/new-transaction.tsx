@@ -1,104 +1,138 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  Platform,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+
+import { Button } from '@/components/atoms/Button';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { TextField } from '@/components/atoms/TextField';
+import { Colors, FontSize, FontWeight, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
-import { TransactionTypeToggle } from '@/components/finance/TransactionTypeToggle';
-import { CategoryPicker } from '@/components/finance/CategoryPicker';
-import { AccountPicker } from '@/components/finance/AccountPicker';
+import { TransactionTypeToggle } from '@/components/molecules/TransactionTypeToggle';
+import { CategoryPicker } from '@/components/organisms/CategoryPicker';
+import { AccountPicker } from '@/components/organisms/AccountPicker';
+import { BankLogo } from '@/components/atoms/BankLogo';
+import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
+import { QrScannerModal } from '@/components/organisms/QrScannerModal';
+import { ReceiptScanningLoader } from '@/components/organisms/ReceiptScanningLoader';
+import { useReceiptScanner } from '@/hooks/use-receipt-scanner';
+import { getCategoryIcon } from '@/lib/category-icons';
+import { formatCurrency } from '@/types/finance';
 import type { TransactionType, TransactionFormData } from '@/types/finance';
+import type { TransactionDraft } from '@/types/agent';
+
+const MAX_CENTS = 9_999_999_999; // R$ 99.999.999,99
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear()
+  );
+}
 
 export default function NewTransactionScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
-  const isDark = colorScheme === 'dark';
 
-  const {
-    categories,
-    accounts,
-    isLoading,
-    loadCategories,
-    loadAccounts,
-    createTransaction,
-  } = useFinance();
+  const { categories, accounts, loadCategories, loadAccounts, createTransaction } =
+    useFinance();
 
   const [type, setType] = useState<TransactionType>('DESPESA');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [cents, setCents] = useState(0);
   const [dueDate, setDueDate] = useState(new Date());
-  const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [draftDate, setDraftDate] = useState(new Date());
   const [isSaving, setIsSaving] = useState(false);
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   useEffect(() => {
     loadCategories();
     loadAccounts();
   }, [loadCategories, loadAccounts]);
 
+  // Pré-preenche o formulário a partir do rascunho lido de uma nota fiscal.
+  const applyDraft = useCallback(
+    (draft: TransactionDraft) => {
+      Keyboard.dismiss();
+      setType(draft.type);
+      if (draft.description) setDescription(draft.description);
+      if (typeof draft.amount === 'number' && draft.amount > 0) {
+        setCents(Math.min(Math.round(draft.amount * 100), MAX_CENTS));
+      }
+      if (draft.due_date) {
+        const [y, m, d] = draft.due_date.split('-').map(Number);
+        if (y && m && d) setDueDate(new Date(y, m - 1, d));
+      }
+      // Só aplica a categoria se ela existir e for do tipo do rascunho
+      if (draft.category_id) {
+        const match = categories.find(
+          (c) => c.id === draft.category_id && c.type === draft.type,
+        );
+        if (match) setCategoryId(match.id);
+      }
+    },
+    [categories],
+  );
+
+  const { isScanning, scanFromCamera, scanFromGallery, scanFromQr } =
+    useReceiptScanner({ onDraft: applyDraft });
+
+  const openScanOptions = useCallback(() => {
+    Keyboard.dismiss();
+    Alert.alert('Escanear nota', 'Como você quer ler a nota fiscal?', [
+      { text: 'Tirar foto', onPress: scanFromCamera },
+      { text: 'Escolher da galeria', onPress: scanFromGallery },
+      { text: 'Ler QR code (NFC-e)', onPress: () => setScannerVisible(true) },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }, [scanFromCamera, scanFromGallery]);
+
+  const amountColor = type === 'RECEITA' ? colors.success : colors.text;
+  const canSave = cents > 0 && !!categoryId && !!accountId && description.trim().length > 0;
+
+  // Entrada em centavos via teclado do dispositivo: descarta não-dígitos
   const handleAmountChange = (text: string) => {
-    // Only allow numbers and decimal point
-    const cleaned = text.replace(/[^0-9.,]/g, '').replace(',', '.');
-    setAmount(cleaned);
+    const digits = text.replace(/\D/g, '').slice(0, 11);
+    setCents(digits ? Math.min(parseInt(digits, 10), MAX_CENTS) : 0);
   };
 
-  const handleDateChange = (event: unknown, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setDueDate(selectedDate);
-    }
+  const openDatePicker = () => {
+    Keyboard.dismiss();
+    setDraftDate(dueDate);
+    setShowDatePicker(true);
   };
 
-  const formatDisplayDate = (date: Date) => {
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
-
-  const validateForm = (): boolean => {
-    if (!categoryId) {
-      Alert.alert('Erro', 'Selecione uma categoria');
-      return false;
-    }
-    if (!accountId) {
-      Alert.alert('Erro', 'Selecione uma conta');
-      return false;
-    }
-    if (!description.trim()) {
-      Alert.alert('Erro', 'Digite uma descricao');
-      return false;
-    }
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Erro', 'Digite um valor valido');
-      return false;
-    }
-    return true;
+  const formatDateChip = (date: Date) => {
+    if (isSameDay(date, new Date())) return 'Hoje';
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
   };
 
   const handleSave = async () => {
-    if (!validateForm()) return;
-
+    if (!canSave) {
+      Alert.alert('Faltam dados', 'Informe valor, categoria, conta e descrição.');
+      return;
+    }
     setIsSaving(true);
     try {
       const data: TransactionFormData = {
@@ -106,263 +140,316 @@ export default function NewTransactionScreen() {
         category_id: categoryId!,
         account_id: accountId!,
         description: description.trim(),
-        amount: parseFloat(amount),
+        amount: cents / 100,
         due_date: dueDate.toISOString().split('T')[0],
-        notes: notes.trim() || undefined,
       };
-
       await createTransaction(data);
       router.back();
     } catch (error) {
       Alert.alert(
         'Erro',
-        error instanceof Error ? error.message : 'Erro ao criar transacao'
+        error instanceof Error ? error.message : 'Erro ao criar transação'
       );
     } finally {
       setIsSaving(false);
     }
   };
 
+  const chipBg = 'rgba(255,255,255,0.10)';
+  const chipBorder = 'rgba(255,255,255,0.16)';
+
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: isDark ? colors.background : '#F6F7F9' },
-      ]}
-    >
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-
-      {/* Gradiente ambiente sutil, edge-to-edge (modal de formulario) */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['rgba(29,78,216,0.35)', 'rgba(22,35,63,0.55)', colors.background]
-            : ['rgba(0,102,255,0.16)', 'rgba(127,176,255,0.10)', '#F6F7F9']
-        }
-        locations={[0, 0.55, 1]}
-        style={styles.ambientBackground}
-        pointerEvents="none"
-      />
-
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top + 16, borderBottomColor: colors.border },
-        ]}
-      >
+    <FullScreenOverlay
+      title="Nova transação"
+      onClose={() => router.back()}
+      headerRight={
         <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          onPress={openScanOptions}
+          hitSlop={12}
+          disabled={isScanning}
+          accessibilityLabel="Escanear nota fiscal"
         >
-          <IconSymbol name="xmark" size={24} color={colors.text} />
+          <Ionicons name="scan-outline" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Nova Transacao
-        </Text>
-        <View style={{ width: 24 }} />
-      </View>
+      }
+    >
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Tipo */}
+        <TransactionTypeToggle
+          value={type}
+          onChange={(next) => {
+            setType(next);
+            setCategoryId(null); // categoria é específica do tipo
+          }}
+        />
 
-      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Tipo</Text>
-          <TransactionTypeToggle value={type} onChange={setType} />
-        </View>
+        {/* Valor (herói) — teclado do próprio dispositivo */}
+        <TextInput
+          style={[styles.amount, { color: amountColor }]}
+          value={cents > 0 ? formatCurrency(cents / 100) : ''}
+          onChangeText={handleAmountChange}
+          placeholder={formatCurrency(0)}
+          placeholderTextColor={colors.textSecondary}
+          keyboardType="decimal-pad"
+          textAlign="center"
+          autoFocus
+        />
 
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Categoria</Text>
+        {/* Descrição */}
+        <TextField
+          label="Descrição"
+          value={description}
+          onChangeText={setDescription}
+          returnKeyType="done"
+        />
+
+        {/* Chips: categoria, conta, data */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+          keyboardShouldPersistTaps="handled"
+        >
           <CategoryPicker
-            categories={categories}
+            categories={categories.filter((c) => c.type === type)}
             selectedId={categoryId}
             onSelect={(cat) => setCategoryId(cat.id)}
+            renderTrigger={({ open, selected }) => (
+              <TouchableOpacity
+                style={[styles.chip, { backgroundColor: chipBg, borderColor: chipBorder }]}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  open();
+                }}
+              >
+                {selected ? (
+                  <IconSymbol
+                    name={getCategoryIcon(selected.icon)}
+                    size={16}
+                    color={selected.color}
+                  />
+                ) : (
+                  <Ionicons name="pricetag-outline" size={15} color={colors.textSecondary} />
+                )}
+                <Text style={[styles.chipText, { color: colors.text }]} numberOfLines={1}>
+                  {selected ? selected.name : 'Categoria'}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
           />
-        </View>
 
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Descricao</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: isDark ? '#1f2937' : '#f3f4f6',
-                color: colors.text,
-              },
-            ]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Ex: Aluguel, Supermercado..."
-            placeholderTextColor={colors.icon}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Valor</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: isDark ? '#1f2937' : '#f3f4f6',
-                color: colors.text,
-              },
-            ]}
-            value={amount}
-            onChangeText={handleAmountChange}
-            placeholder="0,00"
-            placeholderTextColor={colors.icon}
-            keyboardType="decimal-pad"
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Data</Text>
-          <TouchableOpacity
-            style={[
-              styles.dateButton,
-              { backgroundColor: isDark ? '#1f2937' : '#f3f4f6' },
-            ]}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <IconSymbol name="calendar" size={20} color={colors.icon} />
-            <Text style={[styles.dateText, { color: colors.text }]}>
-              {formatDisplayDate(dueDate)}
-            </Text>
-          </TouchableOpacity>
-
-          {showDatePicker && (
-            <DateTimePicker
-              value={dueDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={handleDateChange}
-              locale="pt-BR"
-            />
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>Conta</Text>
           <AccountPicker
             accounts={accounts}
             selectedId={accountId}
             onSelect={(acc) => setAccountId(acc.id)}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.text }]}>
-            Observacoes (opcional)
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              styles.textArea,
-              {
-                backgroundColor: isDark ? '#1f2937' : '#f3f4f6',
-                color: colors.text,
-              },
-            ]}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Adicione notas..."
-            placeholderTextColor={colors.icon}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              { backgroundColor: colors.tint },
-              isSaving && styles.disabledButton,
-            ]}
-            onPress={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.saveButtonText}>Salvar</Text>
+            renderTrigger={({ open, selected }) => (
+              <TouchableOpacity
+                style={[styles.chip, { backgroundColor: chipBg, borderColor: chipBorder }]}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  open();
+                }}
+              >
+                {selected ? (
+                  <BankLogo
+                    bank={selected.bank_id}
+                    name={selected.name}
+                    size={16}
+                    formato="circulo"
+                    fallback={
+                      <IconSymbol
+                        name={getCategoryIcon(selected.icon)}
+                        size={16}
+                        color={selected.color}
+                      />
+                    }
+                  />
+                ) : (
+                  <Ionicons name="wallet-outline" size={15} color={colors.textSecondary} />
+                )}
+                <Text style={[styles.chipText, { color: colors.text }]} numberOfLines={1}>
+                  {selected ? selected.name : 'Conta'}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
             )}
+          />
+
+          <TouchableOpacity
+            style={[styles.chip, { backgroundColor: chipBg, borderColor: chipBorder }]}
+            onPress={openDatePicker}
+          >
+            <Ionicons name="calendar-outline" size={15} color={colors.textSecondary} />
+            <Text style={[styles.chipText, { color: colors.text }]}>
+              {formatDateChip(dueDate)}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </ScrollView>
-    </View>
+
+        {/* CTA */}
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
+          <Button
+            label="Salvar"
+            onPress={handleSave}
+            loading={isSaving}
+            disabled={!canSave}
+            style={styles.saveButton}
+          />
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* Seletor de data */}
+      <Modal
+        visible={showDatePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.dateBackdrop}>
+          <View style={[styles.dateSheet, { backgroundColor: colors.surface }]}>
+            <View style={styles.dateSheetHeader}>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={[styles.dateCancel, { color: colors.textSecondary }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.dateTitle, { color: colors.text }]}>Data</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setDueDate(draftDate);
+                  setShowDatePicker(false);
+                }}
+              >
+                <Text style={[styles.dateDone, { color: colors.primary }]}>Concluir</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={draftDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_, date) => {
+                if (date) setDraftDate(date);
+                if (Platform.OS !== 'ios') {
+                  setDueDate(date ?? draftDate);
+                  setShowDatePicker(false);
+                }
+              }}
+              themeVariant="dark"
+              locale="pt-BR"
+              style={styles.datePicker}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Scanner de QR code de NFC-e */}
+      <QrScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScanned={(data) => {
+          setScannerVisible(false);
+          scanFromQr(data);
+        }}
+      />
+
+      {/* Overlay premium enquanto o agente lê a nota */}
+      <ReceiptScanningLoader visible={isScanning} />
+    </FullScreenOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
   },
-  ambientBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 380,
+  scroll: {
+    flex: 1,
   },
-  header: {
+  scrollContent: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    gap: Spacing.lg,
+  },
+  amount: {
+    fontSize: 44,
+    fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+    paddingVertical: Spacing.lg,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: 9999,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: 200,
+  },
+  chipDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  chipText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.medium,
+    flexShrink: 1,
+  },
+  bottomBar: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.sm,
+  },
+  saveButton: {
+    marginBottom: Spacing.md,
+  },
+  datePicker: {
+    alignSelf: 'center',
+  },
+  dateBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  dateSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Spacing['3xl'],
+  },
+  dateSheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
+  dateTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
   },
-  content: {
-    flex: 1,
-    padding: 16,
+  dateCancel: {
+    fontSize: FontSize.md,
   },
-  section: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  input: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 8,
-    fontSize: 16,
-  },
-  textArea: {
-    minHeight: 80,
-    paddingTop: 14,
-  },
-  dateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 8,
-  },
-  dateText: {
-    fontSize: 16,
-  },
-  buttonContainer: {
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  saveButton: {
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    opacity: 0.7,
+  dateDone: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
   },
 });

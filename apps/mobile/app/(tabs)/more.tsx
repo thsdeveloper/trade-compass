@@ -16,8 +16,8 @@ import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 
-import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
+import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,7 +42,6 @@ const createMenuSections = (signOut: () => Promise<void>): { title?: string; ite
     title: 'Financas',
     items: [
       { id: 'accounts', label: 'Contas', icon: 'wallet.pass', route: '/contas' },
-      { id: 'categories', label: 'Categorias', icon: 'tag', route: '/categorias' },
       { id: 'transactions', label: 'Transacoes', icon: 'arrow.up.arrow.down', route: '/transactions' },
     ],
   },
@@ -206,7 +205,7 @@ export default function MoreScreen() {
         {/* Version */}
         <View style={styles.versionContainer}>
           <Text style={[styles.versionText, { color: colors.textSecondary }]}>
-            Trade Compass v{appVersion}
+            Money Compass v{appVersion}
           </Text>
         </View>
       </ScrollView>

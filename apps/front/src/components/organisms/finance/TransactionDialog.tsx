@@ -38,7 +38,6 @@ import type {
   TransactionFormData,
   TransactionType,
   TransactionWithDetails,
-  CategoryFormData,
   TagFormData,
   FinanceCategoryType,
   RecurrenceFormData,
@@ -65,7 +64,6 @@ interface TransactionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (data: TransactionFormData) => Promise<void>;
-  onCreateCategory?: (data: CategoryFormData) => Promise<FinanceCategory>;
   onCreateTag?: (data: TagFormData) => Promise<FinanceTag>;
   onCreateRecurrence?: (data: RecurrenceFormData, generateCount?: number) => Promise<void>;
   onCreateTransfer?: (data: TransferFormData) => Promise<void>;
@@ -124,7 +122,6 @@ export function TransactionDialog({
   open,
   onOpenChange,
   onSave,
-  onCreateCategory,
   onCreateTag,
   onCreateRecurrence,
   onCreateTransfer,
@@ -385,7 +382,6 @@ export function TransactionDialog({
                     setFormData({ ...formData, category_id: value })
                   }
                   categories={categories}
-                  onCreateCategory={onCreateCategory}
                   filterTypes={currentCategoryTypes}
                   placeholder="Selecione..."
                 />

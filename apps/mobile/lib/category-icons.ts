@@ -1,4 +1,4 @@
-import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import type { IconSymbolName } from '@/components/atoms/icon-symbol';
 
 /**
  * Mapeia os nomes de ícone Lucide (persistidos nas categorias) para os

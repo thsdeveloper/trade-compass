@@ -64,6 +64,8 @@ export async function profileRoutes(app: FastifyInstance) {
         full_name: profile?.full_name ?? null,
         phone: profile?.phone ?? null,
         avatar_url: profile?.avatar_url ?? null,
+        monthly_income: profile?.monthly_income ?? null,
+        onboarding_goals: profile?.onboarding_goals ?? null,
       });
     } catch (err) {
       app.log.error(err);
@@ -81,7 +83,12 @@ export async function profileRoutes(app: FastifyInstance) {
    * Updates the current user's profile.
    */
   app.post<{
-    Body: { full_name?: string | null; phone?: string | null };
+    Body: {
+      full_name?: string | null;
+      phone?: string | null;
+      monthly_income?: number | null;
+      onboarding_goals?: string[] | null;
+    };
   }>('/profile/update', async (request, reply) => {
     const { user, token, error } = await getUserFromToken(request.headers.authorization);
 
@@ -93,7 +100,7 @@ export async function profileRoutes(app: FastifyInstance) {
       });
     }
 
-    const { full_name, phone } = request.body;
+    const { full_name, phone, monthly_income, onboarding_goals } = request.body;
 
     // Validate name
     if (full_name !== undefined && full_name !== null) {
@@ -118,8 +125,47 @@ export async function profileRoutes(app: FastifyInstance) {
       }
     }
 
+    // Validate monthly income
+    if (monthly_income !== undefined && monthly_income !== null) {
+      if (
+        typeof monthly_income !== 'number' ||
+        !Number.isFinite(monthly_income) ||
+        monthly_income < 0 ||
+        monthly_income > 9_999_999_999
+      ) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Renda mensal invalida',
+          statusCode: 400,
+        });
+      }
+    }
+
+    // Validate onboarding goals (array of short slugs)
+    if (onboarding_goals !== undefined && onboarding_goals !== null) {
+      const isValid =
+        Array.isArray(onboarding_goals) &&
+        onboarding_goals.length <= 20 &&
+        onboarding_goals.every(
+          (goal) => typeof goal === 'string' && goal.length > 0 && goal.length <= 40
+        );
+
+      if (!isValid) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Objetivos invalidos',
+          statusCode: 400,
+        });
+      }
+    }
+
     try {
-      const updates: { full_name?: string | null; phone?: string | null } = {};
+      const updates: {
+        full_name?: string | null;
+        phone?: string | null;
+        monthly_income?: number | null;
+        onboarding_goals?: string[] | null;
+      } = {};
 
       if (full_name !== undefined) {
         updates.full_name = full_name;
@@ -129,12 +175,22 @@ export async function profileRoutes(app: FastifyInstance) {
         updates.phone = phone === '' ? null : phone;
       }
 
+      if (monthly_income !== undefined) {
+        updates.monthly_income = monthly_income;
+      }
+
+      if (onboarding_goals !== undefined) {
+        updates.onboarding_goals = onboarding_goals;
+      }
+
       const profile = await upsertProfile(user.id, updates, token);
 
       return reply.status(200).send({
         full_name: profile.full_name,
         phone: profile.phone,
         avatar_url: profile.avatar_url,
+        monthly_income: profile.monthly_income,
+        onboarding_goals: profile.onboarding_goals,
       });
     } catch (err) {
       app.log.error(err);

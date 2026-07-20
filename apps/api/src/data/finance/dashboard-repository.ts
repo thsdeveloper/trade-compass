@@ -7,6 +7,11 @@ import type {
   BudgetCategory,
   BudgetAllocation,
   BudgetSummary,
+  BudgetBreakdown,
+  BudgetBreakdownBucket,
+  BudgetBreakdownCategory,
+  BudgetTransactionItem,
+  BudgetTransactionsPage,
   YearSummary,
 } from '../../domain/finance-types.js';
 
@@ -173,7 +178,7 @@ export async function getExpensesByCategory(
     .from('finance_transactions')
     .select(`
       amount,
-      category:finance_categories(id, name, color, icon)
+      category:finance_global_categories(id, name, color, icon)
     `)
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
@@ -332,7 +337,7 @@ export async function getUpcomingPayments(
       description,
       amount,
       due_date,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       credit_card:finance_credit_cards(*)
     `)
     .eq('user_id', userId)
@@ -389,7 +394,7 @@ export async function getUpcomingPaymentsByMonth(
       description,
       amount,
       due_date,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       credit_card:finance_credit_cards(*)
     `)
     .eq('user_id', userId)
@@ -494,7 +499,7 @@ export async function getBudgetAllocation(
     .select(`
       amount,
       status,
-      category:finance_categories(budget_category)
+      category:finance_global_categories(budget_category, parent:finance_global_categories!parent_id(budget_category))
     `)
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
@@ -520,7 +525,7 @@ export async function getBudgetAllocation(
       amount,
       status,
       due_date,
-      category:finance_categories(budget_category),
+      category:finance_global_categories(budget_category, parent:finance_global_categories!parent_id(budget_category)),
       credit_card:finance_credit_cards(closing_day)
     `)
     .eq('user_id', userId)
@@ -538,10 +543,22 @@ export async function getBudgetAllocation(
     INVESTIMENTO: { paid: 0, pending: 0 },
   };
 
+  // Bucket 50/30/20: a categoria-mãe sempre prevalece. Transação numa
+  // categoria-filha é contabilizada no bucket da mãe.
+  const resolveBudgetCat = (
+    cat: {
+      budget_category: BudgetCategory | null;
+      parent?: { budget_category: BudgetCategory | null } | null;
+    } | null
+  ): BudgetCategory | null => cat?.parent?.budget_category ?? cat?.budget_category ?? null;
+
   // Processar despesas de conta
   for (const t of accountExpenses || []) {
-    const cat = t.category as unknown as { budget_category: BudgetCategory | null } | null;
-    const budgetCat = cat?.budget_category;
+    const cat = t.category as unknown as {
+      budget_category: BudgetCategory | null;
+      parent?: { budget_category: BudgetCategory | null } | null;
+    } | null;
+    const budgetCat = resolveBudgetCat(cat);
     if (budgetCat && budgetTotals[budgetCat] !== undefined) {
       const amount = Number(t.amount);
       if (t.status === 'PAGO') {
@@ -561,8 +578,11 @@ export async function getBudgetAllocation(
     const invoiceMonth = getInvoiceMonth(t.due_date, card.closing_day);
     if (invoiceMonth !== month) continue;
 
-    const cat = t.category as unknown as { budget_category: BudgetCategory | null } | null;
-    const budgetCat = cat?.budget_category;
+    const cat = t.category as unknown as {
+      budget_category: BudgetCategory | null;
+      parent?: { budget_category: BudgetCategory | null } | null;
+    } | null;
+    const budgetCat = resolveBudgetCat(cat);
     if (budgetCat && budgetTotals[budgetCat] !== undefined) {
       const amount = Number(t.amount);
       if (t.status === 'PAGO') {
@@ -616,6 +636,364 @@ export async function getBudgetAllocation(
     total_income: totalIncome,
     allocations,
     month,
+  };
+}
+
+/**
+ * Detalhamento dos gastos por bucket 50-30-20 no mês: para cada bucket,
+ * as categorias que o compõem (com valor pago/pendente e contagem) e as
+ * transações individuais. Usa exatamente a mesma fonte de dados do
+ * budget-allocation (despesas de conta + cartão com lógica de fatura,
+ * excluindo transferências e contas de INVESTIMENTO/BENEFICIO).
+ */
+export async function getBudgetBreakdown(
+  userId: string,
+  month: string, // YYYY-MM
+  accessToken: string
+): Promise<BudgetBreakdown> {
+  const client = createUserClient(accessToken);
+
+  const [year, monthNum] = month.split('-').map(Number);
+  const startDate = `${month}-01`;
+  const lastDay = new Date(year, monthNum, 0).getDate();
+  const endDate = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+  const prevMonth = monthNum === 1 ? 12 : monthNum - 1;
+  const prevYear = monthNum === 1 ? year - 1 : year;
+  const expandedStartDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
+
+  const { data: excludedAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .in('type', ['INVESTIMENTO', 'BENEFICIO']);
+
+  const excludedAccountIds = excludedAccounts?.map((a: { id: string }) => a.id) || [];
+
+  const categorySelect =
+    'category:finance_global_categories(id, name, color, icon, budget_category, parent:finance_global_categories!parent_id(budget_category))';
+
+  // Despesas de CONTA (sem cartão) do mês calendário
+  let accountExpensesQuery = client
+    .from('finance_transactions')
+    .select(`id, description, amount, status, due_date, ${categorySelect}`)
+    .eq('user_id', userId)
+    .eq('type', 'DESPESA')
+    .is('credit_card_id', null)
+    .is('transfer_id', null)
+    .in('status', ['PAGO', 'PENDENTE'])
+    .gte('due_date', startDate)
+    .lte('due_date', endDate);
+
+  if (excludedAccountIds.length > 0) {
+    accountExpensesQuery = accountExpensesQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: accountExpenses } = await accountExpensesQuery;
+
+  // Despesas de CARTÃO (mês atual + anterior, filtradas pela fatura)
+  const { data: cardExpenses } = await client
+    .from('finance_transactions')
+    .select(
+      `id, description, amount, status, due_date, ${categorySelect}, credit_card:finance_credit_cards(closing_day)`
+    )
+    .eq('user_id', userId)
+    .eq('type', 'DESPESA')
+    .not('credit_card_id', 'is', null)
+    .is('transfer_id', null)
+    .in('status', ['PAGO', 'PENDENTE'])
+    .gte('due_date', expandedStartDate)
+    .lte('due_date', endDate);
+
+  type JoinedCategory = {
+    id: string;
+    name: string;
+    color: string;
+    icon: string;
+    budget_category: BudgetCategory | null;
+    parent?: { budget_category: BudgetCategory | null } | null;
+  };
+
+  const resolveBudgetCat = (cat: JoinedCategory | null): BudgetCategory | null =>
+    cat?.parent?.budget_category ?? cat?.budget_category ?? null;
+
+  // Acumuladores: bucket -> categoria -> dados
+  const buckets: Record<
+    BudgetCategory,
+    Map<string, BudgetBreakdownCategory>
+  > = {
+    ESSENCIAL: new Map(),
+    ESTILO_VIDA: new Map(),
+    INVESTIMENTO: new Map(),
+  };
+
+  const addExpense = (
+    row: {
+      id: string;
+      description: string | null;
+      amount: unknown;
+      status: string;
+      due_date: string;
+      category: unknown;
+    },
+    isCreditCard: boolean
+  ) => {
+    const catData = row.category as JoinedCategory | JoinedCategory[] | null;
+    const cat = Array.isArray(catData) ? catData[0] : catData;
+    const budgetCat = resolveBudgetCat(cat ?? null);
+    if (!cat || !budgetCat || buckets[budgetCat] === undefined) return;
+
+    const amount = Number(row.amount);
+    const isPaid = row.status === 'PAGO';
+    const map = buckets[budgetCat];
+    let entry = map.get(cat.id);
+    if (!entry) {
+      entry = {
+        category_id: cat.id,
+        name: cat.name,
+        color: cat.color,
+        icon: cat.icon,
+        amount: 0,
+        paid: 0,
+        pending: 0,
+        count: 0,
+        transactions: [],
+      };
+      map.set(cat.id, entry);
+    }
+    entry.amount += amount;
+    entry.count += 1;
+    if (isPaid) entry.paid += amount;
+    else entry.pending += amount;
+    entry.transactions.push({
+      id: row.id,
+      description: row.description ?? 'Sem descrição',
+      amount,
+      due_date: row.due_date,
+      status: isPaid ? 'PAGO' : 'PENDENTE',
+      is_credit_card: isCreditCard,
+    });
+  };
+
+  for (const t of accountExpenses || []) {
+    addExpense(t as never, false);
+  }
+
+  for (const t of cardExpenses || []) {
+    const card = (t as { credit_card: unknown }).credit_card as
+      | { closing_day: number }
+      | { closing_day: number }[]
+      | null;
+    const cardObj = Array.isArray(card) ? card[0] : card;
+    if (!cardObj) continue;
+    // Só conta se a transação pertence à fatura do mês selecionado
+    if (getInvoiceMonth((t as { due_date: string }).due_date, cardObj.closing_day) !== month) {
+      continue;
+    }
+    addExpense(t as never, true);
+  }
+
+  const bucketOrder: BudgetCategory[] = ['ESSENCIAL', 'ESTILO_VIDA', 'INVESTIMENTO'];
+
+  const result: BudgetBreakdownBucket[] = bucketOrder.map((category) => {
+    const categories = Array.from(buckets[category].values())
+      .map((c) => ({
+        ...c,
+        transactions: c.transactions.sort((a, b) =>
+          b.due_date.localeCompare(a.due_date)
+        ),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const paid = categories.reduce((s, c) => s + c.paid, 0);
+    const pending = categories.reduce((s, c) => s + c.pending, 0);
+
+    return {
+      category,
+      label: BUDGET_CATEGORY_CONFIG[category].label,
+      total: paid + pending,
+      paid,
+      pending,
+      categories,
+    };
+  });
+
+  return { month, buckets: result };
+}
+
+/**
+ * Lista paginada e pesquisável das transações de despesa de um bucket 50-30-20
+ * no mês. Usa exatamente a mesma fonte de dados do budget-allocation/breakdown:
+ * despesas de conta no mês calendário + despesas de cartão filtradas pela
+ * fatura (janela expandida mês anterior..fim do mês), excluindo transferências
+ * e contas de INVESTIMENTO/BENEFICIO, com bucket resolvido pela categoria-mãe.
+ */
+export async function getBudgetTransactions(
+  userId: string,
+  month: string, // YYYY-MM
+  bucket: BudgetCategory,
+  accessToken: string,
+  opts: { search?: string; status?: 'PAGO' | 'PENDENTE'; limit: number; offset: number }
+): Promise<BudgetTransactionsPage> {
+  const client = createUserClient(accessToken);
+
+  const [year, monthNum] = month.split('-').map(Number);
+  const startDate = `${month}-01`;
+  const lastDay = new Date(year, monthNum, 0).getDate();
+  const endDate = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+  const prevMonth = monthNum === 1 ? 12 : monthNum - 1;
+  const prevYear = monthNum === 1 ? year - 1 : year;
+  const expandedStartDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
+
+  const { data: excludedAccounts } = await client
+    .from('finance_accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .in('type', ['INVESTIMENTO', 'BENEFICIO']);
+
+  const excludedAccountIds = excludedAccounts?.map((a: { id: string }) => a.id) || [];
+
+  const categorySelect =
+    'category:finance_global_categories(id, name, color, icon, budget_category, parent:finance_global_categories!parent_id(budget_category))';
+
+  // Escapar curingas do LIKE (%, _ e \) na busca do usuário
+  const searchPattern = opts.search
+    ? `%${opts.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    : null;
+
+  const statusFilter: string[] = opts.status ? [opts.status] : ['PAGO', 'PENDENTE'];
+
+  // Despesas de CONTA (sem cartão) do mês calendário
+  let accountExpensesQuery = client
+    .from('finance_transactions')
+    .select(
+      `id, description, amount, status, due_date, ${categorySelect}, account:finance_accounts(name)`
+    )
+    .eq('user_id', userId)
+    .eq('type', 'DESPESA')
+    .is('credit_card_id', null)
+    .is('transfer_id', null)
+    .in('status', statusFilter)
+    .gte('due_date', startDate)
+    .lte('due_date', endDate);
+
+  if (searchPattern) {
+    accountExpensesQuery = accountExpensesQuery.ilike('description', searchPattern);
+  }
+
+  if (excludedAccountIds.length > 0) {
+    accountExpensesQuery = accountExpensesQuery.or(
+      `account_id.is.null,account_id.not.in.(${excludedAccountIds.join(',')})`
+    );
+  }
+
+  const { data: accountExpenses } = await accountExpensesQuery;
+
+  // Despesas de CARTÃO (mês atual + anterior, filtradas pela fatura em memória)
+  let cardExpensesQuery = client
+    .from('finance_transactions')
+    .select(
+      `id, description, amount, status, due_date, ${categorySelect}, credit_card:finance_credit_cards(name, closing_day)`
+    )
+    .eq('user_id', userId)
+    .eq('type', 'DESPESA')
+    .not('credit_card_id', 'is', null)
+    .is('transfer_id', null)
+    .in('status', statusFilter)
+    .gte('due_date', expandedStartDate)
+    .lte('due_date', endDate);
+
+  if (searchPattern) {
+    cardExpensesQuery = cardExpensesQuery.ilike('description', searchPattern);
+  }
+
+  const { data: cardExpenses } = await cardExpensesQuery;
+
+  type JoinedCategory = {
+    id: string;
+    name: string;
+    color: string;
+    icon: string;
+    budget_category: BudgetCategory | null;
+    parent?: { budget_category: BudgetCategory | null } | null;
+  };
+
+  const resolveBudgetCat = (cat: JoinedCategory | null): BudgetCategory | null =>
+    cat?.parent?.budget_category ?? cat?.budget_category ?? null;
+
+  const items: BudgetTransactionItem[] = [];
+
+  const pushItem = (
+    row: {
+      id: string;
+      description: string | null;
+      amount: unknown;
+      status: string;
+      due_date: string;
+      category: unknown;
+    },
+    isCreditCard: boolean,
+    sourceName: string | null
+  ) => {
+    const catData = row.category as JoinedCategory | JoinedCategory[] | null;
+    const cat = Array.isArray(catData) ? catData[0] : catData;
+    if (!cat || resolveBudgetCat(cat) !== bucket) return;
+
+    items.push({
+      id: row.id,
+      description: row.description ?? 'Sem descrição',
+      amount: Number(row.amount),
+      due_date: row.due_date,
+      status: row.status === 'PAGO' ? 'PAGO' : 'PENDENTE',
+      is_credit_card: isCreditCard,
+      source_name: sourceName,
+      category_id: cat.id,
+      category_name: cat.name,
+      category_color: cat.color,
+      category_icon: cat.icon,
+    });
+  };
+
+  for (const t of accountExpenses || []) {
+    const accData = (t as { account: unknown }).account as
+      | { name: string }
+      | { name: string }[]
+      | null;
+    const acc = Array.isArray(accData) ? accData[0] : accData;
+    pushItem(t as never, false, acc?.name ?? null);
+  }
+
+  for (const t of cardExpenses || []) {
+    const cardData = (t as { credit_card: unknown }).credit_card as
+      | { name: string; closing_day: number }
+      | { name: string; closing_day: number }[]
+      | null;
+    const card = Array.isArray(cardData) ? cardData[0] : cardData;
+    if (!card) continue;
+    // Só conta se a transação pertence à fatura do mês selecionado
+    if (getInvoiceMonth((t as { due_date: string }).due_date, card.closing_day) !== month) {
+      continue;
+    }
+    pushItem(t as never, true, card.name ?? null);
+  }
+
+  // Ordenar por vencimento desc (desempate por id para paginação estável)
+  items.sort((a, b) => b.due_date.localeCompare(a.due_date) || a.id.localeCompare(b.id));
+
+  const totalCount = items.length;
+  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  const pageItems = items.slice(opts.offset, opts.offset + opts.limit);
+
+  return {
+    bucket,
+    month,
+    total_count: totalCount,
+    total_amount: totalAmount,
+    has_more: opts.offset + opts.limit < totalCount,
+    items: pageItems,
   };
 }
 

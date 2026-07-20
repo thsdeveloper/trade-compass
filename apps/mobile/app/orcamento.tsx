@@ -1,28 +1,36 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
 
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useMonthlySpendingSeries } from '@/hooks/use-monthly-spending-series';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { Skeleton, SkeletonProvider } from '@/components/atoms/Skeleton';
+import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
+import { BudgetBreakdownSection } from '@/components/organisms/BudgetBreakdownSection';
+import { BudgetInfoSheet } from '@/components/organisms/BudgetInfoSheet';
+import { BudgetProgressCard } from '@/components/molecules/BudgetProgressCard';
+import { MonthSlider } from '@/components/molecules/MonthSlider';
+import { getBudgetBreakdown } from '@/lib/finance-api';
 import {
   formatCurrency,
+  BUDGET_CATEGORY_ICONS,
   BUDGET_CATEGORY_LABELS,
+  type BudgetBreakdown,
   type BudgetCategory,
 } from '@/types/finance';
 
@@ -51,8 +59,23 @@ export default function OrcamentoScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
 
-  const { budgetSummary, selectedMonth, loadDashboard } = useFinance();
-  const { points, total } = useMonthlySpendingSeries(selectedMonth);
+  const {
+    budgetSummary,
+    selectedMonth,
+    setSelectedMonth,
+    isDashboardLoading,
+    loadDashboard,
+  } = useFinance();
+  const { profile } = useAuth();
+  const { points, total, isLoading: seriesLoading } = useMonthlySpendingSeries(selectedMonth);
+
+  const [breakdown, setBreakdown] = useState<BudgetBreakdown | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
+
+  const monthKey = `${selectedMonth.getFullYear()}-${String(
+    selectedMonth.getMonth() + 1
+  ).padStart(2, '0')}`;
 
   useEffect(() => {
     if (!budgetSummary) {
@@ -61,7 +84,35 @@ export default function OrcamentoScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const screenBg = isDark ? colors.background : '#F6F7F9';
+  // Ao trocar o mês no slider, recarrega o dashboard (alocação 50-30-20).
+  // O ref evita um refetch redundante na montagem (o contexto já carregou).
+  const lastLoadedMonthRef = useRef(monthKey);
+  useEffect(() => {
+    if (lastLoadedMonthRef.current !== monthKey) {
+      lastLoadedMonthRef.current = monthKey;
+      loadDashboard();
+    }
+  }, [monthKey, loadDashboard]);
+
+  // Detalhamento por categoria (bucket → categoria → transações) do mês
+  useEffect(() => {
+    let cancelled = false;
+    setBreakdownLoading(true);
+    getBudgetBreakdown(monthKey)
+      .then((data) => {
+        if (!cancelled) setBreakdown(data);
+      })
+      .catch(() => {
+        if (!cancelled) setBreakdown(null);
+      })
+      .finally(() => {
+        if (!cancelled) setBreakdownLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey]);
+
   const categoryColors = isDark ? CATEGORY_COLORS_DARK : CATEGORY_COLORS_LIGHT;
   const lineColor = isDark ? SPEND_LINE_DARK : SPEND_LINE_LIGHT;
   const cardBorder = {
@@ -69,12 +120,13 @@ export default function OrcamentoScreen() {
     borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
   } as const;
 
-  const monthLabel = selectedMonth.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const totalIncome = budgetSummary?.total_income ?? 0;
+  // Renda-base: receitas lançadas no mês ou, na ausência delas, a renda
+  // declarada no onboarding (profile.monthly_income), para o orçamento já
+  // nascer preenchido com a distribuição 50/30/20.
+  const totalIncome =
+    (budgetSummary?.total_income ?? 0) > 0
+      ? budgetSummary!.total_income
+      : profile?.monthly_income ?? 0;
   const usedShare = totalIncome > 0 ? Math.round((total / totalIncome) * 100) : null;
 
   const allocations = useMemo(
@@ -128,42 +180,11 @@ export default function OrcamentoScreen() {
   const contentWidth = screenWidth - Spacing.xl * 2;
 
   return (
-    <View style={[styles.container, { backgroundColor: screenBg }]}>
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#1D4ED8', '#16233F', colors.background]
-            : ['#0066FF', '#7FB0FF', screenBg]
-        }
-        locations={[0, 0.5, 1]}
-        style={styles.ambientBackground}
-        pointerEvents="none"
-      />
+    <FullScreenOverlay title="Orçamento" onClose={() => router.back()}>
+      {/* Seleção de mês (padrão Revolut: pills horizontais, mês atual à direita) */}
+      <MonthSlider selectedDate={selectedMonth} onMonthChange={setSelectedMonth} />
 
-      {/* Header do page modal */}
-      <View style={[styles.header, { paddingTop: Spacing.lg }]}>
-        <View>
-          <Text style={styles.headerTitle}>Orçamento</Text>
-          <Text style={styles.headerSubtitle}>{monthLabel}</Text>
-        </View>
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Fechar orçamento"
-        >
-          {({ pressed }) => (
-            <View style={pressed && styles.pressed}>
-              <GlassSurface variant="glass" isInteractive style={styles.closeButton}>
-                <IconSymbol name="xmark" size={20} color={colors.text} />
-              </GlassSurface>
-            </View>
-          )}
-        </Pressable>
-      </View>
-
+      <SkeletonProvider active={seriesLoading || isDashboardLoading}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -176,6 +197,14 @@ export default function OrcamentoScreen() {
           <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
             Gastos do mês
           </Text>
+          {seriesLoading ? (
+            <View style={styles.heroSkeleton}>
+              <Skeleton width={160} height={30} radius={8} />
+              <Skeleton width={210} height={13} radius={6} />
+              <Skeleton width="100%" height={140} radius={12} style={styles.chartSkeleton} />
+            </View>
+          ) : (
+            <>
           <Text style={[styles.heroValue, { color: colors.text }]}>
             {formatCurrency(total)}
           </Text>
@@ -233,6 +262,8 @@ export default function OrcamentoScreen() {
               />
             </View>
           )}
+            </>
+          )}
         </GlassSurface>
 
         {/* Donut: para onde o dinheiro foi */}
@@ -263,11 +294,10 @@ export default function OrcamentoScreen() {
               <View style={styles.legend}>
                 {allocations.map((allocation) => (
                   <View key={allocation.category} style={styles.legendRow}>
-                    <View
-                      style={[
-                        styles.legendDot,
-                        { backgroundColor: categoryColors[allocation.category] },
-                      ]}
+                    <IconSymbol
+                      name={BUDGET_CATEGORY_ICONS[allocation.category]}
+                      size={13}
+                      color={categoryColors[allocation.category]}
                     />
                     <View style={styles.legendText}>
                       <Text style={[styles.legendLabel, { color: colors.text }]}>
@@ -327,21 +357,42 @@ export default function OrcamentoScreen() {
           </GlassSurface>
         )}
 
-        {/* Detalhes por categoria (progresso + status) */}
+        {/* Detalhes por categoria (progresso + status + drill-down) */}
         {budgetSummary && allocations.length > 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
-            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-              Detalhes por categoria
-            </Text>
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
+                Detalhes por categoria
+              </Text>
+              <TouchableOpacity
+                onPress={() => setInfoVisible(true)}
+                hitSlop={10}
+                accessibilityLabel="Sobre as categorias do orçamento"
+              >
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
             {allocations.map((allocation) => (
               <BudgetProgressCard
                 key={allocation.category}
                 allocation={allocation}
-                totalIncome={budgetSummary.total_income}
+                totalIncome={totalIncome}
+                onPress={() =>
+                  router.push(
+                    `/orcamento-categoria?bucket=${allocation.category}&month=${monthKey}` as never
+                  )
+                }
               />
             ))}
           </GlassSurface>
         )}
+
+        {/* Detalhamento: quanto e quais gastos em cada bucket */}
+        <BudgetBreakdownSection breakdown={breakdown} loading={breakdownLoading} />
 
         {totalIncome <= 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
@@ -352,51 +403,31 @@ export default function OrcamentoScreen() {
           </GlassSurface>
         )}
       </ScrollView>
-    </View>
+      </SkeletonProvider>
+
+      {/* Explicação das categorias 50-30-20 (bottom sheet estilo Revolut) */}
+      <BudgetInfoSheet visible={infoVisible} onClose={() => setInfoVisible(false)} />
+    </FullScreenOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  content: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.sm,
+    gap: Spacing.lg,
   },
-  ambientBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 380,
-  },
-  header: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.md,
   },
-  headerTitle: {
-    fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.bold,
-    color: '#FFFFFF',
+  heroSkeleton: {
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
   },
-  headerSubtitle: {
-    fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.85)',
-    textTransform: 'capitalize',
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: {
-    transform: [{ scale: 0.94 }],
-  },
-  content: {
-    paddingHorizontal: Spacing.xl,
-    gap: Spacing.lg,
+  chartSkeleton: {
+    marginTop: Spacing.sm,
   },
   card: {
     borderRadius: BorderRadius.xl,

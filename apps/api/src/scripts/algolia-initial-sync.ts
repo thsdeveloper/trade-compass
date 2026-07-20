@@ -29,7 +29,7 @@ async function syncTransactions() {
       type,
       status,
       due_date,
-      finance_categories(name),
+      finance_global_categories(name),
       finance_accounts(name),
       finance_credit_cards(name)
     `
@@ -54,7 +54,7 @@ async function syncTransactions() {
     type: t.type,
     status: t.status,
     date: t.due_date,
-    category_name: t.finance_categories?.name,
+    category_name: t.finance_global_categories?.name,
     account_name: t.finance_accounts?.name,
     credit_card_name: t.finance_credit_cards?.name,
   }));

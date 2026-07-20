@@ -19,8 +19,9 @@ import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAgent } from '@/contexts/AgentContext';
 import { MAX_MESSAGE_LENGTH } from '@/lib/agent-api';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { Button } from '@/components/atoms/Button';
 import type { ChatMessage } from '@/types/agent';
 
 const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
@@ -264,27 +265,16 @@ export default function AgentChatScreen() {
               returnKeyType="send"
             />
           </GlassSurface>
-          {/* Enviar mantém o gradiente da marca (identidade em conteúdo);
-              feedback por escala, nunca opacity perto do vidro */}
-          <Pressable
+          {/* Enviar: pill do design system (unificado) */}
+          <Button
+            iconOnly
+            icon="arrow-up"
+            size="md"
             onPress={handleSend}
+            loading={isLoading}
             disabled={!canSend}
             accessibilityLabel="Enviar mensagem"
-            style={({ pressed }) => [pressed && canSend && styles.pressedScale]}
-          >
-            <LinearGradient
-              colors={AI_GRADIENT}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <IconSymbol name="arrow.up" size={20} color="#FFFFFF" />
-              )}
-            </LinearGradient>
-          </Pressable>
+          />
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -441,15 +431,5 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
     fontSize: FontSize.md,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonDisabled: {
-    opacity: 0.4,
   },
 });

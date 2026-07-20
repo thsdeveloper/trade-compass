@@ -482,19 +482,6 @@ export default function FinancasPage() {
           </button>
 
           <button
-            onClick={() => router.push('/financas/categorias')}
-            className="group flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
-          >
-            <div>
-              <p className="text-sm font-medium text-slate-900">Categorias</p>
-              <p className="text-xs text-slate-400">
-                {categories.length} categoria{categories.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-500" />
-          </button>
-
-          <button
             onClick={() => router.push('/financas/recorrencias')}
             className="group flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
           >

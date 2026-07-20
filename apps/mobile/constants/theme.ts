@@ -96,6 +96,26 @@ export const BorderRadius = {
   full: 9999,
 };
 
+// Botões de ação (CTAs): sempre em formato pill, estilo Revolut — fundo branco
+// sólido e texto escuro (primário) sobre o app dark. Regra única do design
+// system: TODO botão do app usa o átomo <Button> (components/atoms/Button),
+// que consome estes tokens. Não estilize botões à mão.
+export const Buttons = {
+  /** Altura padrão (size 'lg') — mantida por compatibilidade */
+  height: 56,
+  radius: BorderRadius.full,
+  /** Alturas por tamanho */
+  heightLg: 56,
+  heightMd: 48,
+  heightSm: 40,
+  /** Primário: pill branco sólido, texto quase-preto */
+  background: '#FFFFFF',
+  label: '#111214',
+  /** Secundário: pill translúcido (tonal) sobre o dark */
+  secondaryBackground: 'rgba(255,255,255,0.12)',
+  secondaryBackgroundPressed: 'rgba(255,255,255,0.20)',
+};
+
 // Font sizes
 export const FontSize = {
   xs: 11,

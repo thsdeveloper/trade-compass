@@ -6,30 +6,28 @@ import {
   SectionList,
   StyleSheet,
   Pressable,
+  TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { useSharedValue } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
+
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useFinance } from '@/contexts/FinanceContext';
 import { useTransactionsFeed, type FeedTypeFilter } from '@/hooks/use-transactions-feed';
-import { TransactionListItem } from '@/components/finance/TransactionListItem';
-import { TransactionDetailModal } from '@/components/finance/TransactionDetailModal';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { ScrollEdgeEffect } from '@/components/ui/ScrollEdgeEffect';
-import { AskNorteBar } from '@/components/agent/AskNorteBar';
+import { TransactionListItem } from '@/components/molecules/TransactionListItem';
+import { TransactionDetailModal } from '@/components/organisms/TransactionDetailModal';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
+import { AskNorteBar } from '@/components/organisms/AskNorteBar';
 import {
   groupTransactionsByDate,
   formatCurrency,
@@ -40,10 +38,17 @@ const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
 interface SectionData {
   title: string;
+  net: number;
   data: TransactionWithDetails[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const SEGMENTS: { key: FeedTypeFilter; label: string }[] = [
+  { key: 'ALL', label: 'Tudo' },
+  { key: 'RECEITA', label: 'Receitas' },
+  { key: 'DESPESA', label: 'Despesas' },
+];
 
 /** "Hoje", "Ontem", dia da semana (últimos/próximos 7 dias) ou "10 de julho" */
 function formatSectionDate(dateString: string): string {
@@ -75,7 +80,6 @@ export default function TransactionsScreen() {
   const router = useRouter();
 
   const screenBg = isDark ? colors.background : '#F6F7F9';
-  // Sticky headers translúcidos: não "cortam" o gradiente ambiente
   const sectionHeaderBg = isDark
     ? 'rgba(18, 18, 18, 0.92)'
     : 'rgba(246, 247, 249, 0.92)';
@@ -85,22 +89,12 @@ export default function TransactionsScreen() {
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
   const scrollY = useSharedValue(0);
 
-  // Branco sobre o gradiente azul em repouso; escurece junto com a
-  // materialização do edge effect para manter contraste sobre o material claro
-  const titleAnimatedStyle = useAnimatedStyle(() => ({
-    color: isDark
-      ? colors.text
-      : interpolateColor(scrollY.value, [0, 40], ['#FFFFFF', colors.text]),
-  }));
-
-  // Set status bar style when screen gains focus
   useFocusEffect(
     useCallback(() => {
       setStatusBarStyle(colorScheme === 'dark' ? 'light' : 'dark');
     }, [colorScheme])
   );
 
-  // Feed paginado (carrega por demanda, filtros no servidor)
   const {
     items,
     isLoading,
@@ -115,17 +109,6 @@ export default function TransactionsScreen() {
     setSearch,
   } = useTransactionsFeed();
 
-  // Totais do mês corrente para os chips (mesma fonte do dashboard da Home)
-  const { dashboardSummary, loadDashboard } = useFinance();
-
-  useEffect(() => {
-    if (!dashboardSummary) {
-      loadDashboard();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mesma preferência de visibilidade usada na Home
   useEffect(() => {
     AsyncStorage.getItem(BALANCE_VISIBILITY_KEY)
       .then((stored) => {
@@ -152,10 +135,11 @@ export default function TransactionsScreen() {
     setSelectedTransaction(null);
   }, []);
 
-  const toggleFilter = useCallback(
-    (filter: Exclude<FeedTypeFilter, 'ALL'>) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setTypeFilter(typeFilter === filter ? 'ALL' : filter);
+  const selectSegment = useCallback(
+    (filter: FeedTypeFilter) => {
+      if (filter === typeFilter) return;
+      Haptics.selectionAsync();
+      setTypeFilter(filter);
     },
     [typeFilter, setTypeFilter]
   );
@@ -166,18 +150,35 @@ export default function TransactionsScreen() {
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, data]) => ({
         title: formatSectionDate(date),
+        net: data.reduce(
+          (sum, t) => sum + (t.type === 'RECEITA' ? t.amount : -t.amount),
+          0
+        ),
         data,
       }));
   }, [items]);
 
-  const monthIncome = dashboardSummary?.month_income ?? 0;
-  const monthExpenses = dashboardSummary?.month_expenses ?? 0;
+  const formatNet = useCallback(
+    (net: number) => {
+      if (!isBalanceVisible) return '•••';
+      const sign = net >= 0 ? '+' : '-';
+      return `${sign}${formatCurrency(Math.abs(net))}`;
+    },
+    [isBalanceVisible]
+  );
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Busca (server-side, com debounce) — superfície de conteúdo (material) */}
-      <GlassSurface variant="material" style={styles.searchBar}>
-        <IconSymbol name="magnifyingglass" size={18} color={colors.textSecondary} />
+      <Text style={[styles.bigTitle, { color: colors.text }]}>Transações</Text>
+
+      {/* Busca (server-side, com debounce) */}
+      <View
+        style={[
+          styles.searchBar,
+          { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#EFEFF2' },
+        ]}
+      >
+        <Ionicons name="search" size={18} color={colors.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           value={search}
@@ -187,68 +188,40 @@ export default function TransactionsScreen() {
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
-      </GlassSurface>
-
-      {/* Chips com totais do mês — tocar filtra por tipo */}
-      <View style={styles.chipsRow}>
-        <Pressable
-          onPress={() => toggleFilter('RECEITA')}
-          accessibilityRole="button"
-          accessibilityLabel="Filtrar receitas"
-        >
-          {({ pressed }) => (
-            <View style={pressed && styles.chipPressed}>
-              <GlassSurface
-                variant="material"
-                style={[
-                  styles.chip,
-                  typeFilter === 'RECEITA' && {
-                    borderWidth: 1,
-                    borderColor: colors.success,
-                  },
-                ]}
-              >
-                <View style={[styles.chipIcon, { backgroundColor: colors.successLight }]}>
-                  <IconSymbol name="arrow.down" size={13} color={colors.success} />
-                </View>
-                <Text style={[styles.chipValue, { color: colors.text }]}>
-                  {isBalanceVisible ? formatCurrency(monthIncome) : 'R$ ••••'}
-                </Text>
-              </GlassSurface>
-            </View>
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={() => toggleFilter('DESPESA')}
-          accessibilityRole="button"
-          accessibilityLabel="Filtrar despesas"
-        >
-          {({ pressed }) => (
-            <View style={pressed && styles.chipPressed}>
-              <GlassSurface
-                variant="material"
-                style={[
-                  styles.chip,
-                  typeFilter === 'DESPESA' && {
-                    borderWidth: 1,
-                    borderColor: colors.danger,
-                  },
-                ]}
-              >
-                <View style={[styles.chipIcon, { backgroundColor: colors.dangerLight }]}>
-                  <IconSymbol name="arrow.up" size={13} color={colors.danger} />
-                </View>
-                <Text style={[styles.chipValue, { color: colors.text }]}>
-                  {isBalanceVisible ? formatCurrency(monthExpenses) : 'R$ ••••'}
-                </Text>
-              </GlassSurface>
-            </View>
-          )}
-        </Pressable>
       </View>
 
-      {/* Error Message */}
+      {/* Segmented: Tudo / Receitas / Despesas */}
+      <View
+        style={[
+          styles.segmented,
+          { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(118,118,128,0.12)' },
+        ]}
+      >
+        {SEGMENTS.map((segment) => {
+          const active = typeFilter === segment.key;
+          return (
+            <TouchableOpacity
+              key={segment.key}
+              style={[
+                styles.segment,
+                active && { backgroundColor: isDark ? colors.card : '#FFFFFF' },
+              ]}
+              onPress={() => selectSegment(segment.key)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  { color: active ? colors.text : colors.textSecondary },
+                ]}
+              >
+                {segment.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {error && (
         <View style={[styles.errorContainer, { backgroundColor: colors.dangerLight }]}>
           <IconSymbol name="exclamationmark.triangle" size={16} color={colors.danger} />
@@ -264,9 +237,17 @@ export default function TransactionsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           {section.title}
         </Text>
+        <Text
+          style={[
+            styles.sectionNet,
+            { color: section.net >= 0 ? colors.success : colors.textSecondary },
+          ]}
+        >
+          {formatNet(section.net)}
+        </Text>
       </View>
     ),
-    [colors, sectionHeaderBg]
+    [colors, sectionHeaderBg, formatNet]
   );
 
   const renderItem = useCallback(
@@ -281,10 +262,7 @@ export default function TransactionsScreen() {
     [handleTransactionPress, isBalanceVisible]
   );
 
-  const keyExtractor = useCallback(
-    (item: TransactionWithDetails) => item.id,
-    []
-  );
+  const keyExtractor = useCallback((item: TransactionWithDetails) => item.id, []);
 
   const ListFooterComponent = useCallback(
     () =>
@@ -321,8 +299,6 @@ export default function TransactionsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* Gradiente ambiente edge-to-edge: a cor de marca vive no fundo,
-          dando ao vidro algo para refratar */}
       <LinearGradient
         colors={
           isDark
@@ -334,8 +310,7 @@ export default function TransactionsScreen() {
         pointerEvents="none"
       />
 
-      {/* Barra superior fixa (camada funcional): botões em Liquid Glass.
-          O ScrollEdgeEffect materializa o fundo da barra ao rolar a lista */}
+      {/* Barra superior fixa (ações em Liquid Glass) */}
       <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
         <ScrollEdgeEffect scrollY={scrollY} />
         <Pressable
@@ -344,7 +319,6 @@ export default function TransactionsScreen() {
           accessibilityLabel={isBalanceVisible ? 'Ocultar valores' : 'Mostrar valores'}
         >
           {({ pressed }) => (
-            // Escala no press (opacidade quebraria o Liquid Glass nativo)
             <View style={pressed && styles.buttonPressed}>
               <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
                 <IconSymbol
@@ -356,10 +330,6 @@ export default function TransactionsScreen() {
             </View>
           )}
         </Pressable>
-
-        <Animated.Text style={[styles.topBarTitle, titleAnimatedStyle]}>
-          Atividades
-        </Animated.Text>
 
         <View style={styles.topBarActions}>
           <Pressable
@@ -389,7 +359,6 @@ export default function TransactionsScreen() {
           >
             {({ pressed }) => (
               <View style={pressed && styles.buttonPressed}>
-                {/* Destaque da ação primária pela cor do ícone, não por fundo sólido */}
                 <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
                   <IconSymbol name="plus" size={22} color={colors.primary} />
                 </GlassSurface>
@@ -445,7 +414,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 420,
+    height: 300,
   },
   topBar: {
     flexDirection: 'row',
@@ -462,7 +431,6 @@ const styles = StyleSheet.create({
   topBarButton: {
     width: 40,
     height: 40,
-    // Cápsula: radius = altura / 2
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
@@ -470,12 +438,14 @@ const styles = StyleSheet.create({
   buttonPressed: {
     transform: [{ scale: 0.92 }],
   },
-  topBarTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-  },
   headerContainer: {
     paddingHorizontal: Spacing.lg,
+  },
+  bigTitle: {
+    fontSize: FontSize['4xl'],
+    fontWeight: FontWeight.bold,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   searchBar: {
     flexDirection: 'row',
@@ -483,7 +453,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
     marginBottom: Spacing.md,
     height: 44,
   },
@@ -492,47 +461,42 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     paddingVertical: 0,
   },
-  chipsRow: {
+  segmented: {
     flexDirection: 'row',
-    gap: Spacing.lg,
+    borderRadius: 12,
+    padding: 4,
     marginBottom: Spacing.sm,
   },
-  chip: {
-    flexDirection: 'row',
+  segment: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
     alignItems: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    borderRadius: 9,
   },
-  chipPressed: {
-    transform: [{ scale: 0.97 }],
-  },
-  chipIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipValue: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
+  segmentText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
   },
   listContent: {
     paddingBottom: 160,
     flexGrow: 1,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing['2xl'],
+    paddingTop: Spacing.xl,
     paddingBottom: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: FontSize.xl,
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
+  },
+  sectionNet: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    fontVariant: ['tabular-nums'],
   },
   footerLoading: {
     paddingVertical: Spacing.xl,

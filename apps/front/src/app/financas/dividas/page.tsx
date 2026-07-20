@@ -202,13 +202,6 @@ export default function DividasPage() {
     await loadData(true);
   };
 
-  const handleCreateCategory = async (data: CategoryFormData): Promise<FinanceCategory> => {
-    if (!session?.access_token) throw new Error('Not authenticated');
-    const created = await financeApi.createCategory(data, session.access_token);
-    setCategories((prev) => [...prev, created]);
-    return created;
-  };
-
   const handleMarkAsSettled = async (debt: DebtWithNegotiation) => {
     if (!session?.access_token) return;
     if (!confirm(`Marcar divida "${debt.creditor_name}" como quitada?`)) return;
@@ -456,7 +449,6 @@ export default function DividasPage() {
                 open={generateDialogOpen}
                 onOpenChange={setGenerateDialogOpen}
                 onGenerate={handleConfirmGenerateTransactions}
-                onCreateCategory={handleCreateCategory}
                 debt={selectedDebt}
                 negotiation={selectedDebt.active_negotiation}
                 categories={categories}

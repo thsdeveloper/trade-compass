@@ -479,6 +479,70 @@ export interface BudgetSummary {
   month: string;
 }
 
+/** Uma transação individual dentro do detalhamento de um bucket de orçamento. */
+export interface BudgetBreakdownTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'PAGO' | 'PENDENTE';
+  is_credit_card: boolean;
+}
+
+/** Uma categoria (com seus gastos) dentro de um bucket 50-30-20. */
+export interface BudgetBreakdownCategory {
+  category_id: string;
+  name: string;
+  color: string;
+  icon: string;
+  amount: number;
+  paid: number;
+  pending: number;
+  count: number;
+  transactions: BudgetBreakdownTransaction[];
+}
+
+/** Detalhamento de um bucket (Essenciais/Estilo de Vida/Investimentos). */
+export interface BudgetBreakdownBucket {
+  category: BudgetCategory;
+  label: string;
+  total: number;
+  paid: number;
+  pending: number;
+  categories: BudgetBreakdownCategory[];
+}
+
+/** Detalhamento completo dos gastos por bucket de orçamento no mês. */
+export interface BudgetBreakdown {
+  month: string;
+  buckets: BudgetBreakdownBucket[];
+}
+
+/** Uma transação individual na listagem paginada de um bucket de orçamento. */
+export interface BudgetTransactionItem {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'PAGO' | 'PENDENTE';
+  is_credit_card: boolean;
+  source_name: string | null; // nome da conta ou do cartão
+  category_id: string;
+  category_name: string;
+  category_color: string;
+  category_icon: string;
+}
+
+/** Página de transações de um bucket 50-30-20 no mês. */
+export interface BudgetTransactionsPage {
+  bucket: BudgetCategory;
+  month: string;
+  total_count: number;
+  total_amount: number;
+  has_more: boolean;
+  items: BudgetTransactionItem[];
+}
+
 export interface YearSummary {
   year: number;
   total_balance: number;

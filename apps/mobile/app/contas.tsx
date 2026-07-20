@@ -19,11 +19,13 @@ import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
 import { getTransactions } from '@/lib/finance-api';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { ScrollEdgeEffect } from '@/components/ui/ScrollEdgeEffect';
-import { TransactionListItem } from '@/components/finance/TransactionListItem';
-import { TransactionDetailModal } from '@/components/finance/TransactionDetailModal';
+import { Button } from '@/components/atoms/Button';
+import { BankLogo } from '@/components/atoms/BankLogo';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
+import { TransactionListItem } from '@/components/molecules/TransactionListItem';
+import { TransactionDetailModal } from '@/components/organisms/TransactionDetailModal';
 import {
   formatCurrency,
   type FinanceAccount,
@@ -233,11 +235,19 @@ export default function ContasScreen() {
                 />
               )}
               <View style={styles.accountRow}>
-                <View style={[styles.accountBadge, { backgroundColor: account.color }]}>
-                  <Text style={styles.accountBadgeText}>
-                    {account.name.trim().charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                <BankLogo
+                  bank={account.bank_id}
+                  name={account.name}
+                  size={44}
+                  formato="circulo"
+                  fallback={
+                    <View style={[styles.accountBadge, { backgroundColor: account.color }]}>
+                      <Text style={styles.accountBadgeText}>
+                        {account.name.trim().charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  }
+                />
                 <View style={styles.accountInfo}>
                   <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
                     {account.name}
@@ -270,18 +280,12 @@ export default function ContasScreen() {
           )}
         </GlassSurface>
 
-        {/* Ação: adicionar conta (controle → vidro em cápsula) */}
-        <Pressable onPress={handleAddAccount} accessibilityRole="button">
-          {({ pressed }) => (
-            <View style={pressed && styles.pressedScale}>
-              <GlassSurface variant="glass" isInteractive style={styles.addButton}>
-                <Text style={[styles.addButtonText, { color: colors.text }]}>
-                  Adicionar conta
-                </Text>
-              </GlassSurface>
-            </View>
-          )}
-        </Pressable>
+        {/* Ação: adicionar conta (CTA primário do design system) */}
+        <Button
+          label="Adicionar conta"
+          onPress={handleAddAccount}
+          style={styles.addButton}
+        />
 
         {/* Últimos lançamentos */}
         {recentTransactions.length > 0 && (
@@ -449,15 +453,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
   },
   addButton: {
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: Spacing['2xl'],
-  },
-  addButtonText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
   },
   sectionTitle: {
     fontSize: FontSize.lg,

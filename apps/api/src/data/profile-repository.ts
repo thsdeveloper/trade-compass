@@ -5,6 +5,8 @@ export interface Profile {
   full_name: string | null;
   phone: string | null;
   avatar_url: string | null;
+  monthly_income: number | null;
+  onboarding_goals: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -13,6 +15,8 @@ export interface UpdateProfileDTO {
   full_name?: string | null;
   phone?: string | null;
   avatar_url?: string | null;
+  monthly_income?: number | null;
+  onboarding_goals?: string[] | null;
 }
 
 const TABLE = 'profiles';

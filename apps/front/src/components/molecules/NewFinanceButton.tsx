@@ -8,7 +8,6 @@ import {
   AlertCircle,
   Wallet,
   CreditCard,
-  Tag,
   Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,7 +37,6 @@ const menuItems: Array<{
   { type: 'debt', label: 'Nova Divida', icon: AlertCircle, group: 'primary' },
   { type: 'account', label: 'Nova Conta', icon: Wallet, group: 'secondary' },
   { type: 'creditCard', label: 'Novo Cartao', icon: CreditCard, group: 'secondary' },
-  { type: 'category', label: 'Nova Categoria', icon: Tag, group: 'secondary' },
 ];
 
 // Componente interno que usa o hook (so renderiza quando tem provider)

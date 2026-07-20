@@ -16,7 +16,6 @@ import type {
   UpcomingPayment,
   BudgetSummary,
   YearSummary,
-  CategoryFormData,
   TagFormData,
   AccountFormData,
   CreditCardFormData,
@@ -152,33 +151,6 @@ class FinanceApiClient {
     accessToken: string
   ): Promise<GlobalCategoryWithChildren[]> {
     return this.authFetch('/finance/global-categories', accessToken);
-  }
-
-  async createCategory(
-    data: CategoryFormData,
-    accessToken: string
-  ): Promise<FinanceCategory> {
-    return this.authFetch('/finance/categories', accessToken, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateCategory(
-    id: string,
-    data: Partial<CategoryFormData>,
-    accessToken: string
-  ): Promise<FinanceCategory> {
-    return this.authFetch(`/finance/categories/${id}`, accessToken, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteCategory(id: string, accessToken: string): Promise<void> {
-    await this.authFetch(`/finance/categories/${id}`, accessToken, {
-      method: 'DELETE',
-    });
   }
 
   // Tags

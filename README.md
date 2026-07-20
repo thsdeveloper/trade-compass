@@ -1,11 +1,11 @@
-# 🧭 Trade Compass
+# 🧭 Money Compass
 
 [![Project Status: Active](https://img.shields.io/badge/Project%20Status-Active-brightgreen.svg)](#)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![Fastify](https://img.shields.io/badge/Fastify-5-black?logo=fastify)](https://www.fastify.io/)
 [![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-blue?logo=supabase)](https://supabase.com/)
 
-**Trade Compass** is a comprehensive technical analysis platform specifically designed for the Brazilian financial market (B3). It provides traders with real-time-ish insights, market context analysis, and automated setup detection to facilitate better decision-making.
+**Money Compass** is a comprehensive technical analysis platform specifically designed for the Brazilian financial market (B3). It provides traders with real-time-ish insights, market context analysis, and automated setup detection to facilitate better decision-making.
 
 ---
 

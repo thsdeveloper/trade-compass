@@ -11,7 +11,6 @@ import { TransactionDialog } from './TransactionDialog';
 import { DebtDialog } from './DebtDialog';
 import { AccountDialog } from './AccountDialog';
 import { CreditCardDialog } from './CreditCardDialog';
-import { CategoryDialog } from './CategoryDialog';
 import { GoalDialog } from './GoalDialog';
 
 // Types
@@ -26,7 +25,6 @@ import type {
   DebtFormData,
   AccountFormData,
   CreditCardFormData,
-  CategoryFormData,
   TagFormData,
   TransferFormData,
   GoalSelectItem,
@@ -184,13 +182,6 @@ export function FinanceDialogsContainer() {
     loadData();
   };
 
-  const handleCreateCategory = async (data: CategoryFormData): Promise<FinanceCategory> => {
-    if (!session?.access_token) throw new Error('Not authenticated');
-    const created = await financeApi.createCategory(data, session.access_token);
-    setCategories((prev) => [...prev, created]);
-    return created;
-  };
-
   const handleCreateTag = async (data: TagFormData): Promise<FinanceTag> => {
     if (!session?.access_token) throw new Error('Not authenticated');
     const created = await financeApi.createTag(data, session.access_token);
@@ -228,16 +219,6 @@ export function FinanceDialogsContainer() {
     loadData();
   };
 
-  // Category handlers
-  const handleSaveCategory = async (data: CategoryFormData) => {
-    if (!session?.access_token) return;
-    await financeApi.createCategory(data, session.access_token);
-    toast.success('Categoria criada com sucesso');
-    closeDialog('category');
-    notifyDataChanged();
-    loadData();
-  };
-
   // Goal handlers
   const handleSaveGoal = async (data: GoalFormData) => {
     if (!session?.access_token) return;
@@ -255,7 +236,6 @@ export function FinanceDialogsContainer() {
         open={dialogs.transaction}
         onOpenChange={(open) => !open && closeDialog('transaction')}
         onSave={handleSaveTransaction}
-        onCreateCategory={handleCreateCategory}
         onCreateTag={handleCreateTag}
         onCreateRecurrence={handleCreateRecurrence}
         onCreateTransfer={handleCreateTransfer}
@@ -288,13 +268,6 @@ export function FinanceDialogsContainer() {
         open={dialogs.creditCard}
         onOpenChange={(open) => !open && closeDialog('creditCard')}
         onSave={handleSaveCreditCard}
-      />
-
-      {/* Category Dialog */}
-      <CategoryDialog
-        open={dialogs.category}
-        onOpenChange={(open) => !open && closeDialog('category')}
-        onSave={handleSaveCategory}
       />
 
       {/* Goal Dialog */}

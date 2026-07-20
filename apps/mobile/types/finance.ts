@@ -1,3 +1,5 @@
+import type { IconSymbolName } from '@/components/atoms/icon-symbol';
+
 // ==================== ENUMS ====================
 
 export type FinanceCategoryType = 'DESPESA' | 'RECEITA';
@@ -18,14 +20,15 @@ export type BudgetCategory = 'ESSENCIAL' | 'ESTILO_VIDA' | 'INVESTIMENTO';
 
 export interface FinanceCategory {
   id: string;
-  user_id: string;
   name: string;
   type: FinanceCategoryType;
   color: string;
   icon: string;
-  is_system: boolean;
+  /** null = categoria-mãe; caso contrário, referência à mãe (catálogo global) */
+  parent_id: string | null;
   is_active: boolean;
   budget_category: BudgetCategory | null;
+  sort_order?: number;
   created_at: string;
   updated_at: string;
 }
@@ -181,6 +184,67 @@ export interface BudgetSummary {
   month: string;
 }
 
+export interface BudgetBreakdownTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'PAGO' | 'PENDENTE';
+  is_credit_card: boolean;
+}
+
+export interface BudgetBreakdownCategory {
+  category_id: string;
+  name: string;
+  color: string;
+  icon: string;
+  amount: number;
+  paid: number;
+  pending: number;
+  count: number;
+  transactions: BudgetBreakdownTransaction[];
+}
+
+export interface BudgetBreakdownBucket {
+  category: BudgetCategory;
+  label: string;
+  total: number;
+  paid: number;
+  pending: number;
+  categories: BudgetBreakdownCategory[];
+}
+
+export interface BudgetBreakdown {
+  month: string;
+  buckets: BudgetBreakdownBucket[];
+}
+
+/** Item da lista paginada de transações de um bucket de orçamento. */
+export interface BudgetTransactionItem {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'PAGO' | 'PENDENTE';
+  is_credit_card: boolean;
+  /** Nome da conta ou do cartão de origem (quando houver). */
+  source_name: string | null;
+  category_id: string;
+  category_name: string;
+  category_color: string;
+  category_icon: string;
+}
+
+/** Página de transações de um bucket (busca sob demanda). */
+export interface BudgetTransactionsPage {
+  bucket: BudgetCategory;
+  month: string;
+  total_count: number;
+  total_amount: number;
+  has_more: boolean;
+  items: BudgetTransactionItem[];
+}
+
 // Budget category colors and labels
 export const BUDGET_CATEGORY_COLORS: Record<BudgetCategory, string> = {
   ESSENCIAL: '#3b82f6',
@@ -192,6 +256,31 @@ export const BUDGET_CATEGORY_LABELS: Record<BudgetCategory, string> = {
   ESSENCIAL: 'Essenciais',
   ESTILO_VIDA: 'Estilo de Vida',
   INVESTIMENTO: 'Investimentos',
+};
+
+// Ícone único de cada bucket 50-30-20 — usar SEMPRE este registro, em
+// qualquer superfície que exiba um bucket (cards, listas, telas, sheets).
+export const BUDGET_CATEGORY_ICONS: Record<BudgetCategory, IconSymbolName> = {
+  ESSENCIAL: 'house.fill',
+  ESTILO_VIDA: 'bag.fill',
+  INVESTIMENTO: 'chart.line.uptrend.xyaxis',
+};
+
+/** Percentual ideal de cada bucket na regra 50-30-20. */
+export const BUDGET_CATEGORY_IDEALS: Record<BudgetCategory, number> = {
+  ESSENCIAL: 50,
+  ESTILO_VIDA: 30,
+  INVESTIMENTO: 20,
+};
+
+/** Explicação de cada bucket para o usuário (info sheet do orçamento). */
+export const BUDGET_CATEGORY_DESCRIPTIONS: Record<BudgetCategory, string> = {
+  ESSENCIAL:
+    'O que você precisa para viver: moradia, mercado, contas de casa, transporte e saúde.',
+  ESTILO_VIDA:
+    'O que você quer, mas não precisa: restaurantes, lazer, compras e assinaturas.',
+  INVESTIMENTO:
+    'Dinheiro para o futuro: aportes, reserva de emergência e previdência.',
 };
 
 export const BUDGET_STATUS_LABELS: Record<BudgetAllocation['status'], string> = {

@@ -16,9 +16,11 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-import { EditableAvatar } from '@/components/profile/EditableAvatar';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
+import { EditableAvatar } from '@/components/molecules/EditableAvatar';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { TextField } from '@/components/atoms/TextField';
+import { Button } from '@/components/atoms/Button';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -199,20 +201,10 @@ export default function EditProfileScreen() {
           >
             {/* Name Input */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Nome completo</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.card,
-                    color: colors.text,
-                    borderColor: colors.border,
-                  },
-                ]}
+              <TextField
+                label="Nome completo"
                 value={fullName}
                 onChangeText={setFullName}
-                placeholder="Seu nome"
-                placeholderTextColor={colors.textSecondary}
                 autoCapitalize="words"
                 autoCorrect={false}
               />
@@ -220,20 +212,10 @@ export default function EditProfileScreen() {
 
             {/* Phone Input */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Telefone</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.card,
-                    color: colors.text,
-                    borderColor: colors.border,
-                  },
-                ]}
+              <TextField
+                label="Telefone"
                 value={phone}
                 onChangeText={handlePhoneChange}
-                placeholder="(00) 00000-0000"
-                placeholderTextColor={colors.textSecondary}
                 keyboardType="phone-pad"
                 maxLength={15}
               />
@@ -278,28 +260,13 @@ export default function EditProfileScreen() {
 
         {/* Save Button */}
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              { backgroundColor: hasChanges ? colors.primary : colors.card },
-            ]}
+          <Button
+            label="Salvar"
             onPress={handleSave}
-            disabled={!hasChanges || isSaving}
-            activeOpacity={0.8}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text
-                style={[
-                  styles.saveButtonText,
-                  { color: hasChanges ? '#FFFFFF' : colors.textSecondary },
-                ]}
-              >
-                Salvar
-              </Text>
-            )}
-          </TouchableOpacity>
+            variant="primary"
+            loading={isSaving}
+            disabled={!hasChanges}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -389,15 +356,5 @@ const styles = StyleSheet.create({
   footer: {
     padding: Spacing.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  saveButton: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
   },
 });

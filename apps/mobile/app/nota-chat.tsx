@@ -29,13 +29,15 @@ import {
   getCreditCards,
   payTransaction,
 } from '@/lib/finance-api';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { QrScannerModal } from '@/components/agent/QrScannerModal';
+import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { Button } from '@/components/atoms/Button';
+import { QrScannerModal } from '@/components/organisms/QrScannerModal';
+import { ReceiptScanningLoader } from '@/components/organisms/ReceiptScanningLoader';
 import {
   ReceiptDraftCard,
   type DraftConfirmation,
-} from '@/components/agent/ReceiptDraftCard';
+} from '@/components/organisms/ReceiptDraftCard';
 import type { ReceiptChatMessage, TransactionDraft } from '@/types/agent';
 import type { FinanceCreditCard } from '@/types/finance';
 import { formatCurrency } from '@/types/finance';
@@ -81,6 +83,8 @@ export default function NotaChatScreen() {
   const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // true só quando a leitura em curso é de imagem/QR (mostra o overlay premium)
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scannerVisible, setScannerVisible] = useState(false);
   const listRef = useRef<FlatList<ReceiptChatMessage>>(null);
@@ -113,6 +117,7 @@ export default function NotaChatScreen() {
 
       setError(null);
       setIsLoading(true);
+      setIsScanningReceipt(!!(request.imageUri || request.qrData));
 
       const userMessage: ReceiptChatMessage = {
         id: generateId(),
@@ -166,6 +171,7 @@ export default function NotaChatScreen() {
         setMessages((prev) => prev.filter((m) => m.id !== assistantId));
       } finally {
         setIsLoading(false);
+        setIsScanningReceipt(false);
       }
     },
     [isLoading, session?.access_token]
@@ -520,26 +526,16 @@ export default function NotaChatScreen() {
               returnKeyType="send"
             />
           </GlassSurface>
-          {/* Enviar mantém o gradiente da marca (identidade em conteúdo) */}
-          <Pressable
+          {/* Enviar: pill do design system (unificado) */}
+          <Button
+            iconOnly
+            icon="arrow-up"
+            size="md"
             onPress={handleSend}
+            loading={isLoading}
             disabled={!canSend}
             accessibilityLabel="Enviar mensagem"
-            style={({ pressed }) => [pressed && canSend && styles.pressedScale]}
-          >
-            <LinearGradient
-              colors={NOTA_GRADIENT}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <IconSymbol name="arrow.up" size={20} color="#FFFFFF" />
-              )}
-            </LinearGradient>
-          </Pressable>
+          />
         </View>
       </KeyboardAvoidingView>
 
@@ -548,6 +544,9 @@ export default function NotaChatScreen() {
         onClose={() => setScannerVisible(false)}
         onScanned={handleQrScanned}
       />
+
+      {/* Overlay premium enquanto lê a nota (só em imagem/QR) */}
+      <ReceiptScanningLoader visible={isScanningReceipt} />
     </View>
   );
 }
@@ -732,15 +731,5 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
     fontSize: FontSize.md,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonDisabled: {
-    opacity: 0.4,
   },
 });

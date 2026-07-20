@@ -253,7 +253,7 @@ export async function getBudgetAnalysisReport(
       .from('finance_transactions')
       .select(`
         amount,
-        category:finance_categories(budget_category)
+        category:finance_global_categories(budget_category)
       `)
       .eq('user_id', userId)
       .eq('type', 'DESPESA')
@@ -396,7 +396,7 @@ export async function getCategoryBreakdownReport(
       id,
       amount,
       due_date,
-      category:finance_categories(id, name, icon, color)
+      category:finance_global_categories(id, name, icon, color)
     `)
     .eq('user_id', userId)
     .eq('type', 'DESPESA')
@@ -817,7 +817,7 @@ export async function getRecurringAnalysisReport(
       frequency,
       type,
       is_active,
-      category:finance_categories(name, icon, color)
+      category:finance_global_categories(name, icon, color)
     `)
     .eq('user_id', userId)
     .order('amount', { ascending: false });

@@ -9,6 +9,9 @@ import type {
   ExpensesByCategory,
   UpcomingPayment,
   BudgetSummary,
+  BudgetBreakdown,
+  BudgetCategory,
+  BudgetTransactionsPage,
   GlobalCategoryWithChildren,
   FinanceCreditCard,
 } from '@/types/finance';
@@ -193,6 +196,33 @@ export async function getBudgetAllocation(month?: string): Promise<BudgetSummary
   }
   const query = params.toString();
   return authFetch(`/finance/dashboard/budget-allocation${query ? `?${query}` : ''}`);
+}
+
+/** Detalhamento dos gastos por bucket (Essenciais/Estilo de Vida/Investimentos). */
+export async function getBudgetBreakdown(month?: string): Promise<BudgetBreakdown> {
+  const params = new URLSearchParams();
+  if (month) {
+    params.append('month', month);
+  }
+  const query = params.toString();
+  return authFetch(`/finance/dashboard/budget-breakdown${query ? `?${query}` : ''}`);
+}
+
+/** Transações de um bucket de orçamento, paginadas e com busca (sob demanda). */
+export async function getBudgetTransactions(params: {
+  bucket: BudgetCategory;
+  month: string;
+  search?: string;
+  status?: 'PAGO' | 'PENDENTE';
+  limit?: number;
+  offset?: number;
+}): Promise<BudgetTransactionsPage> {
+  const query = new URLSearchParams({ bucket: params.bucket, month: params.month });
+  if (params.search) query.append('search', params.search);
+  if (params.status) query.append('status', params.status);
+  if (params.limit !== undefined) query.append('limit', String(params.limit));
+  if (params.offset !== undefined) query.append('offset', String(params.offset));
+  return authFetch(`/finance/dashboard/budget-transactions?${query.toString()}`);
 }
 
 // Global categories (catálogo compartilhado, somente leitura)

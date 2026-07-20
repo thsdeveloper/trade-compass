@@ -56,7 +56,7 @@ export async function getRecurrencesByUser(
     .select(
       `
       *,
-      category:finance_categories!category_id(id, name, color, icon, type),
+      category:finance_global_categories!category_id(id, name, color, icon, type),
       account:finance_accounts!account_id(id, name, color, icon),
       credit_card:finance_credit_cards!credit_card_id(id, name, brand, color)
     `

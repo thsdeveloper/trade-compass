@@ -114,7 +114,7 @@ export async function generateReportPDF(params: PDFGenerationParams): Promise<Bu
   pdf.setTextColor(100, 116, 139);
   pdf.text(`Gerado em ${formatDateTime()}`, margin, pageHeight - 6);
 
-  const pageText = 'Trade Compass';
+  const pageText = 'Money Compass';
   const pageTextWidth = pdf.getTextWidth(pageText);
   pdf.text(pageText, pageWidth - margin - pageTextWidth, pageHeight - 6);
 

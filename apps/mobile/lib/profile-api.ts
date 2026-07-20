@@ -6,6 +6,8 @@ interface Profile {
   full_name: string | null;
   phone: string | null;
   avatar_url: string | null;
+  monthly_income: number | null;
+  onboarding_goals: string[] | null;
 }
 
 interface ApiResponse<T = unknown> {
@@ -46,6 +48,8 @@ export async function getProfile(): Promise<ApiResponse<Profile>> {
 export async function updateProfile(updates: {
   full_name?: string | null;
   phone?: string | null;
+  monthly_income?: number | null;
+  onboarding_goals?: string[] | null;
 }): Promise<ApiResponse<Profile>> {
   try {
     const headers = await getAuthHeaders();

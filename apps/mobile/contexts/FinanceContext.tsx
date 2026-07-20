@@ -2,9 +2,11 @@ import {
   createContext,
   useContext,
   useState,
+  useEffect,
   useCallback,
   type ReactNode,
 } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   getCategories,
   getAccounts,
@@ -33,6 +35,10 @@ interface FinanceContextType {
   selectedMonth: Date;
   isLoading: boolean;
   error: string | null;
+  /** Flags de "primeira carga concluída" por fonte, para skeletons por seção */
+  accountsLoaded: boolean;
+  transactionsLoaded: boolean;
+  dashboardLoaded: boolean;
   setSelectedMonth: (date: Date) => void;
   loadTransactions: () => Promise<void>;
   loadCategories: () => Promise<void>;
@@ -52,6 +58,9 @@ interface FinanceContextType {
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
+  // Nada é buscado sem sessão (a home monta antes do redirect para /auth).
+  // isLoggedIn nas deps renova os callbacks no login, refazendo os fetches.
+  const { isLoggedIn } = useAuth();
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>(
     []
   );
@@ -60,6 +69,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [transactionsLoaded, setTransactionsLoaded] = useState(false);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
 
   // Dashboard state
   const [dashboardSummary, setDashboardSummary] = useState<FinanceSummary | null>(null);
@@ -87,6 +99,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadTransactions = useCallback(async () => {
+    if (!isLoggedIn) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -97,26 +110,31 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar transacoes');
     } finally {
       setIsLoading(false);
+      setTransactionsLoaded(true);
     }
-  }, [selectedMonth, getMonthRange]);
+  }, [isLoggedIn, selectedMonth, getMonthRange]);
 
   const loadCategories = useCallback(async () => {
+    if (!isLoggedIn) return;
     try {
       const data = await getCategories();
       setCategories(data.filter((c) => c.is_active));
     } catch (err) {
       console.error('Erro ao carregar categorias:', err);
     }
-  }, []);
+  }, [isLoggedIn]);
 
   const loadAccounts = useCallback(async () => {
+    if (!isLoggedIn) return;
     try {
       const data = await getAccounts();
       setAccounts(data.filter((a) => a.is_active));
     } catch (err) {
       console.error('Erro ao carregar contas:', err);
+    } finally {
+      setAccountsLoaded(true);
     }
-  }, []);
+  }, [isLoggedIn]);
 
   const createTransaction = useCallback(
     async (data: TransactionFormData) => {
@@ -149,6 +167,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }, [loadTransactions, loadCategories, loadAccounts]);
 
   const loadDashboard = useCallback(async () => {
+    if (!isLoggedIn) return;
     setIsDashboardLoading(true);
     setDashboardError(null);
     try {
@@ -163,12 +182,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       setExpensesByCategory(expenses);
       setUpcomingPayments(upcoming);
       setBudgetSummary(budget);
+      setDashboardLoaded(true);
     } catch (err) {
       setDashboardError(err instanceof Error ? err.message : 'Erro ao carregar dashboard');
     } finally {
       setIsDashboardLoading(false);
     }
-  }, [selectedMonth, getMonthString]);
+  }, [isLoggedIn, selectedMonth, getMonthString]);
+
+  // Ao sair da conta, zera dados e flags para o próximo login recomeçar com
+  // skeletons — e para não vazar dados de um usuário para outro.
+  useEffect(() => {
+    if (isLoggedIn) return;
+    setAccounts([]);
+    setTransactions([]);
+    setDashboardSummary(null);
+    setExpensesByCategory([]);
+    setUpcomingPayments([]);
+    setBudgetSummary(null);
+    setAccountsLoaded(false);
+    setTransactionsLoaded(false);
+    setDashboardLoaded(false);
+  }, [isLoggedIn]);
 
   return (
     <FinanceContext.Provider
@@ -179,6 +214,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         selectedMonth,
         isLoading,
         error,
+        accountsLoaded,
+        transactionsLoaded,
+        dashboardLoaded,
         setSelectedMonth,
         loadTransactions,
         loadCategories,

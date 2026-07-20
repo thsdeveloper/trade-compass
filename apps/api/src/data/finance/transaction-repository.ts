@@ -55,7 +55,7 @@ export async function getTransactionsByUser(
     .from(TABLE)
     .select(`
       *,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       account:finance_accounts(*),
       credit_card:finance_credit_cards(*)
     `)
@@ -128,7 +128,7 @@ export async function getTransactionById(
     .from(TABLE)
     .select(`
       *,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       account:finance_accounts(*),
       credit_card:finance_credit_cards(*)
     `)
@@ -862,7 +862,7 @@ export async function getTransactionsByCreditCardAndPeriod(
     .from(TABLE)
     .select(`
       *,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       credit_card:finance_credit_cards(*)
     `)
     .eq('credit_card_id', creditCardId)
@@ -894,7 +894,7 @@ export async function getUpcomingTransactions(
     .from(TABLE)
     .select(`
       *,
-      category:finance_categories(*),
+      category:finance_global_categories(*),
       credit_card:finance_credit_cards(*)
     `)
     .eq('user_id', userId)

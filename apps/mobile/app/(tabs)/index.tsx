@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSharedValue } from 'react-native-reanimated';
@@ -15,26 +14,32 @@ import { useFocusEffect } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
+import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
+import { BankLogo } from '@/components/atoms/BankLogo';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import { formatCurrency } from '@/types/finance';
 
+import { NubankHeader, HEADER_BAR_HEIGHT } from '@/components/organisms/NubankHeader';
+import { QuickActions } from '@/components/organisms/QuickActions';
+import { BalanceSection } from '@/components/molecules/BalanceSection';
+import { ContentSection } from '@/components/molecules/ContentSection';
+import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
+import { SkeletonProvider } from '@/components/atoms/Skeleton';
+import { BudgetCard } from '@/components/organisms/BudgetCard';
+import { TransactionListItem } from '@/components/molecules/TransactionListItem';
+import { CategoryExpenseItem } from '@/components/molecules/CategoryExpenseItem';
+import { UpcomingPaymentItem } from '@/components/molecules/UpcomingPaymentItem';
 import {
-  NubankHeader,
-  BalanceSection,
-  QuickActions,
-  ContentSection,
-} from '@/components/nubank';
-import { HEADER_BAR_HEIGHT } from '@/components/nubank/NubankHeader';
-import { ScrollEdgeEffect } from '@/components/ui/ScrollEdgeEffect';
-import { MonthNavigator } from '@/components/finance/MonthNavigator';
-import { BudgetCard } from '@/components/finance/BudgetCard';
-import { CategoryExpenseItem } from '@/components/finance/CategoryExpenseItem';
-import { UpcomingPaymentItem } from '@/components/finance/UpcomingPaymentItem';
-import { AgentFab } from '@/components/agent/AgentFab';
+  BalanceSkeleton,
+  TransactionRowsSkeleton,
+  IconRowsSkeleton,
+  SummarySkeleton,
+  BudgetSkeleton,
+} from '@/components/organisms/DashboardSkeletons';
+import { AgentFab } from '@/components/organisms/AgentFab';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
@@ -57,17 +62,34 @@ export default function DashboardScreen() {
   );
 
   const {
-    selectedMonth,
-    setSelectedMonth,
     accounts,
     loadAccounts,
+    accountsLoaded,
+    transactions,
+    loadTransactions,
+    transactionsLoaded,
     dashboardSummary,
     expensesByCategory,
     upcomingPayments,
     isDashboardLoading,
+    dashboardLoaded,
     dashboardError,
     loadDashboard,
   } = useFinance();
+
+  // Dashboard "pendente": ainda sem primeira carga e sem erro → mostra skeleton
+  const dashboardPending = !dashboardLoaded && !dashboardError;
+  // Enquanto qualquer seção estiver em skeleton, mantém o pulso ativo
+  const anyPending = !accountsLoaded || !transactionsLoaded || dashboardPending;
+
+  // Sem movimentação no mês (pago ou pendente) → estado vazio, em vez de zeros
+  const monthIncome = dashboardSummary?.month_income ?? 0;
+  const monthExpenses = dashboardSummary?.month_expenses ?? 0;
+  const monthResult = dashboardSummary?.month_result ?? 0;
+  const summaryIsEmpty = monthIncome === 0 && monthExpenses === 0;
+  // Fração da renda já consumida pelas despesas (barra de proporção)
+  const spentShare = monthIncome > 0 ? Math.round((monthExpenses / monthIncome) * 100) : null;
+  const spentFraction = monthIncome > 0 ? Math.min(monthExpenses / monthIncome, 1) : 0;
 
   // Load balance visibility preference
   useEffect(() => {
@@ -98,41 +120,16 @@ export default function DashboardScreen() {
   useEffect(() => {
     loadDashboard();
     loadAccounts();
-  }, [loadDashboard, loadAccounts]);
-
-  const handlePreviousMonth = useCallback(() => {
-    const newDate = new Date(selectedMonth);
-    newDate.setMonth(newDate.getMonth() - 1);
-    setSelectedMonth(newDate);
-  }, [selectedMonth, setSelectedMonth]);
-
-  const handleNextMonth = useCallback(() => {
-    const newDate = new Date(selectedMonth);
-    newDate.setMonth(newDate.getMonth() + 1);
-    setSelectedMonth(newDate);
-  }, [selectedMonth, setSelectedMonth]);
+    loadTransactions();
+  }, [loadDashboard, loadAccounts, loadTransactions]);
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([loadDashboard(), loadAccounts()]);
-  }, [loadDashboard, loadAccounts]);
-
-  // Reload dashboard when month changes
-  useEffect(() => {
-    loadDashboard();
-  }, [selectedMonth, loadDashboard]);
+    await Promise.all([loadDashboard(), loadAccounts(), loadTransactions()]);
+  }, [loadDashboard, loadAccounts, loadTransactions]);
 
   const totalAccountsBalance = accounts.reduce(
     (sum, acc) => sum + acc.current_balance,
     0
-  );
-
-  const renderSkeleton = () => (
-    <View style={styles.skeletonContainer}>
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={[styles.loadingText, { color: colors.icon }]}>
-        Carregando...
-      </Text>
-    </View>
   );
 
   const renderEmptyState = (icon: IconSymbolName, message: string, hint?: string) => (
@@ -175,6 +172,7 @@ export default function DashboardScreen() {
         pointerEvents="none"
       />
 
+      <SkeletonProvider active={anyPending}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingTop: contentTopPadding }]}
@@ -185,106 +183,159 @@ export default function DashboardScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={isDashboardLoading}
+            refreshing={dashboardLoaded && isDashboardLoading}
             onRefresh={handleRefresh}
             tintColor={isDark ? colors.primary : '#FFFFFF'}
             progressViewOffset={contentTopPadding}
           />
         }
       >
-        {/* Balance Section */}
-        <BalanceSection
-          title="Saldo em conta"
-          balance={totalAccountsBalance}
-          isVisible={isBalanceVisible}
-          onPress={() => router.push('/contas' as Href)}
-        />
+        {/* Saldo hero centralizado sobre o gradiente */}
+        {accountsLoaded ? (
+          <BalanceSection
+            title="Saldo total"
+            balance={totalAccountsBalance}
+            isVisible={isBalanceVisible}
+            onPress={() => router.push('/contas' as Href)}
+          />
+        ) : (
+          <BalanceSkeleton />
+        )}
 
         {/* Quick Actions */}
         <QuickActions />
 
-        {/* Month Navigator */}
-        <View style={styles.monthNavigatorContainer}>
-          <MonthNavigator
-            date={selectedMonth}
-            onPrevious={handlePreviousMonth}
-            onNext={handleNextMonth}
-          />
-        </View>
+        {/* Últimos lançamentos, logo abaixo das ações */}
+        <ContentSection
+          title="Últimos lançamentos"
+          onPress={() => router.push('/transactions')}
+          actionButton={
+            transactionsLoaded && transactions.length > 3
+              ? {
+                  label: 'Ver todos',
+                  onPress: () => router.push('/transactions'),
+                }
+              : undefined
+          }
+        >
+          {!transactionsLoaded ? (
+            <TransactionRowsSkeleton />
+          ) : transactions.length > 0 ? (
+            transactions
+              .slice(0, 3)
+              .map((transaction, index, list) => (
+                <TransactionListItem
+                  key={transaction.id}
+                  transaction={transaction}
+                  onPress={() => router.push('/transactions')}
+                  showDivider={index < list.length - 1}
+                  hideAmount={!isBalanceVisible}
+                />
+              ))
+          ) : (
+            renderEmptyState(
+              'list.bullet',
+              'Nenhum lançamento ainda',
+              'Adicione sua primeira transação pelo +'
+            )
+          )}
+        </ContentSection>
 
         {dashboardError && renderError()}
 
-        {isDashboardLoading && !dashboardSummary ? (
-          renderSkeleton()
-        ) : (
-          <>
+        <>
             {/* Resumo do mês: um cartão, três colunas */}
             <ContentSection title="Resumo do mês" showChevron={false}>
-              <View style={styles.summaryRow}>
-                <View style={styles.summaryColumn}>
-                  <View style={styles.summaryLabelRow}>
-                    <IconSymbol name="arrow.up" size={12} color={colors.success} />
-                    <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+              {dashboardPending ? (
+                <SummarySkeleton />
+              ) : summaryIsEmpty ? (
+                renderEmptyState(
+                  'chart.line.uptrend.xyaxis',
+                  'Sem movimentação neste mês',
+                  'Suas receitas e despesas do mês aparecem aqui'
+                )
+              ) : (
+              <View style={styles.summaryLedger}>
+                {/* Receitas */}
+                <View style={styles.ledgerRow}>
+                  <View style={styles.ledgerLeft}>
+                    <View style={[styles.ledgerBadge, { backgroundColor: colors.success + '22' }]}>
+                      <IconSymbol name="arrow.up" size={14} color={colors.success} />
+                    </View>
+                    <Text style={[styles.ledgerLabel, { color: colors.textSecondary }]}>
                       Receitas
                     </Text>
                   </View>
-                  <Text style={[styles.summaryValue, { color: colors.text }]}>
-                    {isBalanceVisible
-                      ? formatCurrency(dashboardSummary?.total_pending_income ?? 0)
-                      : '•••'}
+                  <Text style={[styles.ledgerValue, { color: colors.text }]}>
+                    {isBalanceVisible ? formatCurrency(monthIncome) : '•••'}
                   </Text>
                 </View>
 
-                <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-
-                <View style={styles.summaryColumn}>
-                  <View style={styles.summaryLabelRow}>
-                    <IconSymbol name="arrow.down" size={12} color={colors.danger} />
-                    <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                {/* Despesas */}
+                <View style={styles.ledgerRow}>
+                  <View style={styles.ledgerLeft}>
+                    <View style={[styles.ledgerBadge, { backgroundColor: colors.danger + '22' }]}>
+                      <IconSymbol name="arrow.down" size={14} color={colors.danger} />
+                    </View>
+                    <Text style={[styles.ledgerLabel, { color: colors.textSecondary }]}>
                       Despesas
                     </Text>
                   </View>
-                  <Text style={[styles.summaryValue, { color: colors.text }]}>
-                    {isBalanceVisible
-                      ? formatCurrency(dashboardSummary?.total_pending_expenses ?? 0)
-                      : '•••'}
+                  <Text style={[styles.ledgerValue, { color: colors.text }]}>
+                    {isBalanceVisible ? formatCurrency(monthExpenses) : '•••'}
                   </Text>
                 </View>
 
-                <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+                {/* Barra de proporção: quanto das receitas já virou despesa */}
+                {monthIncome > 0 && (
+                  <View style={styles.spentBarWrap}>
+                    <View style={[styles.spentTrack, { backgroundColor: colors.success + '2E' }]}>
+                      <View
+                        style={[
+                          styles.spentFill,
+                          { width: `${spentFraction * 100}%`, backgroundColor: colors.danger },
+                        ]}
+                      />
+                    </View>
+                    {spentShare !== null && (
+                      <Text style={[styles.spentCaption, { color: colors.textSecondary }]}>
+                        Você gastou {spentShare}% do que recebeu
+                      </Text>
+                    )}
+                  </View>
+                )}
 
-                <View style={styles.summaryColumn}>
-                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-                    Resultado
-                  </Text>
+                {/* Resultado */}
+                <View style={[styles.resultRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.resultLabel, { color: colors.text }]}>Resultado</Text>
                   <Text
                     style={[
-                      styles.summaryValue,
-                      {
-                        color:
-                          (dashboardSummary?.month_result ?? 0) >= 0
-                            ? colors.success
-                            : colors.danger,
-                      },
+                      styles.resultValue,
+                      { color: monthResult >= 0 ? colors.success : colors.danger },
                     ]}
                   >
                     {isBalanceVisible
-                      ? formatCurrency(dashboardSummary?.month_result ?? 0)
+                      ? `${monthResult >= 0 ? '+' : '-'}${formatCurrency(Math.abs(monthResult))}`
                       : '•••'}
                   </Text>
                 </View>
               </View>
+              )}
             </ContentSection>
 
             {/* Orçamento: card-resumo com curva de gastos; toque abre /orcamento */}
-            <BudgetCard isBalanceVisible={isBalanceVisible} />
+            {dashboardPending ? (
+              <BudgetSkeleton />
+            ) : (
+              <BudgetCard isBalanceVisible={isBalanceVisible} />
+            )}
 
             {/* Expenses by Category */}
             <ContentSection
               title="Despesas por categoria"
               onPress={() => router.push('/transactions')}
               actionButton={
-                expensesByCategory.length > 5
+                !dashboardPending && expensesByCategory.length > 5
                   ? {
                       label: 'Ver todas',
                       onPress: () => router.push('/transactions'),
@@ -292,7 +343,9 @@ export default function DashboardScreen() {
                   : undefined
               }
             >
-              {expensesByCategory.length > 0 ? (
+              {dashboardPending ? (
+                <IconRowsSkeleton rows={4} />
+              ) : expensesByCategory.length > 0 ? (
                 expensesByCategory
                   .slice(0, 5)
                   .map((item) => (
@@ -312,7 +365,9 @@ export default function DashboardScreen() {
               title="Próximos vencimentos"
               onPress={() => router.push('/transactions')}
             >
-              {upcomingPayments.length > 0 ? (
+              {dashboardPending ? (
+                <IconRowsSkeleton rows={3} />
+              ) : upcomingPayments.length > 0 ? (
                 upcomingPayments
                   .slice(0, 5)
                   .map((payment) => (
@@ -336,22 +391,34 @@ export default function DashboardScreen() {
                 onPress: () => router.push('/contas' as Href),
               }}
             >
-              {accounts.length > 0 ? (
+              {!accountsLoaded ? (
+                <IconRowsSkeleton rows={3} />
+              ) : accounts.length > 0 ? (
                 <>
                   {accounts.slice(0, 3).map((account) => (
                     <View key={account.id} style={styles.accountItem}>
                       <View style={styles.accountLeft}>
-                        <View
-                          style={[
-                            styles.accountIcon,
-                            { backgroundColor: account.color + '20' },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.accountDot,
-                              { backgroundColor: account.color },
-                            ]}
+                        <View style={styles.accountLogo}>
+                          <BankLogo
+                            bank={account.bank_id}
+                            name={account.name}
+                            size={36}
+                            formato="quadrado"
+                            fallback={
+                              <View
+                                style={[
+                                  styles.accountIcon,
+                                  { backgroundColor: account.color + '20' },
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.accountDot,
+                                    { backgroundColor: account.color },
+                                  ]}
+                                />
+                              </View>
+                            }
                           />
                         </View>
                         <Text
@@ -387,12 +454,12 @@ export default function DashboardScreen() {
                 )
               )}
             </ContentSection>
-          </>
-        )}
+        </>
 
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      </SkeletonProvider>
 
       {/* Scroll edge effect: material que aparece atrás do header ao rolar */}
       <View
@@ -443,46 +510,68 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: Spacing['3xl'],
   },
-  monthNavigatorContainer: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    paddingVertical: Spacing.sm,
+  summaryLedger: {
+    paddingTop: Spacing.xs,
     gap: Spacing.md,
   },
-  summaryColumn: {
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  summaryDivider: {
-    width: StyleSheet.hairlineWidth,
-  },
-  summaryLabelRow: {
+  ledgerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    justifyContent: 'space-between',
   },
-  summaryLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.medium,
+  ledgerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
   },
-  summaryValue: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    fontVariant: ['tabular-nums'],
-  },
-  skeletonContainer: {
-    flex: 1,
+  ledgerBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
   },
-  loadingText: {
-    marginTop: Spacing.md,
-    fontSize: FontSize.sm,
+  ledgerLabel: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.medium,
+  },
+  ledgerValue: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+    fontVariant: ['tabular-nums'],
+  },
+  spentBarWrap: {
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  spentTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  spentFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  spentCaption: {
+    fontSize: FontSize.xs,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  resultLabel: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+  },
+  resultValue: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
   },
   emptyState: {
     paddingVertical: Spacing.xl,
@@ -526,13 +615,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  accountLogo: {
+    marginRight: Spacing.md,
+  },
   accountIcon: {
     width: 36,
     height: 36,
     borderRadius: BorderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.md,
   },
   accountDot: {
     width: 16,

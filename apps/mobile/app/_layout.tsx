@@ -44,6 +44,24 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="contas" options={{ headerShown: false }} />
+        {/* O grupo profile tem Stack próprio; sem isto o raiz põe header padrão */}
+        <Stack.Screen name="profile" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="nova-conta"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Nova conta',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="editar-conta"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Editar conta',
+            headerShown: false,
+          }}
+        />
         <Stack.Screen
           name="orcamento"
           options={{
@@ -57,6 +75,22 @@ function RootLayoutNav() {
           options={{
             presentation: 'transparentModal',
             title: 'Categoria do orçamento',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="despesas-categoria"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Despesas por categoria',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="categoria-transacoes"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Transações da categoria',
             headerShown: false,
           }}
         />

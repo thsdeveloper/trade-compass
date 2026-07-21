@@ -1,3 +1,5 @@
+import type { ConfirmImportResult } from './import';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -20,12 +22,23 @@ export interface ReceiptExtractionResult {
   draft: TransactionDraft | null;
 }
 
+/** Card-resumo de uma importação de extrato dentro do chat da Nota */
+export interface StatementImportPayload {
+  fileName: string;
+  /** "Conta Nubank" | "Cartão XP" */
+  targetLabel: string;
+  transactionCount: number;
+  /** Resultado após o commit; ausente = revisão pendente */
+  result?: ConfirmImportResult;
+}
+
 /** Mensagem do chat de notas: além de texto, pode carregar imagem e rascunho */
 export interface ReceiptChatMessage extends ChatMessage {
   imageUri?: string;
   draft?: TransactionDraft;
   /** id da transação criada a partir do rascunho (quando confirmada) */
   savedTransactionId?: string;
+  statementImport?: StatementImportPayload;
 }
 
 export interface AgentApiMessage {

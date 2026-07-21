@@ -2,7 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { IconSymbol, type IconSymbolName } from '@/components/atoms/icon-symbol';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { formatCurrency } from '@/types/finance';
+import { MoneyText } from '@/components/atoms/MoneyText';
 
 interface SummaryCardProps {
   title: string;
@@ -32,7 +32,9 @@ export function SummaryCard({
   };
 
   const variantColors = getVariantColors();
-  const valueColor = variant === 'default' ? colors.text : variantColors.icon;
+  // Regra global de valores: só receita (success) fica colorida; o resto usa
+  // a cor de texto — o ícone do card já carrega a identidade da variante
+  const valueColor = variant === 'success' ? colors.success : colors.text;
 
   return (
     <View
@@ -50,9 +52,7 @@ export function SummaryCard({
         <IconSymbol name={iconName} size={20} color={variantColors.icon} />
       </View>
       <Text style={[styles.title, { color: colors.textSecondary }]}>{title}</Text>
-      <Text style={[styles.value, { color: valueColor }]}>
-        {formatCurrency(value)}
-      </Text>
+      <MoneyText value={value} color={valueColor} style={styles.value} />
     </View>
   );
 }

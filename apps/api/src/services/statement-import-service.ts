@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import { openai, OPENAI_MODEL } from '../lib/openai.js';
+import { isOfxContent, parseOfx, type OfxTransaction } from './ofx-parser.js';
 import type {
   AccountWithBank,
   FinanceCategory,
@@ -48,6 +49,8 @@ export interface ParsedStatementTransaction {
   suggested_transfer_account_id: string | null;
   /** Cartao sugerido quando line_kind = PAGAMENTO_FATURA */
   suggested_credit_card_id: string | null;
+  /** Id unico da transacao no banco de origem (so OFX) — base do dedup exato */
+  fitid: string | null;
 }
 
 const MAX_TEXT_CHARS = 150_000;
@@ -125,18 +128,22 @@ const EXTRACTION_SCHEMA = {
   },
 } as const;
 
+function buildContextLists(context: ParseStatementContext) {
+  return {
+    categoryList: context.categories
+      .map((c, i) => `[${i}] ${c.name} (${c.type})`)
+      .join('\n'),
+    accountList: context.accounts
+      .map((a, i) => `[${i}] ${a.name}${a.bank?.name ? ` (${a.bank.name})` : ''}`)
+      .join('\n'),
+    cardList: context.creditCards
+      .map((c, i) => `[${i}] ${c.name} (${c.brand})`)
+      .join('\n'),
+  };
+}
+
 function buildSystemPrompt(context: ParseStatementContext, target: StatementTarget): string {
-  const categoryList = context.categories
-    .map((c, i) => `[${i}] ${c.name} (${c.type})`)
-    .join('\n');
-
-  const accountList = context.accounts
-    .map((a, i) => `[${i}] ${a.name}${a.bank?.name ? ` (${a.bank.name})` : ''}`)
-    .join('\n');
-
-  const cardList = context.creditCards
-    .map((c, i) => `[${i}] ${c.name} (${c.brand})`)
-    .join('\n');
+  const { categoryList, accountList, cardList } = buildContextLists(context);
 
   const targetRules =
     target === 'credit_card'
@@ -270,14 +277,24 @@ export async function parseStatement(
   context: ParseStatementContext
 ): Promise<ParsedStatementTransaction[]> {
   const { categories, accounts, creditCards } = context;
-  if (!openai) {
-    throw new Error('OpenAI nao configurado. Verifique a variavel OPENAI_API_KEY.');
-  }
 
   if (input.kind === 'text' && input.content.length > MAX_TEXT_CHARS) {
     throw new Error(
       'Arquivo muito grande. Exporte um periodo menor do extrato e tente novamente.'
     );
+  }
+
+  // OFX: valores, datas, sinais e FITIDs saem do parser deterministico;
+  // a IA fica so com descricao, categoria e classificacao da linha
+  if (input.kind === 'text' && isOfxContent(input.content)) {
+    const ofx = parseOfx(input.content);
+    if (ofx && ofx.transactions.length > 0) {
+      return enrichOfxTransactions(ofx.transactions, input, context);
+    }
+  }
+
+  if (!openai) {
+    throw new Error('OpenAI nao configurado. Verifique a variavel OPENAI_API_KEY.');
   }
 
   let response: OpenAI.Chat.Completions.ChatCompletion;
@@ -397,10 +414,304 @@ export async function parseStatement(
       line_kind: lineKind,
       suggested_transfer_account_id: suggestedTransferAccountId,
       suggested_credit_card_id: suggestedCreditCardId,
+      fitid: null,
     });
   }
 
   return result;
+}
+
+// ============================================================================
+// ENRIQUECIMENTO DE OFX (parser deterministico + IA so para semantica)
+// ============================================================================
+
+/** Itens por chamada de enriquecimento (mantem a resposta longe do teto de tokens) */
+const ENRICH_CHUNK_SIZE = 150;
+
+interface EnrichedLine {
+  description: string;
+  category_index: number | null;
+  notes: string | null;
+  line_kind: StatementLineKind;
+  transfer_account_index: number | null;
+  payment_card_index: number | null;
+}
+
+const ENRICHMENT_SCHEMA = {
+  name: 'statement_enrichment',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            index: {
+              type: 'integer',
+              description: 'Indice da transacao na lista fornecida (obrigatorio, sem pular nenhuma)',
+            },
+            description: {
+              type: 'string',
+              description: 'Descricao limpa e legivel em portugues (sem codigos internos do banco)',
+            },
+            category_index: {
+              type: ['integer', 'null'],
+              description: 'Indice da categoria mais adequada da lista fornecida, ou null',
+            },
+            notes: {
+              type: ['string', 'null'],
+              description: 'Observacao relevante (ex: parcela 2/10), ou null',
+            },
+            line_kind: {
+              type: 'string',
+              enum: ['NORMAL', 'TRANSFERENCIA_INTERNA', 'PAGAMENTO_FATURA'],
+              description: 'Mesmas regras de classificacao do extrato',
+            },
+            transfer_account_index: {
+              type: ['integer', 'null'],
+              description: 'Somente TRANSFERENCIA_INTERNA: indice da conta contraparte, ou null',
+            },
+            payment_card_index: {
+              type: ['integer', 'null'],
+              description: 'Somente PAGAMENTO_FATURA: indice do cartao, ou null',
+            },
+          },
+          required: [
+            'index',
+            'description',
+            'category_index',
+            'notes',
+            'line_kind',
+            'transfer_account_index',
+            'payment_card_index',
+          ],
+        },
+      },
+    },
+    required: ['items'],
+  },
+} as const;
+
+function buildEnrichmentPrompt(
+  context: ParseStatementContext,
+  target: StatementTarget
+): string {
+  const { categoryList, accountList, cardList } = buildContextLists(context);
+
+  const classificationRules =
+    target === 'credit_card'
+      ? `As linhas vem de uma FATURA DE CARTAO DE CREDITO: use sempre line_kind NORMAL.`
+      : `CLASSIFICACAO DA LINHA (line_kind), mesmas regras do extrato:
+- TRANSFERENCIA_INTERNA: SOMENTE com evidencia explicita de que a contraparte e o proprio titular (nome igual ao titular abaixo, ou a linha diz "entre contas proprias"/"mesma titularidade"). Preencha transfer_account_index ou null.
+- PIX/TED/DOC para OUTRA pessoa ou empresa NUNCA e TRANSFERENCIA_INTERNA: use NORMAL.
+- PAGAMENTO_FATURA: pagamento de fatura de cartao de credito. Preencha payment_card_index ou null.
+- NORMAL: todo o resto. Na duvida, NORMAL.`;
+
+  const ownerSection = context.ownerName
+    ? `TITULAR DO EXTRATO (dono das contas):\n${context.ownerName}`
+    : `TITULAR DO EXTRATO (dono das contas):\n(nao informado — so classifique TRANSFERENCIA_INTERNA quando a linha disser explicitamente que e entre contas proprias)`;
+
+  return `Voce e um enriquecedor de transacoes do Money Compass. As transacoes abaixo ja foram extraidas de um arquivo OFX: DATA, TIPO e VALOR sao definitivos e NAO devem ser alterados. Sua tarefa, para CADA linha (todas, na ordem, usando o indice fornecido):
+
+1. description: reescreva o texto bruto do banco como uma descricao limpa e legivel em portugues (ex: "COMPRA CARTAO DEB 3421 ZAFFARI POA" -> "Supermercado Zaffari"). Nao invente informacao que nao esteja no texto.
+2. category_index: escolha a categoria mais adequada da lista (respeite o tipo: categoria RECEITA para linhas RECEITA, DESPESA para DESPESA), ou null.
+3. notes: observacao util (ex: "Parcela 3/10"), ou null.
+4. line_kind conforme as regras abaixo.
+
+${classificationRules}
+
+${ownerSection}
+
+CATEGORIAS DISPONIVEIS DO USUARIO:
+${categoryList || '(nenhuma categoria cadastrada)'}
+
+CONTAS DO USUARIO:
+${accountList || '(nenhuma conta cadastrada)'}
+
+CARTOES DO USUARIO:
+${cardList || '(nenhum cartao cadastrado)'}`;
+}
+
+/** Converte uma linha OFX sem enriquecimento (fallback quando a IA falha) */
+function plainOfxTransaction(tx: OfxTransaction): ParsedStatementTransaction {
+  return {
+    description: tx.memo || 'Transacao importada',
+    amount: tx.amount,
+    type: tx.type,
+    due_date: tx.date,
+    category_id: null,
+    notes: null,
+    line_kind: 'NORMAL',
+    suggested_transfer_account_id: null,
+    suggested_credit_card_id: null,
+    fitid: tx.fitid,
+  };
+}
+
+/**
+ * Monta as transacoes finais a partir do OFX deterministico + enriquecimento
+ * da IA (descricao/categoria/classificacao). Se a IA falhar em um lote, as
+ * linhas daquele lote entram sem enriquecimento — nunca se perde transacao.
+ */
+async function enrichOfxTransactions(
+  ofxTransactions: OfxTransaction[],
+  input: ParseStatementInput,
+  context: ParseStatementContext
+): Promise<ParsedStatementTransaction[]> {
+  const { categories, accounts, creditCards } = context;
+  const target = input.target;
+
+  // Fatura de cartao: so despesas (estornos/pagamentos ficam de fora),
+  // mesma regra do caminho via IA
+  const transactions =
+    target === 'credit_card'
+      ? ofxTransactions.filter((tx) => tx.type === 'DESPESA')
+      : ofxTransactions;
+
+  const enrichedByIndex = new Map<number, EnrichedLine>();
+
+  if (openai) {
+    const systemPrompt = buildEnrichmentPrompt(context, target);
+
+    for (let start = 0; start < transactions.length; start += ENRICH_CHUNK_SIZE) {
+      const chunk = transactions.slice(start, start + ENRICH_CHUNK_SIZE);
+      const lines = chunk
+        .map(
+          (tx, i) =>
+            `[${start + i}] ${tx.date} | ${tx.type} | ${tx.amount.toFixed(2)} | ${tx.memo || '(sem descricao)'}`
+        )
+        .join('\n');
+
+      try {
+        const response = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: `Enriqueca as transacoes abaixo (arquivo: ${input.filename}):\n\n${lines}`,
+            },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema:
+              ENRICHMENT_SCHEMA as unknown as OpenAI.ResponseFormatJSONSchema['json_schema'],
+          },
+          max_tokens: 16_000,
+          temperature: 0,
+        });
+
+        const raw = response.choices[0]?.message?.content;
+        if (!raw || response.choices[0]?.finish_reason === 'length') continue;
+
+        const parsed = JSON.parse(raw) as { items?: unknown };
+        const items = Array.isArray(parsed.items) ? parsed.items : [];
+        for (const item of items) {
+          if (!item || typeof item !== 'object') continue;
+          const line = item as Record<string, unknown>;
+          const index =
+            typeof line.index === 'number' && Number.isInteger(line.index)
+              ? line.index
+              : null;
+          if (index === null || index < start || index >= start + chunk.length) continue;
+
+          enrichedByIndex.set(index, {
+            description:
+              typeof line.description === 'string' && line.description.trim()
+                ? line.description.trim()
+                : '',
+            category_index:
+              typeof line.category_index === 'number' &&
+              Number.isInteger(line.category_index)
+                ? line.category_index
+                : null,
+            notes:
+              typeof line.notes === 'string' && line.notes.trim()
+                ? line.notes.trim()
+                : null,
+            line_kind:
+              line.line_kind === 'TRANSFERENCIA_INTERNA' ||
+              line.line_kind === 'PAGAMENTO_FATURA'
+                ? line.line_kind
+                : 'NORMAL',
+            transfer_account_index:
+              typeof line.transfer_account_index === 'number' &&
+              Number.isInteger(line.transfer_account_index)
+                ? line.transfer_account_index
+                : null,
+            payment_card_index:
+              typeof line.payment_card_index === 'number' &&
+              Number.isInteger(line.payment_card_index)
+                ? line.payment_card_index
+                : null,
+          });
+        }
+      } catch {
+        // Lote sem enriquecimento: as linhas entram com o memo bruto
+      }
+    }
+  }
+
+  return transactions.map((tx, index) => {
+    const enriched = enrichedByIndex.get(index);
+    if (!enriched) return plainOfxTransaction(tx);
+
+    const category =
+      enriched.category_index !== null &&
+      enriched.category_index >= 0 &&
+      enriched.category_index < categories.length
+        ? categories[enriched.category_index]
+        : null;
+
+    // Classificacao so vale para extrato de conta (mesma regra do caminho IA)
+    let lineKind: StatementLineKind = 'NORMAL';
+    if (
+      target === 'account' &&
+      (enriched.line_kind === 'TRANSFERENCIA_INTERNA' ||
+        enriched.line_kind === 'PAGAMENTO_FATURA')
+    ) {
+      lineKind = enriched.line_kind;
+    }
+
+    let suggestedTransferAccountId: string | null = null;
+    if (lineKind === 'TRANSFERENCIA_INTERNA' && enriched.transfer_account_index !== null) {
+      const account =
+        enriched.transfer_account_index >= 0 &&
+        enriched.transfer_account_index < accounts.length
+          ? accounts[enriched.transfer_account_index]
+          : null;
+      if (account && account.id !== input.targetAccountId) {
+        suggestedTransferAccountId = account.id;
+      }
+    }
+
+    let suggestedCreditCardId: string | null = null;
+    if (lineKind === 'PAGAMENTO_FATURA' && enriched.payment_card_index !== null) {
+      const card =
+        enriched.payment_card_index >= 0 &&
+        enriched.payment_card_index < creditCards.length
+          ? creditCards[enriched.payment_card_index]
+          : null;
+      if (card) suggestedCreditCardId = card.id;
+    }
+
+    return {
+      description: enriched.description || tx.memo || 'Transacao importada',
+      amount: tx.amount,
+      type: tx.type,
+      due_date: tx.date,
+      category_id: category && category.type === tx.type ? category.id : null,
+      notes: enriched.notes,
+      line_kind: lineKind,
+      suggested_transfer_account_id: suggestedTransferAccountId,
+      suggested_credit_card_id: suggestedCreditCardId,
+      fitid: tx.fitid,
+    };
+  });
 }
 
 // ============================================================================

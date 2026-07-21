@@ -262,7 +262,7 @@ export default function NewTransactionScreen() {
               >
                 {selected ? (
                   <BankLogo
-                    bank={selected.bank_id}
+                    bank={selected.bank?.name}
                     name={selected.name}
                     size={16}
                     formato="circulo"

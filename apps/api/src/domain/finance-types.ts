@@ -91,6 +91,16 @@ export interface AccountWithBank extends FinanceAccount {
   bank: Bank | null;
 }
 
+// Registros que ainda dependem da conta. Alimenta a regra de exclusao e a tela
+// que explica ao usuario por que o botao excluir esta bloqueado.
+export interface AccountUsage {
+  transactions: number;
+  recurrences: number;
+  invoice_payments: number;
+  goals: number;
+  can_delete: boolean;
+}
+
 export interface FinanceCreditCard {
   id: string;
   user_id: string;
@@ -231,7 +241,7 @@ export interface UpdateTagDTO {
 export interface CreateAccountDTO {
   name: string;
   type: FinanceAccountType;
-  bank_id?: string;
+  bank_id?: string | null;
   initial_balance?: number;
   color?: string;
   icon?: string;
@@ -239,7 +249,7 @@ export interface CreateAccountDTO {
 
 export interface UpdateAccountDTO {
   name?: string;
-  bank_id?: string;
+  bank_id?: string | null;
   color?: string;
   icon?: string;
   is_active?: boolean;
@@ -279,6 +289,8 @@ export interface CreateTransactionDTO {
   due_date: string;
   notes?: string;
   tag_ids?: string[];
+  /** FITID do OFX na importacao de extrato (dedup exato em reimportacoes) */
+  import_fitid?: string | null;
 }
 
 export interface CreateTransactionsBatchDTO {

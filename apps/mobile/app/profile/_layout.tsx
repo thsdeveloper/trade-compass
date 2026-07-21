@@ -1,32 +1,35 @@
 import { Stack } from 'expo-router';
-import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function ProfileLayout() {
   const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+
+  // O header assume a cor do topo do gradiente ambiente das telas de perfil,
+  // formando um corpo só com o conteúdo (sem emenda header × gradiente).
+  const headerColor = isDark ? '#1D4ED8' : '#0066FF';
 
   return (
     <Stack
       screenOptions={{
         headerStyle: {
-          backgroundColor: colors.background,
+          backgroundColor: headerColor,
         },
-        headerTintColor: colors.text,
+        headerTintColor: '#FFFFFF',
         headerShadowVisible: false,
       }}
     >
+      {/* Header próprio (ScreenHeader): integrado ao corpo, blur no scroll */}
       <Stack.Screen
         name="edit"
         options={{
-          title: 'Editar Perfil',
-          headerBackTitle: 'Voltar',
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="change-password"
         options={{
-          title: 'Alterar Senha',
+          title: 'Alterar senha',
           headerBackTitle: 'Voltar',
         }}
       />

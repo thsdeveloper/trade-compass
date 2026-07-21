@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   StyleSheet,
@@ -38,6 +39,14 @@ type PickerModalProps = {
   selectedId: string | null;
   onSelect: (id: string) => void;
   searchPlaceholder?: string;
+  /** Espelha o termo digitado para quem busca no servidor (ex.: catálogo de bancos). */
+  onQueryChange?: (query: string) => void;
+  /** Desligue quando a lista já vem filtrada do servidor. */
+  filterLocally?: boolean;
+  /** Mostra indicador de carregamento no lugar da lista vazia. */
+  isLoading?: boolean;
+  /** Texto quando não há resultado (ou mensagem de erro). */
+  emptyText?: string;
 };
 
 type Row =
@@ -84,6 +93,10 @@ export function PickerModal({
   selectedId,
   onSelect,
   searchPlaceholder = 'Buscar...',
+  onQueryChange,
+  filterLocally = true,
+  isLoading = false,
+  emptyText = 'Nada encontrado',
 }: PickerModalProps) {
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
@@ -91,10 +104,18 @@ export function PickerModal({
   const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
 
-  const rows = useMemo(() => buildRows(options, query), [options, query]);
+  const rows = useMemo(
+    () => buildRows(options, filterLocally ? query : ''),
+    [options, query, filterLocally]
+  );
+
+  const handleQueryChange = (next: string) => {
+    setQuery(next);
+    onQueryChange?.(next);
+  };
 
   const handleClose = () => {
-    setQuery('');
+    handleQueryChange('');
     onClose();
   };
 
@@ -188,14 +209,14 @@ export function PickerModal({
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={handleQueryChange}
             placeholder={searchPlaceholder}
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
             returnKeyType="search"
           />
           {query.length > 0 ? (
-            <TouchableOpacity onPress={() => setQuery('')} hitSlop={10}>
+            <TouchableOpacity onPress={() => handleQueryChange('')} hitSlop={10}>
               <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
@@ -210,9 +231,13 @@ export function PickerModal({
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              Nada encontrado
-            </Text>
+            isLoading ? (
+              <ActivityIndicator style={styles.empty} color={colors.textSecondary} />
+            ) : (
+              <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                {emptyText}
+              </Text>
+            )
           }
         />
       </FullScreenOverlay>

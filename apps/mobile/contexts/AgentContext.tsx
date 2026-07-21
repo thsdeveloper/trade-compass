@@ -17,6 +17,10 @@ interface AgentContextType {
   error: string | null;
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
+  /** Interrompe o streaming em andamento, preservando o texto já recebido */
+  stopStreaming: () => void;
+  /** Reenvia a última mensagem do usuário (após erro), sem duplicá-la */
+  retryLast: () => void;
 }
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
@@ -36,6 +40,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Espelho do estado para ações que precisam do histórico fora do render
+  // (retryLast dispara sendMessage logo após um setMessages)
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
 
   const clearMessages = useCallback(() => {
     abortRef.current?.abort();
@@ -71,7 +79,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         { id: assistantId, role: 'assistant', content: '', isStreaming: true },
       ]);
 
-      const apiMessages = [...messages, userMessage].map((m) => ({
+      const apiMessages = [...messagesRef.current, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -132,12 +140,46 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [session?.access_token, messages, isLoading]
+    [session?.access_token, isLoading]
   );
 
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // Preserva o que já foi transmitido; descarta bolha ainda vazia
+    setMessages((prev) =>
+      prev
+        .filter((m) => !(m.isStreaming && !m.content))
+        .map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
+    setIsLoading(false);
+  }, []);
+
+  const retryLast = useCallback(() => {
+    const msgs = messagesRef.current;
+    const lastUserIndex = msgs.map((m) => m.role).lastIndexOf('user');
+    if (lastUserIndex === -1) return;
+    const content = msgs[lastUserIndex].content;
+    // Remove a mensagem do usuário do histórico antes de reenviar — o
+    // sendMessage a recoloca, evitando duplicata no payload e na lista
+    const history = msgs.slice(0, lastUserIndex);
+    messagesRef.current = history;
+    setMessages(history);
+    setError(null);
+    void sendMessage(content);
+  }, [sendMessage]);
+
   const value = useMemo(
-    () => ({ messages, isLoading, error, sendMessage, clearMessages }),
-    [messages, isLoading, error, sendMessage, clearMessages]
+    () => ({
+      messages,
+      isLoading,
+      error,
+      sendMessage,
+      clearMessages,
+      stopStreaming,
+      retryLast,
+    }),
+    [messages, isLoading, error, sendMessage, clearMessages, stopStreaming, retryLast]
   );
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;

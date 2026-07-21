@@ -1,31 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSharedValue } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-import { EditableAvatar } from '@/components/molecules/EditableAvatar';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { TextField } from '@/components/atoms/TextField';
 import { Button } from '@/components/atoms/Button';
-import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
+import { EditableAvatar } from '@/components/molecules/EditableAvatar';
+import { ScreenHeader, SCREEN_HEADER_HEIGHT } from '@/components/molecules/ScreenHeader';
+import { ProfileEditSkeleton } from '@/components/organisms/ProfileSkeletons';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { getProfile, updateProfile } from '@/lib/profile-api';
 
+/** Máscara brasileira de telefone: (11) 98765-4321, aplicada ao digitar. */
 function formatPhone(value: string): string {
   const numbers = value.replace(/\D/g, '');
 
@@ -41,6 +43,14 @@ function formatPhone(value: string): string {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
 }
 
+/**
+ * Tela de editar perfil (template do Atomic Design):
+ * - Átomos: TextField, Button, IconSymbol, GlassSurface, Skeleton
+ * - Molécula: EditableAvatar
+ * - Organismo: ProfileEditSkeleton (carregamento)
+ * Segue o padrão de tela do app: gradiente ambiente na camada de conteúdo,
+ * cartão de formulário em material frosted e CTA fixo no rodapé.
+ */
 export default function EditProfileScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -49,13 +59,16 @@ export default function EditProfileScreen() {
   const hairlineColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const scrollY = useSharedValue(0);
+  // Conteúdo começa abaixo do header flutuante; ao rolar, passa sob o blur
+  const headerOffset = insets.top + SCREEN_HEADER_HEIGHT + Spacing.md;
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
 
   const [originalData, setOriginalData] = useState({
     fullName: '',
@@ -63,47 +76,46 @@ export default function EditProfileScreen() {
     avatarUrl: null as string | null,
   });
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  // Derivado direto do estado: não precisa de useEffect próprio
+  const hasChanges =
+    fullName !== originalData.fullName ||
+    phone !== originalData.phone ||
+    avatarUrl !== originalData.avatarUrl;
 
   useEffect(() => {
-    const changed =
-      fullName !== originalData.fullName ||
-      phone !== originalData.phone ||
-      avatarUrl !== originalData.avatarUrl;
-    setHasChanges(changed);
-  }, [fullName, phone, avatarUrl, originalData]);
+    let ativo = true;
+    (async () => {
+      try {
+        const result = await getProfile();
+        if (!ativo) return;
+        if (result.data) {
+          const name = result.data.full_name || '';
+          const phoneNumber = result.data.phone || '';
+          const avatar = result.data.avatar_url || null;
 
-  const loadProfile = async () => {
-    setIsLoading(true);
-    try {
-      const result = await getProfile();
-      if (result.data) {
-        const name = result.data.full_name || '';
-        const phoneNumber = result.data.phone || '';
-        const avatar = result.data.avatar_url || null;
-
-        setFullName(name);
-        setPhone(phoneNumber);
-        setAvatarUrl(avatar);
-        setOriginalData({
-          fullName: name,
-          phone: phoneNumber,
-          avatarUrl: avatar,
-        });
+          setFullName(name);
+          setPhone(phoneNumber);
+          setAvatarUrl(avatar);
+          setOriginalData({
+            fullName: name,
+            phone: phoneNumber,
+            avatarUrl: avatar,
+          });
+        }
+      } catch {
+        if (ativo) Alert.alert('Erro', 'Não foi possível carregar o perfil');
+      } finally {
+        if (ativo) setIsLoading(false);
       }
-    } catch (error) {
-      Alert.alert('Erro', 'Nao foi possivel carregar o perfil');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!hasChanges) return;
 
-    // Validate name
     if (fullName && (fullName.length < 2 || fullName.length > 100)) {
       Alert.alert('Erro', 'Nome deve ter entre 2 e 100 caracteres');
       return;
@@ -123,18 +135,13 @@ export default function EditProfileScreen() {
         return;
       }
 
-      setOriginalData({
-        fullName,
-        phone,
-        avatarUrl,
-      });
+      setOriginalData({ fullName, phone, avatarUrl });
 
+      // Sucesso fala por haptic + retorno imediato, sem alerta bloqueante
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Sucesso', 'Perfil atualizado com sucesso', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      Alert.alert('Erro', 'Nao foi possivel salvar as alteracoes');
+      router.back();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível salvar as alterações');
     } finally {
       setIsSaving(false);
     }
@@ -145,23 +152,15 @@ export default function EditProfileScreen() {
   };
 
   const handleAvatarChange = (newUrl: string | null) => {
+    // O upload/remoção já persiste na API dentro do EditableAvatar; o
+    // original acompanha para o avatar não marcar "alterações pendentes"
     setAvatarUrl(newUrl);
     setOriginalData((prev) => ({ ...prev, avatarUrl: newUrl }));
   };
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
-      {/* Gradiente ambiente edge-to-edge (camada de conteudo) */}
+      {/* Gradiente ambiente edge-to-edge (camada de conteúdo) */}
       <LinearGradient
         colors={
           isDark
@@ -172,35 +171,43 @@ export default function EditProfileScreen() {
         style={styles.ambientBackground}
         pointerEvents="none"
       />
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Avatar */}
-          <View style={styles.avatarSection}>
-            <EditableAvatar
-              avatarUrl={avatarUrl}
-              onAvatarChange={handleAvatarChange}
-              size={120}
-            />
-            <Text style={styles.avatarHint}>
-              Toque para alterar a foto
-            </Text>
-          </View>
 
-          {/* Form: cartao material frosted (camada de conteudo) */}
-          <GlassSurface
-            variant="material"
-            style={[styles.form, { borderColor: hairlineColor }]}
+      {isLoading ? (
+        // Organismo: skeleton na silhueta exata da tela, pulso sincronizado
+        <View style={[styles.keyboardView, { paddingTop: headerOffset }]}>
+          <ProfileEditSkeleton />
+        </View>
+      ) : (
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[styles.content, { paddingTop: headerOffset }]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            onScroll={(event) => {
+              scrollY.value = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
           >
-            {/* Name Input */}
-            <View style={styles.inputGroup}>
+            {/* Molécula: avatar editável com action sheet de foto */}
+            <View style={styles.avatarSection}>
+              <EditableAvatar
+                avatarUrl={avatarUrl}
+                onAvatarChange={handleAvatarChange}
+                size={120}
+              />
+              <Text style={styles.avatarHint}>Toque para alterar a foto</Text>
+            </View>
+
+            {/* Organismo: cartão do formulário em material frosted */}
+            <GlassSurface
+              variant="material"
+              style={[styles.form, { borderColor: hairlineColor }]}
+            >
+              {/* Átomos: TextField do design system */}
               <TextField
                 label="Nome completo"
                 value={fullName}
@@ -208,10 +215,7 @@ export default function EditProfileScreen() {
                 autoCapitalize="words"
                 autoCorrect={false}
               />
-            </View>
 
-            {/* Phone Input */}
-            <View style={styles.inputGroup}>
               <TextField
                 label="Telefone"
                 value={phone}
@@ -219,56 +223,67 @@ export default function EditProfileScreen() {
                 keyboardType="phone-pad"
                 maxLength={15}
               />
-            </View>
 
-            {/* Email (read-only) */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Email</Text>
-              <View
-                style={[
-                  styles.input,
-                  styles.readOnlyInput,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
+              {/* E-mail somente leitura: mesmo TextField, com cadeado */}
+              <TextField
+                label="Email"
+                value={user?.email || ''}
+                onChangeText={() => {}}
+                editable={false}
+                rightElement={
+                  <IconSymbol
+                    name="lock.fill"
+                    size={16}
+                    color="rgba(255,255,255,0.45)"
+                  />
+                }
+              />
+
+              {/* Linha de navegação: alterar senha (padrão de list row) */}
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/profile/change-password');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Alterar senha"
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  { borderTopColor: hairlineColor },
+                  pressed && styles.menuItemPressed,
                 ]}
               >
-                <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>
-                  {user?.email || ''}
-                </Text>
-              </View>
-            </View>
+                <View style={styles.menuItemLeft}>
+                  <IconSymbol name="lock.fill" size={20} color={colors.text} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>
+                    Alterar senha
+                  </Text>
+                </View>
+                <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+              </Pressable>
+            </GlassSurface>
+          </ScrollView>
 
-            {/* Change Password Button */}
-            <TouchableOpacity
-              style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/profile/change-password');
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuItemLeft}>
-                <IconSymbol name="lock.fill" size={20} color={colors.text} />
-                <Text style={[styles.menuItemText, { color: colors.text }]}>Alterar Senha</Text>
-              </View>
-              <IconSymbol name="chevron.right" size={18} color={colors.icon} />
-            </TouchableOpacity>
-          </GlassSurface>
-        </ScrollView>
+          {/* CTA fixo do rodapé (átomo Button, pill primário) */}
+          <View style={styles.footer}>
+            <Button
+              label="Salvar"
+              onPress={handleSave}
+              variant="primary"
+              loading={isSaving}
+              disabled={!hasChanges}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      )}
 
-        {/* Save Button */}
-        <View style={[styles.footer, { borderTopColor: colors.border }]}>
-          <Button
-            label="Salvar"
-            onPress={handleSave}
-            variant="primary"
-            loading={isSaving}
-            disabled={!hasChanges}
-          />
-        </View>
-      </KeyboardAvoidingView>
+      {/* Molécula: header integrado — transparente em repouso, blur de
+          sistema atrás dele quando o formulário rola por baixo */}
+      <ScreenHeader
+        title="Editar perfil"
+        scrollY={scrollY}
+        onBack={() => router.back()}
+      />
     </SafeAreaView>
   );
 }
@@ -286,11 +301,6 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
@@ -313,36 +323,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xl,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  inputGroup: {
-    gap: Spacing.sm,
-  },
-  label: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    marginLeft: Spacing.xs,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-  },
-  readOnlyInput: {
-    justifyContent: 'center',
-  },
-  readOnlyText: {
-    fontSize: FontSize.md,
-  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginTop: Spacing.md,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  menuItemPressed: {
+    opacity: 0.65,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -351,10 +341,9 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: FontSize.md,
-    fontWeight: '500',
+    fontWeight: FontWeight.medium,
   },
   footer: {
     padding: Spacing.xl,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

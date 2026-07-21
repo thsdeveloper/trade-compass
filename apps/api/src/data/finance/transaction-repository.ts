@@ -214,6 +214,7 @@ export async function createTransactionsBatch(
     amount: transaction.amount,
     due_date: transaction.due_date,
     notes: transaction.notes || null,
+    import_fitid: transaction.import_fitid || null,
   }));
 
   const { data: created, error } = await client
@@ -269,6 +270,7 @@ export async function createPaidTransactionsBatch(
     due_date: transaction.due_date,
     payment_date: transaction.due_date,
     notes: transaction.notes || null,
+    import_fitid: transaction.import_fitid || null,
   }));
 
   const { data: created, error } = await client
@@ -298,6 +300,44 @@ export async function createPaidTransactionsBatch(
   }
 
   return created || [];
+}
+
+/**
+ * Retorna quais FITIDs ja foram importados no destino (conta ou cartao).
+ * Consulta em blocos para nao estourar o limite de URL do PostgREST.
+ */
+export async function getExistingImportFitids(
+  userId: string,
+  target: { accountId?: string; creditCardId?: string },
+  fitids: string[],
+  accessToken: string
+): Promise<Set<string>> {
+  const existing = new Set<string>();
+  if (fitids.length === 0) return existing;
+
+  const client = createUserClient(accessToken);
+  const CHUNK = 100;
+
+  for (let start = 0; start < fitids.length; start += CHUNK) {
+    const chunk = fitids.slice(start, start + CHUNK);
+    let query = client
+      .from(TABLE)
+      .select('import_fitid')
+      .eq('user_id', userId)
+      .in('import_fitid', chunk);
+    if (target.accountId) query = query.eq('account_id', target.accountId);
+    if (target.creditCardId) query = query.eq('credit_card_id', target.creditCardId);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(`Erro ao verificar transacoes ja importadas: ${error.message}`);
+    }
+    for (const row of data ?? []) {
+      if (row.import_fitid) existing.add(row.import_fitid);
+    }
+  }
+
+  return existing;
 }
 
 export async function createInstallmentTransactions(

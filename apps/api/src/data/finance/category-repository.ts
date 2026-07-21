@@ -54,20 +54,41 @@ export async function getCategoryById(
  * Categoria genérica "Outros" (mãe) por tipo — usada para ajustes de saldo,
  * já que não há mais uma categoria de ajuste por usuário.
  */
+/**
+ * Regra de negocio: transacoes criadas pelo reajuste de saldo das contas
+ * usam SEMPRE a categoria pai "Ajuste de saldo" do tipo correspondente
+ * (seed 20260722000000). O fallback para "Outras Receitas"/"Outros Gastos"
+ * so existe para ambientes onde o seed ainda nao rodou.
+ */
 export async function getOrCreateAdjustmentCategory(
   _userId: string,
   type: FinanceCategoryType,
   accessToken: string
 ): Promise<FinanceCategory> {
   const client = createUserClient(accessToken);
-  const name = type === 'RECEITA' ? 'Outras Receitas' : 'Outros Gastos';
 
+  const { data: adjustment, error: adjustmentError } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('type', type)
+    .is('parent_id', null)
+    .eq('name', 'Ajuste de saldo')
+    .maybeSingle();
+
+  if (adjustmentError) {
+    throw new Error(`Erro ao obter categoria de ajuste: ${adjustmentError.message}`);
+  }
+  if (adjustment) {
+    return adjustment;
+  }
+
+  const legacyName = type === 'RECEITA' ? 'Outras Receitas' : 'Outros Gastos';
   const { data, error } = await client
     .from(TABLE)
     .select('*')
     .eq('type', type)
     .is('parent_id', null)
-    .eq('name', name)
+    .eq('name', legacyName)
     .single();
 
   if (error || !data) {

@@ -26,11 +26,11 @@ import { TransactionListItem } from '@/components/molecules/TransactionListItem'
 import { TransactionDetailModal } from '@/components/organisms/TransactionDetailModal';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
 import { AskNorteBar } from '@/components/organisms/AskNorteBar';
 import {
   groupTransactionsByDate,
-  formatCurrency,
   type TransactionWithDetails,
 } from '@/types/finance';
 
@@ -158,14 +158,6 @@ export default function TransactionsScreen() {
       }));
   }, [items]);
 
-  const formatNet = useCallback(
-    (net: number) => {
-      if (!isBalanceVisible) return '•••';
-      const sign = net >= 0 ? '+' : '-';
-      return `${sign}${formatCurrency(Math.abs(net))}`;
-    },
-    [isBalanceVisible]
-  );
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
@@ -237,17 +229,17 @@ export default function TransactionsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           {section.title}
         </Text>
-        <Text
-          style={[
-            styles.sectionNet,
-            { color: section.net >= 0 ? colors.success : colors.textSecondary },
-          ]}
-        >
-          {formatNet(section.net)}
-        </Text>
+        {/* Saldo do dia: verde quando positivo; sem prefixo de sinal
+            (negativo já sai do formatCurrency como -R$) */}
+        <MoneyText
+          value={section.net}
+          color={section.net >= 0 ? colors.success : colors.textSecondary}
+          hidden={!isBalanceVisible}
+          style={styles.sectionNet}
+        />
       </View>
     ),
-    [colors, sectionHeaderBg, formatNet]
+    [colors, sectionHeaderBg, isBalanceVisible]
   );
 
   const renderItem = useCallback(

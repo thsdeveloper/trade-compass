@@ -1,6 +1,8 @@
 // Barrel da camada 'atoms' (Atomic Design). Reexporta os componentes desta camada.
 export * from './collapsible';
 export * from './external-link';
+export * from './AIRing';
+export * from './MoneyText';
 export * from './BankLogo';
 export * from './Button';
 export * from './GlassSurface';

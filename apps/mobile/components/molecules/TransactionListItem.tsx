@@ -4,8 +4,8 @@ import { Colors, Spacing, FontSize, BorderRadius, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
 import { BankLogo } from '@/components/atoms/BankLogo';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import type { TransactionWithDetails } from '@/types/finance';
-import { formatCurrency } from '@/types/finance';
 
 interface TransactionListItemProps {
   transaction: TransactionWithDetails;
@@ -189,10 +189,6 @@ export const TransactionListItem = memo(function TransactionListItem({
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
 
-  const isIncome = transaction.type === 'RECEITA';
-  const amountColor = isIncome ? colors.success : colors.danger;
-  const amountPrefix = isIncome ? '+' : '-';
-
   const categoryIconName = getCategoryIcon(transaction.category.icon);
   const categoryColor = transaction.category.color || colors.textSecondary;
   const iconBgColor = isDark ? colors.card : `${categoryColor}1A`;
@@ -263,11 +259,12 @@ export const TransactionListItem = memo(function TransactionListItem({
         </View>
 
         {/* Amount */}
-        <Text style={[styles.amount, { color: amountColor }]}>
-          {hideAmount
-            ? 'R$ ••••'
-            : `${amountPrefix}${formatCurrency(transaction.amount)}`}
-        </Text>
+        <MoneyText
+          value={transaction.amount}
+          type={transaction.type}
+          hidden={hideAmount}
+          style={styles.amount}
+        />
       </View>
 
       {showDivider && (

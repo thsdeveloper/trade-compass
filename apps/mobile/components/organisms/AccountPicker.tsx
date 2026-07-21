@@ -44,7 +44,7 @@ export function AccountPicker({
         label: account.name,
         color: account.color,
         iconName: getCategoryIcon(account.icon),
-        bankKey: resolveBankKey(account.bank_id, account.name),
+        bankKey: resolveBankKey(account.bank?.name, account.name),
         subtitle: `${ACCOUNT_TYPE_LABELS[account.type]} • ${formatCurrency(account.current_balance)}`,
       })),
     [accounts]
@@ -68,7 +68,7 @@ export function AccountPicker({
           {selectedAccount ? (
             <View style={styles.selectedContainer}>
               <BankLogo
-                bank={selectedAccount.bank_id}
+                bank={selectedAccount.bank?.name}
                 name={selectedAccount.name}
                 size={22}
                 fallback={

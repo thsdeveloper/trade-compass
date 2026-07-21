@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,12 @@ import {
   RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSharedValue } from 'react-native-reanimated';
+import {
+  Extrapolation,
+  interpolate,
+  useDerivedValue,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Href } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,7 +25,7 @@ import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
-import { formatCurrency } from '@/types/finance';
+import { MoneyText } from '@/components/atoms/MoneyText';
 
 import { NubankHeader, HEADER_BAR_HEIGHT } from '@/components/organisms/NubankHeader';
 import { QuickActions } from '@/components/organisms/QuickActions';
@@ -29,17 +34,15 @@ import { ContentSection } from '@/components/molecules/ContentSection';
 import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
 import { SkeletonProvider } from '@/components/atoms/Skeleton';
 import { BudgetCard } from '@/components/organisms/BudgetCard';
-import { TransactionListItem } from '@/components/molecules/TransactionListItem';
 import { CategoryExpenseItem } from '@/components/molecules/CategoryExpenseItem';
 import { UpcomingPaymentItem } from '@/components/molecules/UpcomingPaymentItem';
 import {
   BalanceSkeleton,
-  TransactionRowsSkeleton,
   IconRowsSkeleton,
   SummarySkeleton,
   BudgetSkeleton,
 } from '@/components/organisms/DashboardSkeletons';
-import { AgentFab } from '@/components/organisms/AgentFab';
+import { AskNorteBar } from '@/components/organisms/AskNorteBar';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
@@ -54,6 +57,37 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
 
+  // ==========================================================================
+  // Colapso do saldo para o header (large title do iOS): quando o topo do
+  // valor do herói encosta na base da cápsula do header, o herói desvanece
+  // enquanto a cópia compacta assenta no centro do header — tudo dirigido
+  // pelo scroll, com o gatilho medido do layout real (nada de número mágico).
+  // ==========================================================================
+  const heroTopRef = useRef(0);
+  const balanceYRef = useRef(0);
+  // Antes de medir, gatilho no "infinito": progresso fica em 0 sem flash
+  const collapseStart = useSharedValue(Number.MAX_SAFE_INTEGER);
+  const headerBottom = insets.top + Spacing.sm + HEADER_BAR_HEIGHT;
+
+  const updateCollapseStart = useCallback(() => {
+    if (heroTopRef.current <= 0 || balanceYRef.current <= 0) return;
+    collapseStart.value = Math.max(
+      heroTopRef.current + balanceYRef.current - headerBottom,
+      0
+    );
+  }, [collapseStart, headerBottom]);
+
+  // Janela de ~48px de rolagem: o desvanecer acompanha o valor deslizando
+  // por baixo do vidro (movimento contínuo, sem salto perceptível)
+  const collapseProgress = useDerivedValue(() =>
+    interpolate(
+      scrollY.value,
+      [collapseStart.value, collapseStart.value + 48],
+      [0, 1],
+      Extrapolation.CLAMP
+    )
+  );
+
   // Set status bar style when screen gains focus
   useFocusEffect(
     useCallback(() => {
@@ -65,7 +99,8 @@ export default function DashboardScreen() {
     accounts,
     loadAccounts,
     accountsLoaded,
-    transactions,
+    // loadTransactions continua no mount: mantém o contexto aquecido para a
+    // aba Transações e o transactionsLoaded que trava os skeletons
     loadTransactions,
     transactionsLoaded,
     dashboardSummary,
@@ -191,55 +226,31 @@ export default function DashboardScreen() {
         }
       >
         {/* Saldo hero centralizado sobre o gradiente */}
-        {accountsLoaded ? (
-          <BalanceSection
-            title="Saldo total"
-            balance={totalAccountsBalance}
-            isVisible={isBalanceVisible}
-            onPress={() => router.push('/contas' as Href)}
-          />
-        ) : (
-          <BalanceSkeleton />
-        )}
+        <View
+          onLayout={(event) => {
+            heroTopRef.current = event.nativeEvent.layout.y;
+            updateCollapseStart();
+          }}
+        >
+          {accountsLoaded ? (
+            <BalanceSection
+              title="Saldo total"
+              balance={totalAccountsBalance}
+              isVisible={isBalanceVisible}
+              onPress={() => router.push('/contas' as Href)}
+              collapseProgress={collapseProgress}
+              onBalanceLayout={(y) => {
+                balanceYRef.current = y;
+                updateCollapseStart();
+              }}
+            />
+          ) : (
+            <BalanceSkeleton />
+          )}
+        </View>
 
         {/* Quick Actions */}
         <QuickActions />
-
-        {/* Últimos lançamentos, logo abaixo das ações */}
-        <ContentSection
-          title="Últimos lançamentos"
-          onPress={() => router.push('/transactions')}
-          actionButton={
-            transactionsLoaded && transactions.length > 3
-              ? {
-                  label: 'Ver todos',
-                  onPress: () => router.push('/transactions'),
-                }
-              : undefined
-          }
-        >
-          {!transactionsLoaded ? (
-            <TransactionRowsSkeleton />
-          ) : transactions.length > 0 ? (
-            transactions
-              .slice(0, 3)
-              .map((transaction, index, list) => (
-                <TransactionListItem
-                  key={transaction.id}
-                  transaction={transaction}
-                  onPress={() => router.push('/transactions')}
-                  showDivider={index < list.length - 1}
-                  hideAmount={!isBalanceVisible}
-                />
-              ))
-          ) : (
-            renderEmptyState(
-              'list.bullet',
-              'Nenhum lançamento ainda',
-              'Adicione sua primeira transação pelo +'
-            )
-          )}
-        </ContentSection>
 
         {dashboardError && renderError()}
 
@@ -266,9 +277,12 @@ export default function DashboardScreen() {
                       Receitas
                     </Text>
                   </View>
-                  <Text style={[styles.ledgerValue, { color: colors.text }]}>
-                    {isBalanceVisible ? formatCurrency(monthIncome) : '•••'}
-                  </Text>
+                  <MoneyText
+                    value={monthIncome}
+                    type="RECEITA"
+                    hidden={!isBalanceVisible}
+                    style={styles.ledgerValue}
+                  />
                 </View>
 
                 {/* Despesas */}
@@ -281,9 +295,11 @@ export default function DashboardScreen() {
                       Despesas
                     </Text>
                   </View>
-                  <Text style={[styles.ledgerValue, { color: colors.text }]}>
-                    {isBalanceVisible ? formatCurrency(monthExpenses) : '•••'}
-                  </Text>
+                  <MoneyText
+                    value={monthExpenses}
+                    hidden={!isBalanceVisible}
+                    style={styles.ledgerValue}
+                  />
                 </View>
 
                 {/* Barra de proporção: quanto das receitas já virou despesa */}
@@ -308,16 +324,14 @@ export default function DashboardScreen() {
                 {/* Resultado */}
                 <View style={[styles.resultRow, { borderTopColor: colors.border }]}>
                   <Text style={[styles.resultLabel, { color: colors.text }]}>Resultado</Text>
-                  <Text
-                    style={[
-                      styles.resultValue,
-                      { color: monthResult >= 0 ? colors.success : colors.danger },
-                    ]}
-                  >
-                    {isBalanceVisible
-                      ? `${monthResult >= 0 ? '+' : '-'}${formatCurrency(Math.abs(monthResult))}`
-                      : '•••'}
-                  </Text>
+                  {/* Sem sinal: positivo em verde, negativo na cor de texto
+                      (o próprio formatCurrency emite -R$ quando preciso) */}
+                  <MoneyText
+                    value={monthResult}
+                    color={monthResult >= 0 ? colors.success : colors.text}
+                    hidden={!isBalanceVisible}
+                    style={styles.resultValue}
+                  />
                 </View>
               </View>
               )}
@@ -333,12 +347,12 @@ export default function DashboardScreen() {
             {/* Expenses by Category */}
             <ContentSection
               title="Despesas por categoria"
-              onPress={() => router.push('/transactions')}
+              onPress={() => router.push('/despesas-categoria')}
               actionButton={
                 !dashboardPending && expensesByCategory.length > 5
                   ? {
                       label: 'Ver todas',
-                      onPress: () => router.push('/transactions'),
+                      onPress: () => router.push('/despesas-categoria'),
                     }
                   : undefined
               }
@@ -428,21 +442,14 @@ export default function DashboardScreen() {
                           {account.name}
                         </Text>
                       </View>
-                      <Text
-                        style={[
-                          styles.accountBalance,
-                          {
-                            color:
-                              account.current_balance >= 0
-                                ? colors.success
-                                : colors.danger,
-                          },
-                        ]}
-                      >
-                        {isBalanceVisible
-                          ? formatCurrency(account.current_balance)
-                          : '***'}
-                      </Text>
+                      <MoneyText
+                        value={account.current_balance}
+                        color={
+                          account.current_balance >= 0 ? colors.success : colors.text
+                        }
+                        hidden={!isBalanceVisible}
+                        style={styles.accountBalance}
+                      />
                     </View>
                   ))}
                 </>
@@ -475,14 +482,16 @@ export default function DashboardScreen() {
       {/* Camada funcional (Liquid Glass): renderizada depois do scroll para
           o material capturar o conteúdo passando por baixo */}
       <NubankHeader
-        userName={profile?.full_name || 'Usuario'}
         userPhoto={profile?.avatar_url}
+        balance={totalAccountsBalance}
+        collapseProgress={collapseProgress}
         isBalanceVisible={isBalanceVisible}
         onToggleBalance={handleToggleBalance}
         onProfilePress={() => router.push('/more' as Href)}
       />
 
-      <AgentFab />
+      {/* Entrada do agente de IA, flutuante acima da tab bar */}
+      <AskNorteBar />
     </View>
   );
 }

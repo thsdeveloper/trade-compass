@@ -6,9 +6,14 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { Buttons, FontSize, FontWeight, Spacing } from '@/constants/theme';
-import { formatCurrency } from '@/types/finance';
+import { MoneyText } from '@/components/atoms/MoneyText';
 
 interface BalanceSectionProps {
   title: string;
@@ -17,6 +22,14 @@ interface BalanceSectionProps {
   onPress?: () => void;
   /** Rótulo do pill de ação abaixo do saldo */
   actionLabel?: string;
+  /**
+   * Progresso do colapso para o header (0 = herói pleno, 1 = recolhido).
+   * O valor desvanece conforme desliza para baixo do header, enquanto a
+   * cópia compacta surge lá — a transição "sobe para o header" da home.
+   */
+  collapseProgress?: SharedValue<number>;
+  /** Reporta o y do valor dentro do herói (âncora do gatilho do colapso) */
+  onBalanceLayout?: (y: number) => void;
 }
 
 /**
@@ -29,7 +42,17 @@ export function BalanceSection({
   isVisible,
   onPress,
   actionLabel = 'Contas',
+  collapseProgress,
+  onBalanceLayout,
 }: BalanceSectionProps) {
+  // Fallback estático para manter a ordem dos hooks quando não há colapso
+  const idleProgress = useSharedValue(0);
+  const progress = collapseProgress ?? idleProgress;
+
+  const balanceStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+  }));
+
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress?.();
@@ -38,9 +61,12 @@ export function BalanceSection({
   return (
     <View style={styles.hero}>
       <Text style={styles.label}>{title}</Text>
-      <Text style={styles.balance}>
-        {isVisible ? formatCurrency(balance) : 'R$ ••••••'}
-      </Text>
+      <Animated.View
+        style={balanceStyle}
+        onLayout={(event) => onBalanceLayout?.(event.nativeEvent.layout.y)}
+      >
+        <MoneyText value={balance} hidden={!isVisible} style={styles.balance} />
+      </Animated.View>
       {onPress ? (
         <TouchableOpacity
           style={styles.pill}

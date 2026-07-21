@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Text,
   StyleSheet,
   TouchableOpacity,
   Image,
@@ -8,9 +7,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -18,8 +24,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export const HEADER_BAR_HEIGHT = 56;
 
 interface NubankHeaderProps {
-  userName?: string;
   userPhoto?: string | null;
+  /** Saldo total exibido no centro conforme o herói colapsa no scroll */
+  balance: number;
+  /** 0 = herói visível (centro vazio); 1 = saldo recolhido no header */
+  collapseProgress?: SharedValue<number>;
   isBalanceVisible: boolean;
   onToggleBalance: () => void;
   onProfilePress?: () => void;
@@ -30,8 +39,9 @@ interface NubankHeaderProps {
  * conforme a camada funcional do novo design system da Apple.
  */
 export function NubankHeader({
-  userName = 'Usuario',
   userPhoto,
+  balance,
+  collapseProgress,
   isBalanceVisible,
   onToggleBalance,
   onProfilePress,
@@ -39,6 +49,17 @@ export function NubankHeader({
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+
+  // Fallback estático (saldo sempre visível) quando não há colapso ligado
+  const idleProgress = useSharedValue(1);
+  const progress = collapseProgress ?? idleProgress;
+
+  // O saldo compacto surge subindo os últimos pixels até assentar no centro —
+  // par do desvanecer do herói, para a troca parecer um movimento só
+  const balanceStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: interpolate(progress.value, [0, 1], [8, 0]) }],
+  }));
 
   const handleToggleBalance = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -49,15 +70,6 @@ export function NubankHeader({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onProfilePress?.();
   };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
-    return 'Boa noite';
-  };
-
-  const firstName = userName.split(' ')[0];
 
   return (
     <View
@@ -79,9 +91,14 @@ export function NubankHeader({
           )}
         </TouchableOpacity>
 
-        <Text style={[styles.greeting, { color: colors.text }]} numberOfLines={1}>
-          {getGreeting()}, {firstName}
-        </Text>
+        <Animated.View style={[styles.center, balanceStyle]} pointerEvents="none">
+          <MoneyText
+            value={balance}
+            hidden={!isBalanceVisible}
+            style={[styles.headerBalance, { color: colors.text }]}
+            numberOfLines={1}
+          />
+        </Animated.View>
 
         <TouchableOpacity
           onPress={handleToggleBalance}
@@ -127,10 +144,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  greeting: {
+  center: {
     flex: 1,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
+    alignItems: 'center',
+  },
+  headerBalance: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
   },
   iconButton: {
     width: 40,

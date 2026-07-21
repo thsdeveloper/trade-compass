@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSharedValue } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -26,23 +27,52 @@ import { useFinance } from '@/contexts/FinanceContext';
 import { extractReceipt, MAX_MESSAGE_LENGTH } from '@/lib/agent-api';
 import {
   createTransaction,
+  detectStatement,
   getCreditCards,
+  parseStatement,
   payTransaction,
 } from '@/lib/finance-api';
+import { pickStatementFile } from '@/lib/statement-file';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { AIRing } from '@/components/atoms/AIRing';
+import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
 import { Button } from '@/components/atoms/Button';
+import { AccountPicker } from '@/components/organisms/AccountPicker';
+import { ConfirmDialog } from '@/components/organisms/ConfirmDialog';
 import { QrScannerModal } from '@/components/organisms/QrScannerModal';
 import { ReceiptScanningLoader } from '@/components/organisms/ReceiptScanningLoader';
+import { StatementReviewModal } from '@/components/organisms/StatementReviewModal';
 import {
   ReceiptDraftCard,
   type DraftConfirmation,
 } from '@/components/organisms/ReceiptDraftCard';
 import type { ReceiptChatMessage, TransactionDraft } from '@/types/agent';
-import type { FinanceCreditCard } from '@/types/finance';
+import type {
+  ConfirmImportResult,
+  DetectStatementResponse,
+  ImportPreviewTransaction,
+  ImportTarget,
+  PickedStatementFile,
+} from '@/types/import';
+import type { FinanceAccount, FinanceCreditCard } from '@/types/finance';
 import { formatCurrency } from '@/types/finance';
 
 const NOTA_GRADIENT = ['#0D9488', '#14B8A6', '#2DD4BF'] as const;
+const NOTA_ACCENT = '#14B8A6';
+// Espectro do anel "IA" na identidade teal da Nota (último stop repete o
+// primeiro para o anel girar sem emenda)
+const NOTA_RING_GRADIENT = [
+  '#0D9488',
+  '#2DD4BF',
+  '#5EEAD4',
+  '#22D3EE',
+  '#0D9488',
+] as const;
+// Espessura do anel "IA" (mesma assinatura visual do Norte)
+const RING_WIDTH = 2;
+// Altura da linha do header (avatar + títulos + ações)
+const HEADER_BAR_HEIGHT = 56;
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -69,6 +99,22 @@ interface ExtractionRequest {
   displayText: string;
 }
 
+/** Estado da importação de extrato em curso (arquivo → destino → parse) */
+interface PendingImport {
+  file: PickedStatementFile;
+  detect?: DetectStatementResponse;
+  target?: ImportTarget;
+  targetLabel?: string;
+  /** Só as transações novas — duplicatas exatas (FITID) já saem no parse */
+  transactions?: ImportPreviewTransaction[];
+  /** Quantas transações do arquivo ficaram de fora por já terem sido importadas */
+  alreadyImportedCount?: number;
+  /** id da mensagem-resumo no chat (para marcar o resultado após o commit) */
+  summaryMessageId?: string;
+}
+
+type ImportPhase = 'idle' | 'detecting' | 'awaiting-target' | 'parsing' | 'reviewing';
+
 export default function NotaChatScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -82,12 +128,24 @@ export default function NotaChatScreen() {
   const [messages, setMessages] = useState<ReceiptChatMessage[]>([]);
   const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   // true só quando a leitura em curso é de imagem/QR (mostra o overlay premium)
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [confirmClearVisible, setConfirmClearVisible] = useState(false);
+  // Texto da bolha do assistente enquanto processa (nota vs extrato)
+  const [streamingLabel, setStreamingLabel] = useState('Lendo a nota...');
+
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [importPhase, setImportPhase] = useState<ImportPhase>('idle');
+  const [reviewVisible, setReviewVisible] = useState(false);
+
   const listRef = useRef<FlatList<ReceiptChatMessage>>(null);
+  const scrollY = useSharedValue(0);
+
+  const activeAccounts = accounts.filter((a) => a.is_active);
 
   useEffect(() => {
     loadCategories();
@@ -106,6 +164,12 @@ export default function NotaChatScreen() {
     }
   }, [messages]);
 
+  const appendAssistant = useCallback((content: string): string => {
+    const id = generateId();
+    setMessages((prev) => [...prev, { id, role: 'assistant', content }]);
+    return id;
+  }, []);
+
   const runExtraction = useCallback(
     async (request: ExtractionRequest) => {
       if (isLoading) return;
@@ -117,6 +181,7 @@ export default function NotaChatScreen() {
 
       setError(null);
       setIsLoading(true);
+      setStreamingLabel('Lendo a nota...');
       setIsScanningReceipt(!!(request.imageUri || request.qrData));
 
       const userMessage: ReceiptChatMessage = {
@@ -245,6 +310,220 @@ export default function NotaChatScreen() {
     ]);
   }, [isLoading, sendImage]);
 
+  // ==========================================================================
+  // Importação de extrato bancário
+  // ==========================================================================
+
+  const resetImport = useCallback(() => {
+    setPendingImport(null);
+    setImportPhase('idle');
+    setReviewVisible(false);
+  }, []);
+
+  const handleImportStatement = useCallback(async () => {
+    if (isLoading || importPhase !== 'idle') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (activeAccounts.length === 0 && creditCards.length === 0) {
+      appendAssistant(
+        'Para importar um extrato, primeiro cadastre uma conta (ou um cartão) na tela de Contas. Depois é só voltar aqui!'
+      );
+      return;
+    }
+
+    let file: PickedStatementFile | null;
+    try {
+      file = await pickStatementFile();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao ler o arquivo');
+      return;
+    }
+    if (!file) return;
+
+    setError(null);
+    const assistantId = generateId();
+    setStreamingLabel('Analisando o arquivo...');
+    setMessages((prev) => [
+      ...prev,
+      { id: generateId(), role: 'user', content: `Extrato anexado: ${file.name}` },
+      { id: assistantId, role: 'assistant', content: '', isStreaming: true },
+    ]);
+    setImportPhase('detecting');
+
+    let detect: DetectStatementResponse | undefined;
+    try {
+      detect = await detectStatement(file);
+    } catch {
+      // Falha do detect não é fatal: cai na escolha manual do destino
+      detect = undefined;
+    }
+
+    let prompt: string;
+    if (detect?.document_kind === 'CREDIT_CARD_INVOICE') {
+      prompt =
+        creditCards.length > 0
+          ? `Parece uma fatura de cartão${detect.bank_name ? ` do ${detect.bank_name}` : ''}. De qual cartão é?`
+          : 'Parece uma fatura de cartão, mas você não tem cartões cadastrados. Escolha uma conta para importar como extrato ou cadastre o cartão antes.';
+    } else if (detect?.document_kind === 'ACCOUNT_STATEMENT' && detect.detected_account_id) {
+      const detected = activeAccounts.find((a) => a.id === detect!.detected_account_id);
+      prompt = detected
+        ? `Parece um extrato${detect.bank_name ? ` do ${detect.bank_name}` : ''} da conta ${detected.name}. Confirma o destino?`
+        : 'Reconheci um extrato bancário. Em qual conta devo lançar as transações?';
+    } else {
+      prompt =
+        'Não reconheci a conta automaticamente. Em qual conta (ou cartão) devo lançar as transações?';
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === assistantId ? { ...m, content: prompt, isStreaming: false } : m
+      )
+    );
+    setPendingImport({ file, detect });
+    setImportPhase('awaiting-target');
+  }, [
+    isLoading,
+    importPhase,
+    activeAccounts,
+    creditCards,
+    appendAssistant,
+  ]);
+
+  const handleTargetChosen = useCallback(
+    async (target: ImportTarget, targetLabel: string) => {
+      if (!pendingImport) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      const assistantId = generateId();
+      setStreamingLabel('Lendo o extrato com IA... isso pode levar até um minuto.');
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: 'user', content: `Importar para ${targetLabel}` },
+        { id: assistantId, role: 'assistant', content: '', isStreaming: true },
+      ]);
+      setImportPhase('parsing');
+
+      try {
+        const { transactions } = await parseStatement(pendingImport.file, target);
+
+        if (transactions.length === 0) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content:
+                      'Não encontrei transações nesse arquivo. Confira se é um extrato válido ou tente exportar em outro formato.',
+                    isStreaming: false,
+                  }
+                : m
+            )
+          );
+          resetImport();
+          return;
+        }
+
+        // Duplicatas exatas (FITID já importado) ficam FORA da revisão:
+        // reimportar o mesmo arquivo não pode virar lançamento duplicado
+        const fresh = transactions.filter((tx) => !tx.duplicate_exact);
+        const alreadyImported = transactions.length - fresh.length;
+
+        if (fresh.length === 0) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: `Boa notícia: as ${transactions.length} transações desse arquivo já estão todas lançadas — você as importou antes. Nada novo para importar.`,
+                    isStreaming: false,
+                  }
+                : m
+            )
+          );
+          resetImport();
+          return;
+        }
+
+        const count = fresh.length;
+        const skippedNote =
+          alreadyImported > 0
+            ? ` Deixei de fora ${alreadyImported} ${alreadyImported === 1 ? 'transação que você já tinha importado' : 'transações que você já tinha importado'} antes.`
+            : '';
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: `Encontrei ${count} transaç${count === 1 ? 'ão nova' : 'ões novas'} em ${pendingImport.file.name}, já categorizadas.${skippedNote} Revise e confirme a importação.`,
+                  isStreaming: false,
+                  statementImport: {
+                    fileName: pendingImport.file.name,
+                    targetLabel,
+                    transactionCount: count,
+                  },
+                }
+              : m
+          )
+        );
+        setPendingImport((prev) =>
+          prev
+            ? {
+                ...prev,
+                target,
+                targetLabel,
+                transactions: fresh,
+                alreadyImportedCount: alreadyImported,
+                summaryMessageId: assistantId,
+              }
+            : prev
+        );
+        setImportPhase('reviewing');
+        setReviewVisible(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erro ao processar o extrato');
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        resetImport();
+      }
+    },
+    [pendingImport, resetImport]
+  );
+
+  const handleImportCommitted = useCallback(
+    (result: ConfirmImportResult, _includedCount: number) => {
+      const summaryId = pendingImport?.summaryMessageId;
+      const targetLabel = pendingImport?.targetLabel;
+
+      setMessages((prev) => [
+        ...prev.map((m) =>
+          m.id === summaryId && m.statementImport
+            ? { ...m, statementImport: { ...m.statementImport, result } }
+            : m
+        ),
+        {
+          id: generateId(),
+          role: 'assistant' as const,
+          content: `Prontinho! Importei ${result.transactions_created} lançamento(s)${
+            result.transfers_created > 0
+              ? ` e ${result.transfers_created} transferência(s)`
+              : ''
+          }${targetLabel ? ` para ${targetLabel}` : ''}. Pode conferir na aba de transações.`,
+        },
+      ]);
+      resetImport();
+      loadTransactions();
+      loadAccounts();
+    },
+    [pendingImport, resetImport, loadTransactions, loadAccounts]
+  );
+
+  const handleClearChat = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setMessages([]);
+    setError(null);
+    resetImport();
+    setConfirmClearVisible(false);
+  }, [resetImport]);
+
   const handleConfirmDraft = useCallback(
     async (messageId: string, draft: TransactionDraft, data: DraftConfirmation) => {
       const dueDate = draft.due_date ?? new Date().toISOString().split('T')[0];
@@ -283,7 +562,7 @@ export default function NotaChatScreen() {
         {
           id: generateId(),
           role: 'assistant',
-          content: `Prontinho! Lançei ${formatCurrency(data.amount)} em "${draft.description}"${sourceName ? ` (${sourceName})` : ''}. Pode escanear a próxima nota quando quiser.`,
+          content: `Prontinho! Lancei ${formatCurrency(data.amount)} em "${draft.description}"${sourceName ? ` (${sourceName})` : ''}. Pode escanear a próxima nota quando quiser.`,
         },
       ]);
 
@@ -291,6 +570,8 @@ export default function NotaChatScreen() {
     },
     [accounts, creditCards, loadTransactions]
   );
+
+  const openReview = useCallback(() => setReviewVisible(true), []);
 
   const renderItem = useCallback(
     ({ item }: { item: ReceiptChatMessage }) => {
@@ -320,9 +601,9 @@ export default function NotaChatScreen() {
             {/* Bolha do assistente em material frosted (camada de conteúdo) */}
             <GlassSurface variant="material" style={[styles.bubble, styles.assistantBubble]}>
               <View style={styles.thinkingRow}>
-                <ActivityIndicator size="small" color="#14B8A6" />
+                <ActivityIndicator size="small" color={NOTA_ACCENT} />
                 <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>
-                  Lendo a nota...
+                  {streamingLabel}
                 </Text>
               </View>
             </GlassSurface>
@@ -347,14 +628,151 @@ export default function NotaChatScreen() {
                 onConfirm={(data) => handleConfirmDraft(item.id, item.draft!, data)}
               />
             )}
+            {item.statementImport && (
+              <GlassSurface variant="material" style={styles.importCard}>
+                <View style={styles.importCardHeader}>
+                  <IconSymbol name="arrow.up.doc.fill" size={18} color={NOTA_ACCENT} />
+                  <Text style={[styles.importCardTitle, { color: colors.text }]}>
+                    {item.statementImport.fileName}
+                  </Text>
+                </View>
+                <Text style={[styles.importCardMeta, { color: colors.textSecondary }]}>
+                  {item.statementImport.transactionCount} transações ·{' '}
+                  {item.statementImport.targetLabel}
+                </Text>
+                {item.statementImport.result ? (
+                  <View style={styles.importCardDone}>
+                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.success} />
+                    <Text style={[styles.importCardDoneText, { color: colors.success }]}>
+                      {item.statementImport.result.transactions_created} lançamento(s)
+                      {item.statementImport.result.transfers_created > 0
+                        ? ` · ${item.statementImport.result.transfers_created} transferência(s)`
+                        : ''}{' '}
+                      importado(s)
+                    </Text>
+                  </View>
+                ) : (
+                  <Button
+                    label="Revisar transações"
+                    size="sm"
+                    onPress={openReview}
+                    disabled={importPhase !== 'reviewing'}
+                  />
+                )}
+              </GlassSurface>
+            )}
           </View>
         </View>
       );
     },
-    [accounts, categories, colors, creditCards, handleConfirmDraft]
+    [
+      accounts,
+      categories,
+      colors,
+      creditCards,
+      handleConfirmDraft,
+      importPhase,
+      openReview,
+      streamingLabel,
+    ]
   );
 
+  // Bloco de escolha do destino da importação (acima da barra de input)
+  const renderTargetChooser = () => {
+    if (importPhase !== 'awaiting-target' || !pendingImport) return null;
+
+    const detect = pendingImport.detect;
+    const detectedAccount =
+      detect?.document_kind === 'ACCOUNT_STATEMENT' && detect.detected_account_id
+        ? activeAccounts.find((a) => a.id === detect.detected_account_id)
+        : undefined;
+    const isInvoice = detect?.document_kind === 'CREDIT_CARD_INVOICE';
+
+    return (
+      <View style={styles.targetChooser}>
+        {detectedAccount && (
+          <Pressable
+            onPress={() =>
+              handleTargetChosen(
+                { account_id: detectedAccount.id },
+                `Conta ${detectedAccount.name}`
+              )
+            }
+            style={({ pressed }) => [pressed && styles.pressedScale]}
+          >
+            <GlassSurface variant="material" style={styles.targetChip}>
+              <IconSymbol name="checkmark" size={16} color={NOTA_ACCENT} />
+              <Text style={[styles.targetChipText, { color: colors.text }]}>
+                Usar {detectedAccount.name}
+              </Text>
+            </GlassSurface>
+          </Pressable>
+        )}
+
+        {isInvoice &&
+          creditCards.map((card) => (
+            <Pressable
+              key={card.id}
+              onPress={() =>
+                handleTargetChosen({ credit_card_id: card.id }, `Cartão ${card.name}`)
+              }
+              style={({ pressed }) => [pressed && styles.pressedScale]}
+            >
+              <GlassSurface variant="material" style={styles.targetChip}>
+                <IconSymbol name="creditcard" size={16} color={NOTA_ACCENT} />
+                <Text style={[styles.targetChipText, { color: colors.text }]}>
+                  Cartão {card.name}
+                </Text>
+              </GlassSurface>
+            </Pressable>
+          ))}
+
+        {activeAccounts.length > 0 && (
+          <AccountPickerChip
+            accounts={activeAccounts}
+            label={detectedAccount ? 'Trocar conta' : 'Escolher conta'}
+            onSelect={(account) =>
+              handleTargetChosen({ account_id: account.id }, `Conta ${account.name}`)
+            }
+          />
+        )}
+
+        {!isInvoice && !detectedAccount && creditCards.length > 0 && (
+          creditCards.map((card) => (
+            <Pressable
+              key={card.id}
+              onPress={() =>
+                handleTargetChosen({ credit_card_id: card.id }, `Cartão ${card.name}`)
+              }
+              style={({ pressed }) => [pressed && styles.pressedScale]}
+            >
+              <GlassSurface variant="material" style={styles.targetChip}>
+                <IconSymbol name="creditcard" size={16} color={NOTA_ACCENT} />
+                <Text style={[styles.targetChipText, { color: colors.text }]}>
+                  Cartão {card.name}
+                </Text>
+              </GlassSurface>
+            </Pressable>
+          ))
+        )}
+
+        <Pressable
+          onPress={() => {
+            appendAssistant('Importação cancelada. Quando quiser, é só anexar o extrato de novo.');
+            resetImport();
+          }}
+          style={({ pressed }) => [styles.cancelTarget, pressed && styles.pressedScale]}
+        >
+          <Text style={[styles.cancelTargetText, { color: colors.textSecondary }]}>
+            Cancelar
+          </Text>
+        </Pressable>
+      </View>
+    );
+  };
+
   const canSend = input.trim().length > 0 && !isLoading;
+  const importBusy = importPhase !== 'idle';
 
   const isDark = colorScheme === 'dark';
   const ambientColors = isDark
@@ -372,45 +790,6 @@ export default function NotaChatScreen() {
         pointerEvents="none"
       />
 
-      {/* Header: cápsula de Liquid Glass flutuando sobre o gradiente */}
-      <View style={styles.header}>
-        <GlassSurface variant="glass" style={styles.headerCapsule}>
-          <View style={styles.headerLeft}>
-            <AvatarBadge size={34} />
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Nota</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-                Lance gastos por nota fiscal
-              </Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            {messages.length > 0 && (
-              <Pressable
-                onPress={() => setMessages([])}
-                accessibilityLabel="Limpar conversa"
-                style={({ pressed }) => [
-                  styles.headerButton,
-                  pressed && styles.pressedScale,
-                ]}
-              >
-                <IconSymbol name="trash" size={20} color={colors.text} />
-              </Pressable>
-            )}
-            <Pressable
-              onPress={() => router.back()}
-              accessibilityLabel="Fechar chat"
-              style={({ pressed }) => [
-                styles.headerButton,
-                pressed && styles.pressedScale,
-              ]}
-            >
-              <IconSymbol name="xmark" size={20} color={colors.text} />
-            </Pressable>
-          </View>
-        </GlassSurface>
-      </View>
-
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -420,11 +799,11 @@ export default function NotaChatScreen() {
           <View style={styles.emptyState}>
             <AvatarBadge size={64} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              Recebeu uma notinha?
+              Oi, eu sou a Nota
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              Escaneie o QR code da nota fiscal, fotografe o cupom ou descreva a
-              compra. Eu preencho tudo — você só confirma a conta ou o cartão.
+              Escaneie o QR code da nota fiscal, fotografe o comprovante ou importe o
+              extrato do banco. Eu leio, categorizo e lanço tudo — você só confirma.
             </Text>
             <View style={styles.emptyActions}>
               <Pressable
@@ -433,7 +812,7 @@ export default function NotaChatScreen() {
               >
                 {/* Ação em material frosted (camada de conteúdo) */}
                 <GlassSurface variant="material" style={styles.emptyAction}>
-                  <IconSymbol name="qrcode.viewfinder" size={20} color="#14B8A6" />
+                  <IconSymbol name="qrcode.viewfinder" size={20} color={NOTA_ACCENT} />
                   <Text style={[styles.emptyActionText, { color: colors.text }]}>
                     Escanear QR code da nota
                   </Text>
@@ -444,10 +823,26 @@ export default function NotaChatScreen() {
                 style={({ pressed }) => [pressed && styles.pressedScale]}
               >
                 <GlassSurface variant="material" style={styles.emptyAction}>
-                  <IconSymbol name="camera.fill" size={20} color="#14B8A6" />
+                  <IconSymbol name="camera.fill" size={20} color={NOTA_ACCENT} />
                   <Text style={[styles.emptyActionText, { color: colors.text }]}>
                     Fotografar nota ou comprovante
                   </Text>
+                </GlassSurface>
+              </Pressable>
+              <Pressable
+                onPress={handleImportStatement}
+                style={({ pressed }) => [pressed && styles.pressedScale]}
+              >
+                <GlassSurface variant="material" style={styles.emptyAction}>
+                  <IconSymbol name="arrow.up.doc.fill" size={20} color={NOTA_ACCENT} />
+                  <View style={styles.emptyActionColumn}>
+                    <Text style={[styles.emptyActionText, { color: colors.text }]}>
+                      Importar extrato do banco
+                    </Text>
+                    <Text style={[styles.emptyActionHint, { color: colors.textSecondary }]}>
+                      Prefira OFX: mais preciso e sem duplicatas
+                    </Text>
+                  </View>
                 </GlassSurface>
               </Pressable>
             </View>
@@ -462,6 +857,10 @@ export default function NotaChatScreen() {
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            onScroll={(event) => {
+              scrollY.value = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
           />
         )}
 
@@ -471,6 +870,8 @@ export default function NotaChatScreen() {
             <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
           </View>
         )}
+
+        {renderTargetChooser()}
 
         {/* Input bar: controles flutuando sobre o gradiente, sem borda sólida */}
         <View
@@ -492,7 +893,7 @@ export default function NotaChatScreen() {
               <IconSymbol
                 name="qrcode.viewfinder"
                 size={22}
-                color={isLoading ? colors.textSecondary : '#14B8A6'}
+                color={isLoading ? colors.textSecondary : NOTA_ACCENT}
               />
             </GlassSurface>
           </Pressable>
@@ -506,26 +907,56 @@ export default function NotaChatScreen() {
               <IconSymbol
                 name="camera.fill"
                 size={20}
-                color={isLoading ? colors.textSecondary : '#14B8A6'}
+                color={isLoading ? colors.textSecondary : NOTA_ACCENT}
               />
             </GlassSurface>
           </Pressable>
-          {/* Campo de texto em cápsula de material frosted */}
-          <GlassSurface variant="material" style={styles.inputCapsule}>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Descreva a compra..."
-              placeholderTextColor={colors.textSecondary}
-              maxLength={MAX_MESSAGE_LENGTH}
-              multiline
-              editable={!isLoading}
-              onSubmitEditing={handleSend}
-              submitBehavior="submit"
-              returnKeyType="send"
-            />
-          </GlassSurface>
+          <Pressable
+            onPress={handleImportStatement}
+            disabled={isLoading || importBusy}
+            accessibilityLabel="Importar extrato bancário"
+            style={({ pressed }) => [pressed && styles.pressedScale]}
+          >
+            <GlassSurface variant="glass" isInteractive style={styles.toolButton}>
+              <IconSymbol
+                name="arrow.up.doc.fill"
+                size={20}
+                color={isLoading || importBusy ? colors.textSecondary : NOTA_ACCENT}
+              />
+            </GlassSurface>
+          </Pressable>
+          {/* Campo de texto em cápsula de material frosted; o anel "IA"
+              acende no foco e enquanto a Nota lê */}
+          <AIRing
+            width={RING_WIDTH}
+            borderRadius={22 + RING_WIDTH}
+            active={inputFocused || isLoading}
+            colors={NOTA_RING_GRADIENT}
+            style={styles.inputRing}
+          >
+            <GlassSurface variant="material" style={styles.inputCapsule}>
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={input}
+                onChangeText={setInput}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder="Descreva a compra..."
+                placeholderTextColor={colors.textSecondary}
+                maxLength={MAX_MESSAGE_LENGTH}
+                multiline
+                editable={!isLoading}
+                onSubmitEditing={handleSend}
+                submitBehavior="submit"
+                returnKeyType="send"
+              />
+              {input.length >= MAX_MESSAGE_LENGTH - 100 && (
+                <Text style={[styles.charCounter, { color: colors.textSecondary }]}>
+                  {input.length}/{MAX_MESSAGE_LENGTH}
+                </Text>
+              )}
+            </GlassSurface>
+          </AIRing>
           {/* Enviar: pill do design system (unificado) */}
           <Button
             iconOnly
@@ -539,15 +970,114 @@ export default function NotaChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
+      {/* Header integrado ao corpo: transparente em repouso, um corpo só com
+          o conteúdo. Renderizado por último para o material de sistema se
+          materializar atrás dele (blur no header todo) quando a conversa
+          rola por baixo. */}
+      <View style={styles.header}>
+        <ScrollEdgeEffect scrollY={scrollY} />
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <AvatarBadge size={34} />
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Nota</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                Notas, comprovantes e extratos
+              </Text>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            {messages.length > 0 && (
+              <Pressable
+                onPress={() => setConfirmClearVisible(true)}
+                accessibilityLabel="Limpar conversa"
+                style={({ pressed }) => [
+                  styles.headerButton,
+                  pressed && styles.pressedScale,
+                ]}
+              >
+                <IconSymbol name="trash" size={20} color={colors.text} />
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityLabel="Fechar chat"
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.pressedScale,
+              ]}
+            >
+              <IconSymbol name="xmark" size={20} color={colors.text} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* Limpar é destrutivo e irreversível: sempre passa pelo alerta */}
+      <ConfirmDialog
+        visible={confirmClearVisible}
+        title="Limpar conversa?"
+        message="Todas as mensagens desta conversa serão apagadas, incluindo importações não confirmadas. Essa ação não pode ser desfeita."
+        confirmLabel="Limpar"
+        icon="trash"
+        onConfirm={handleClearChat}
+        onCancel={() => setConfirmClearVisible(false)}
+      />
+
       <QrScannerModal
         visible={scannerVisible}
         onClose={() => setScannerVisible(false)}
         onScanned={handleQrScanned}
       />
 
+      {pendingImport?.target && pendingImport.transactions && (
+        <StatementReviewModal
+          visible={reviewVisible}
+          fileName={pendingImport.file.name}
+          target={pendingImport.target}
+          targetLabel={pendingImport.targetLabel ?? ''}
+          transactions={pendingImport.transactions}
+          alreadyImportedCount={pendingImport.alreadyImportedCount ?? 0}
+          categories={categories}
+          accounts={activeAccounts}
+          onClose={() => setReviewVisible(false)}
+          onCommitted={handleImportCommitted}
+        />
+      )}
+
       {/* Overlay premium enquanto lê a nota (só em imagem/QR) */}
       <ReceiptScanningLoader visible={isScanningReceipt} />
     </View>
+  );
+}
+
+/** Chip que abre o AccountPicker (escolha manual do destino da importação) */
+function AccountPickerChip({
+  accounts,
+  label,
+  onSelect,
+}: {
+  accounts: FinanceAccount[];
+  label: string;
+  onSelect: (account: FinanceAccount) => void;
+}) {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+
+  return (
+    <AccountPicker
+      accounts={accounts}
+      selectedId={null}
+      onSelect={onSelect}
+      renderTrigger={({ open }) => (
+        <Pressable onPress={open} style={({ pressed }) => [pressed && styles.pressedScale]}>
+          <GlassSurface variant="material" style={styles.targetChip}>
+            <IconSymbol name="wallet.pass" size={16} color={NOTA_ACCENT} />
+            <Text style={[styles.targetChipText, { color: colors.text }]}>{label}</Text>
+          </GlassSurface>
+        </Pressable>
+      )}
+    />
   );
 }
 
@@ -566,17 +1096,21 @@ const styles = StyleSheet.create({
     height: 380,
   },
   header: {
+    // Flutua sobre o conteúdo: transparente em repouso, o ScrollEdgeEffect
+    // (absoluteFill) materializa o blur atrás dele durante o scroll
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },
-  headerCapsule: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 56,
-    paddingHorizontal: Spacing.md,
-    // Cápsula: radius = altura / 2
-    borderRadius: 28,
+    height: HEADER_BAR_HEIGHT,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -611,6 +1145,8 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: Spacing.lg,
+    // Começa abaixo do header flutuante; ao rolar, passa por baixo do blur
+    paddingTop: HEADER_BAR_HEIGHT + Spacing.sm * 2 + Spacing.md,
     gap: Spacing.md,
   },
   userRow: {
@@ -656,6 +1192,36 @@ const styles = StyleSheet.create({
   },
   thinkingText: {
     fontSize: FontSize.sm,
+    flexShrink: 1,
+  },
+  importCard: {
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    alignSelf: 'stretch',
+  },
+  importCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  importCardTitle: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+  },
+  importCardMeta: {
+    fontSize: FontSize.xs,
+  },
+  importCardDone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  importCardDoneText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
   },
   emptyState: {
     flex: 1,
@@ -691,6 +1257,13 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.medium,
   },
+  emptyActionColumn: {
+    flex: 1,
+    gap: 2,
+  },
+  emptyActionHint: {
+    fontSize: FontSize.xs,
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -703,6 +1276,33 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
+    fontSize: FontSize.sm,
+  },
+  targetChooser: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xs,
+  },
+  targetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  targetChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+  },
+  cancelTarget: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  cancelTargetText: {
     fontSize: FontSize.sm,
   },
   inputBar: {
@@ -719,10 +1319,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  inputCapsule: {
+  inputRing: {
     flex: 1,
+  },
+  inputCapsule: {
     // Cápsula: radius = altura mínima / 2
     borderRadius: 22,
+    justifyContent: 'center',
   },
   input: {
     minHeight: 44,
@@ -731,5 +1334,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
     fontSize: FontSize.md,
+  },
+  charCounter: {
+    fontSize: FontSize.xs,
+    textAlign: 'right',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xs,
   },
 });

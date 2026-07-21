@@ -12,6 +12,9 @@ import {
   getAccounts,
   getTransactions,
   createTransaction as apiCreateTransaction,
+  createAccount as apiCreateAccount,
+  updateAccount as apiUpdateAccount,
+  deleteAccount as apiDeleteAccount,
   getDashboardSummary,
   getExpensesByCategory,
   getUpcomingPayments,
@@ -22,11 +25,13 @@ import type {
   FinanceAccount,
   TransactionWithDetails,
   TransactionFormData,
+  AccountFormData,
   FinanceSummary,
   ExpensesByCategory,
   UpcomingPayment,
   BudgetSummary,
 } from '@/types/finance';
+import type { UpdateAccountPayload } from '@/lib/finance-api';
 
 interface FinanceContextType {
   transactions: TransactionWithDetails[];
@@ -44,6 +49,9 @@ interface FinanceContextType {
   loadCategories: () => Promise<void>;
   loadAccounts: () => Promise<void>;
   createTransaction: (data: TransactionFormData) => Promise<void>;
+  createAccount: (data: AccountFormData) => Promise<void>;
+  updateAccount: (id: string, data: UpdateAccountPayload) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
   refreshAll: () => Promise<void>;
   // Dashboard
   dashboardSummary: FinanceSummary | null;
@@ -154,6 +162,64 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     [loadTransactions]
   );
 
+  const createAccount = useCallback(
+    async (data: AccountFormData) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiCreateAccount(data);
+        await loadAccounts();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao criar conta';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadAccounts]
+  );
+
+  // As transações carregadas trazem a conta embutida (account), então editar
+  // nome/cor exige recarregá-las para não exibir o dado antigo.
+  const updateAccount = useCallback(
+    async (id: string, data: UpdateAccountPayload) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiUpdateAccount(id, data);
+        await Promise.all([loadAccounts(), loadTransactions()]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao editar conta';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadAccounts, loadTransactions]
+  );
+
+  // A exclusão é um soft delete e só passa quando não há transações efetuadas,
+  // mas as CANCELADO continuam apontando para a conta — recarrega as duas fontes.
+  const deleteAccount = useCallback(
+    async (id: string) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiDeleteAccount(id);
+        await Promise.all([loadAccounts(), loadTransactions()]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao excluir conta';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadAccounts, loadTransactions]
+  );
+
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -222,6 +288,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         loadCategories,
         loadAccounts,
         createTransaction,
+        createAccount,
+        updateAccount,
+        deleteAccount,
         refreshAll,
         // Dashboard
         dashboardSummary,

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,21 +18,20 @@ import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
 import { getTransactions } from '@/lib/finance-api';
+import { contrastingTextColor } from '@/lib/color-contrast';
 import { Button } from '@/components/atoms/Button';
 import { BankLogo } from '@/components/atoms/BankLogo';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
 import { TransactionListItem } from '@/components/molecules/TransactionListItem';
 import { TransactionDetailModal } from '@/components/organisms/TransactionDetailModal';
-import {
-  formatCurrency,
-  type FinanceAccount,
-  type TransactionWithDetails,
-} from '@/types/finance';
+import type { FinanceAccount, TransactionWithDetails } from '@/types/finance';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
-const RECENT_LIMIT = 10;
+// Só um aperitivo dos lançamentos: a lista completa vive na aba Transações
+const RECENT_LIMIT = 5;
 
 interface AccountShare {
   account: FinanceAccount;
@@ -126,11 +124,16 @@ export default function ContasScreen() {
 
   const handleAddAccount = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(
-      'Em breve',
-      'O cadastro de contas pelo app chega em breve. Por enquanto, cadastre suas contas pela versão web.'
-    );
-  }, []);
+    router.push('/nova-conta');
+  }, [router]);
+
+  const handleEditAccount = useCallback(
+    (accountId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push({ pathname: '/editar-conta', params: { id: accountId } });
+    },
+    [router]
+  );
 
   const totalBalance = useMemo(
     () => accounts.reduce((sum, account) => sum + account.current_balance, 0),
@@ -194,9 +197,11 @@ export default function ContasScreen() {
         <Text style={styles.balanceLabel}>
           Saldo em {accounts.length} {accounts.length === 1 ? 'conta' : 'contas'}
         </Text>
-        <Text style={styles.balanceValue}>
-          {isBalanceVisible ? formatCurrency(totalBalance) : 'R$ ••••••'}
-        </Text>
+        <MoneyText
+          value={totalBalance}
+          hidden={!isBalanceVisible}
+          style={styles.balanceValue}
+        />
 
         {/* Barra de distribuição por conta */}
         {shares.length > 0 && (
@@ -234,15 +239,30 @@ export default function ContasScreen() {
                   ]}
                 />
               )}
-              <View style={styles.accountRow}>
+              {/* Toque abre a edição — feedback por escala, nunca opacidade
+                  sobre ancestral de GlassSurface */}
+              <Pressable
+                onPress={() => handleEditAccount(account.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Editar conta ${account.name}`}
+                style={({ pressed }) => [
+                  styles.accountRow,
+                  pressed && styles.accountRowPressed,
+                ]}
+              >
                 <BankLogo
-                  bank={account.bank_id}
+                  bank={account.bank?.name}
                   name={account.name}
                   size={44}
                   formato="circulo"
                   fallback={
                     <View style={[styles.accountBadge, { backgroundColor: account.color }]}>
-                      <Text style={styles.accountBadgeText}>
+                      <Text
+                        style={[
+                          styles.accountBadgeText,
+                          { color: contrastingTextColor(account.color) },
+                        ]}
+                      >
                         {account.name.trim().charAt(0).toUpperCase()}
                       </Text>
                     </View>
@@ -256,18 +276,14 @@ export default function ContasScreen() {
                     {share.toFixed(0)}%
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.accountBalance,
-                    {
-                      color:
-                        account.current_balance < 0 ? colors.danger : colors.text,
-                    },
-                  ]}
-                >
-                  {isBalanceVisible ? formatCurrency(account.current_balance) : 'R$ ••••'}
-                </Text>
-              </View>
+                {/* Saldo negativo fica na cor de texto (regra global: nada
+                    de vermelho em valores; -R$ já comunica o sinal) */}
+                <MoneyText
+                  value={account.current_balance}
+                  hidden={!isBalanceVisible}
+                  style={styles.accountBalance}
+                />
+              </Pressable>
             </View>
           ))}
 
@@ -313,6 +329,13 @@ export default function ContasScreen() {
                 />
               ))}
             </GlassSurface>
+            <Button
+              label="Ver todas as transações"
+              variant="tertiary"
+              iconRight="chevron-forward"
+              onPress={() => router.push('/transactions')}
+              style={styles.viewAllButton}
+            />
           </>
         )}
       </ScrollView>
@@ -417,6 +440,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     paddingVertical: Spacing.md,
   },
+  accountRowPressed: {
+    transform: [{ scale: 0.98 }],
+  },
   accountBadge: {
     width: 44,
     height: 44,
@@ -459,5 +485,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: FontWeight.semibold,
     marginBottom: Spacing.md,
+  },
+  viewAllButton: {
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
   },
 });

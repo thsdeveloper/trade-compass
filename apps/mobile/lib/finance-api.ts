@@ -2,6 +2,9 @@ import { supabase } from './supabase';
 import type {
   FinanceCategory,
   FinanceAccount,
+  AccountFormData,
+  AccountUsage,
+  Bank,
   TransactionWithDetails,
   TransactionFormData,
   FinanceTransaction,
@@ -16,6 +19,15 @@ import type {
   FinanceCreditCard,
 } from '@/types/finance';
 
+import type {
+  ConfirmImportItem,
+  ConfirmImportResult,
+  DetectStatementResponse,
+  ImportPreviewTransaction,
+  ImportTarget,
+  PickedStatementFile,
+} from '@/types/import';
+
 import { API_URL } from './api-config';
 
 interface ApiError {
@@ -25,11 +37,9 @@ interface ApiError {
 }
 
 async function getAccessToken(): Promise<string | null> {
-  console.log('[finance-api] Buscando sessão...');
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  console.log('[finance-api] Sessão encontrada:', !!session);
   return session?.access_token ?? null;
 }
 
@@ -37,7 +47,6 @@ async function authFetch<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  console.log('[finance-api] authFetch iniciado para:', endpoint);
   const accessToken = await getAccessToken();
 
   if (!accessToken) {
@@ -54,12 +63,10 @@ async function authFetch<T>(
     (headers as Record<string, string>)['Content-Type'] = 'application/json';
   }
 
-  console.log('[finance-api] Fazendo fetch para:', `${API_URL}${endpoint}`);
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
   });
-  console.log('[finance-api] Resposta recebida:', response.status);
 
   if (!response.ok) {
     let message = `Erro do servidor: ${response.status}`;
@@ -87,6 +94,64 @@ export async function getCategories(): Promise<FinanceCategory[]> {
 // Accounts
 export async function getAccounts(): Promise<FinanceAccount[]> {
   return authFetch('/finance/accounts');
+}
+
+export async function createAccount(
+  data: AccountFormData
+): Promise<FinanceAccount> {
+  return authFetch('/finance/accounts', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// bank_id aceita null para desvincular o banco ao trocar o tipo da conta
+// (o backend repassa o null direto ao banco).
+// `type` fica de fora: o tipo da conta nao muda depois de criada. `is_active`
+// tambem: desativar e exclusao, e so o DELETE aplica a regra de vinculos.
+export interface UpdateAccountPayload
+  extends Omit<Partial<AccountFormData>, 'bank_id' | 'type'> {
+  bank_id?: string | null;
+}
+
+export async function updateAccount(
+  id: string,
+  data: UpdateAccountPayload
+): Promise<FinanceAccount> {
+  return authFetch(`/finance/accounts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+  return authFetch(`/finance/accounts/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Quantas entidades dependem da conta — a tela usa para explicar por que a
+// exclusão está bloqueada
+export async function getAccountUsage(id: string): Promise<AccountUsage> {
+  return authFetch(`/finance/accounts/${id}/usage`);
+}
+
+// Banks (catálogo público, somente leitura — fonte da verdade do bank_id)
+export async function getBanks(query?: string): Promise<Bank[]> {
+  const params = new URLSearchParams();
+  if (query) {
+    params.append('q', query);
+  }
+  const search = params.toString();
+  return authFetch(`/finance/banks${search ? `?${search}` : ''}`);
+}
+
+export async function getPopularBanks(): Promise<Bank[]> {
+  return authFetch('/finance/banks/popular');
+}
+
+export async function getBenefitProviders(): Promise<Bank[]> {
+  return authFetch('/finance/banks/benefit-providers');
 }
 
 // Credit cards
@@ -228,4 +293,52 @@ export async function getBudgetTransactions(params: {
 // Global categories (catálogo compartilhado, somente leitura)
 export async function getGlobalCategories(): Promise<GlobalCategoryWithChildren[]> {
   return authFetch('/finance/global-categories');
+}
+
+// Importação de extrato bancário (rotas /finance/import/*; ver types/import.ts)
+export async function detectStatement(
+  file: PickedStatementFile
+): Promise<DetectStatementResponse> {
+  return authFetch('/finance/import/detect', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: file.kind,
+      filename: file.name,
+      content: file.content,
+      mime_type: file.mimeType,
+    }),
+  });
+}
+
+export async function parseStatement(
+  file: PickedStatementFile,
+  target: ImportTarget
+): Promise<{ transactions: ImportPreviewTransaction[] }> {
+  return authFetch('/finance/import/parse', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: file.kind,
+      filename: file.name,
+      content: file.content,
+      mime_type: file.mimeType,
+      ...target,
+    }),
+  });
+}
+
+export async function confirmImport(
+  target: ImportTarget,
+  items: ConfirmImportItem[]
+): Promise<ConfirmImportResult> {
+  return authFetch('/finance/import/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ ...target, items }),
+  });
+}
+
+/** Categoria de sistema para transações de ajuste de saldo (RECEITA/DESPESA) */
+export async function getAdjustmentCategory(
+  type: 'RECEITA' | 'DESPESA'
+): Promise<FinanceCategory> {
+  return authFetch(`/finance/categories/system/adjustment/${type}`);
 }

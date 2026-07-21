@@ -4,9 +4,18 @@ import type {
   CreateAccountDTO,
   UpdateAccountDTO,
   AccountWithBank,
+  AccountUsage,
 } from '../../domain/finance-types.js';
 
 const TABLE = 'finance_accounts';
+
+// Preserva o codigo de erro do Postgres/PostgREST ao relancar, para as rotas
+// mapearem 23505 (nome duplicado), 23503 (FK), 42501 (RLS) etc. em HTTP correto.
+function withPostgresCode(err: Error, code?: string): Error & { code?: string } {
+  const typed = err as Error & { code?: string };
+  typed.code = code;
+  return typed;
+}
 
 export async function getAccountsByUser(
   userId: string,
@@ -57,7 +66,7 @@ export async function createAccount(
   userId: string,
   account: CreateAccountDTO,
   accessToken: string
-): Promise<FinanceAccount> {
+): Promise<AccountWithBank> {
   const client = createUserClient(accessToken);
 
   const initialBalance = account.initial_balance || 0;
@@ -74,11 +83,11 @@ export async function createAccount(
       color: account.color || '#10b981',
       icon: account.icon || 'Wallet',
     })
-    .select()
+    .select('*, bank:banks(*)')
     .single();
 
   if (error) {
-    throw new Error(`Erro ao criar conta: ${error.message}`);
+    throw withPostgresCode(new Error(`Erro ao criar conta: ${error.message}`), error.code);
   }
 
   return data;
@@ -103,7 +112,14 @@ export async function updateAccount(
       .single();
 
     if (fetchError) {
-      throw new Error(`Erro ao buscar conta: ${fetchError.message}`);
+      // PGRST116 = nenhuma linha: a conta nao existe ou nao e do usuario.
+      if (fetchError.code === 'PGRST116') {
+        throw new Error('Conta nao encontrada');
+      }
+      throw withPostgresCode(
+        new Error(`Erro ao buscar conta: ${fetchError.message}`),
+        fetchError.code
+      );
     }
 
     if (currentAccount) {
@@ -122,7 +138,12 @@ export async function updateAccount(
     .single();
 
   if (error) {
-    throw new Error(`Erro ao atualizar conta: ${error.message}`);
+    // .single() com zero linhas devolve PGRST116, nao data: null — sem este
+    // ramo a rota responderia 500 em vez de 404.
+    if (error.code === 'PGRST116') {
+      throw new Error('Conta nao encontrada');
+    }
+    throw withPostgresCode(new Error(`Erro ao atualizar conta: ${error.message}`), error.code);
   }
 
   if (!data) {
@@ -151,6 +172,75 @@ export async function updateAccountBalance(
   }
 }
 
+// Conta os registros que ainda dependem da conta. Unica fonte da verdade da regra
+// de exclusao: o DELETE e a rota /usage consomem os mesmos filtros daqui.
+export async function getAccountUsage(
+  accountId: string,
+  userId: string,
+  accessToken: string
+): Promise<AccountUsage> {
+  const client = createUserClient(accessToken);
+
+  const [transactionsResult, recurrencesResult, invoicePaymentsResult, goalsResult] =
+    await Promise.all([
+      client
+        .from('finance_transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .eq('user_id', userId)
+        .neq('status', 'CANCELADO'),
+      client
+        .from('finance_recurrences')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .eq('user_id', userId)
+        .eq('is_active', true),
+      client
+        .from('finance_invoice_payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .eq('user_id', userId),
+      // Metas em estado terminal (CONCLUIDO/CANCELADO) sao historico e nao bloqueiam,
+      // no mesmo espirito das recorrencias inativas e das transacoes canceladas.
+      client
+        .from('finance_goals')
+        .select('id', { count: 'exact', head: true })
+        .eq('linked_account_id', accountId)
+        .eq('user_id', userId)
+        .in('status', ['ATIVO', 'PAUSADO']),
+    ]);
+
+  // O PostgREST nao rejeita a promessa quando a consulta falha: devolve
+  // { count: null, error }. Sem esta checagem um erro viraria "zero vinculos" e
+  // liberaria a exclusao — a regra tem que falhar FECHADA, nunca aberta.
+  for (const result of [
+    transactionsResult,
+    recurrencesResult,
+    invoicePaymentsResult,
+    goalsResult,
+  ]) {
+    if (result.error) {
+      throw withPostgresCode(
+        new Error(`Erro ao verificar vinculos da conta: ${result.error.message}`),
+        result.error.code
+      );
+    }
+  }
+
+  const transactions = transactionsResult.count ?? 0;
+  const recurrences = recurrencesResult.count ?? 0;
+  const invoice_payments = invoicePaymentsResult.count ?? 0;
+  const goals = goalsResult.count ?? 0;
+
+  return {
+    transactions,
+    recurrences,
+    invoice_payments,
+    goals,
+    can_delete: transactions === 0 && recurrences === 0 && invoice_payments === 0 && goals === 0,
+  };
+}
+
 export async function deleteAccount(
   accountId: string,
   userId: string,
@@ -159,40 +249,21 @@ export async function deleteAccount(
   const client = createUserClient(accessToken);
 
   // Verificar se existem registros vinculados antes de excluir
-  const [transactionsResult, recurrencesResult, invoicePaymentsResult] = await Promise.all([
-    client
-      .from('finance_transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-      .eq('user_id', userId)
-      .neq('status', 'CANCELADO'),
-    client
-      .from('finance_recurrences')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-      .eq('user_id', userId)
-      .eq('is_active', true),
-    client
-      .from('finance_invoice_payments')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-      .eq('user_id', userId),
-  ]);
+  const usage = await getAccountUsage(accountId, userId, accessToken);
 
-  const transactionCount = transactionsResult.count ?? 0;
-  const recurrenceCount = recurrencesResult.count ?? 0;
-  const invoicePaymentCount = invoicePaymentsResult.count ?? 0;
-
-  if (transactionCount > 0 || recurrenceCount > 0 || invoicePaymentCount > 0) {
+  if (!usage.can_delete) {
     const parts: string[] = [];
-    if (transactionCount > 0) {
-      parts.push(`${transactionCount} transacao(oes)`);
+    if (usage.transactions > 0) {
+      parts.push(`${usage.transactions} transacao(oes)`);
     }
-    if (recurrenceCount > 0) {
-      parts.push(`${recurrenceCount} recorrencia(s)`);
+    if (usage.recurrences > 0) {
+      parts.push(`${usage.recurrences} recorrencia(s)`);
     }
-    if (invoicePaymentCount > 0) {
-      parts.push(`${invoicePaymentCount} pagamento(s) de fatura`);
+    if (usage.invoice_payments > 0) {
+      parts.push(`${usage.invoice_payments} pagamento(s) de fatura`);
+    }
+    if (usage.goals > 0) {
+      parts.push(`${usage.goals} meta(s) vinculada(s)`);
     }
     throw new Error(
       `Nao e possivel remover esta conta pois ela possui registros vinculados: ${parts.join(', ')}. Remova ou transfira esses registros antes de excluir a conta.`
@@ -207,6 +278,6 @@ export async function deleteAccount(
     .eq('user_id', userId);
 
   if (error) {
-    throw new Error(`Erro ao remover conta: ${error.message}`);
+    throw withPostgresCode(new Error(`Erro ao remover conta: ${error.message}`), error.code);
   }
 }

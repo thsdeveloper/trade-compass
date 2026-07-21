@@ -154,6 +154,7 @@ import {
   // Servicos & Utilidades
   Wrench,
   Settings,
+  RefreshCw,
   Hammer,
   Scissors,
   Shield,
@@ -258,7 +259,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Code, Terminal, Cpu, HardDrive, Wifi, Bluetooth,
   Smartphone, Tablet, Globe, Cloud, Database, Server, Zap,
   // Servicos & Utilidades
-  Wrench, Settings, Hammer, Scissors, Shield, Lock, Unlock, Bell,
+  Wrench, Settings, RefreshCw, Hammer, Scissors, Shield, Lock, Unlock, Bell,
   // Viagem & Turismo
   Hotel, Map, Compass, Mountain, TreePine, Tent,
   Backpack, Luggage, Anchor, Sunrise, Sun, Moon,
@@ -349,7 +350,7 @@ export const ICON_CATEGORIES = {
   servicos: {
     label: 'Servicos',
     icons: [
-      'Wrench', 'Settings', 'Hammer', 'Scissors', 'Shield', 'Lock', 'Unlock', 'Bell',
+      'Wrench', 'Settings', 'RefreshCw', 'Hammer', 'Scissors', 'Shield', 'Lock', 'Unlock', 'Bell',
     ],
   },
   viagem: {

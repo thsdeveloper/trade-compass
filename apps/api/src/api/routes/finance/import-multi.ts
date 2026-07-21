@@ -22,6 +22,7 @@ import {
   validateConfirmMultiBody,
   type ConfirmMultiImportBody,
 } from '../../../services/import-validation-service.js';
+import { createRateLimiter } from '../../middleware/simple-rate-limit.js';
 
 // ============================================================================
 // Importacao multi-arquivo: detect -> (parse existente por arquivo) -> match
@@ -62,6 +63,9 @@ const BODY_LIMIT = 15 * 1024 * 1024;
 
 const MAX_STATEMENTS = 12;
 
+// Detect usa LLM (chamada leve, mas com custo) — limite mais folgado que o parse
+const checkDetectLimit = createRateLimiter(12, 60 * 1000);
+
 export async function importMultiRoutes(app: FastifyInstance) {
   // POST /finance/import/detect - Identifica a conta/tipo de documento de um arquivo
   app.post<{
@@ -70,6 +74,14 @@ export async function importMultiRoutes(app: FastifyInstance) {
   }>('/finance/import/detect', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
     const body = request.body;
+
+    if (!checkDetectLimit(user.id)) {
+      return reply.status(429).send({
+        error: 'Too Many Requests',
+        message: 'Muitas analises de arquivo em sequencia. Aguarde um minuto e tente novamente.',
+        statusCode: 429,
+      });
+    }
 
     if (!body.kind || !VALID_KINDS.includes(body.kind)) {
       return reply.status(400).send({

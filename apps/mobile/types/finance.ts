@@ -8,7 +8,8 @@ export type FinanceAccountType =
   | 'CONTA_CORRENTE'
   | 'POUPANCA'
   | 'CARTEIRA'
-  | 'INVESTIMENTO';
+  | 'INVESTIMENTO'
+  | 'BENEFICIO';
 
 export type TransactionType = 'RECEITA' | 'DESPESA' | 'TRANSFERENCIA';
 
@@ -17,6 +18,20 @@ export type TransactionStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 export type BudgetCategory = 'ESSENCIAL' | 'ESTILO_VIDA' | 'INVESTIMENTO';
 
 // ==================== ENTITIES ====================
+
+/** Banco do catálogo público (public.banks) — fonte da verdade do bank_id. */
+export interface Bank {
+  id: string;
+  ispb: string;
+  code: number | null;
+  name: string;
+  full_name: string | null;
+  logo_url: string | null;
+  logo_dark_url: string | null;
+  is_active: boolean;
+  is_benefit_provider: boolean;
+  created_at: string;
+}
 
 export interface FinanceCategory {
   id: string;
@@ -46,6 +61,8 @@ export interface FinanceAccount {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** Join que o GET /finance/accounts já retorna (bank:banks(*)) */
+  bank?: Bank | null;
 }
 
 export interface FinanceTransaction {
@@ -91,6 +108,29 @@ export interface TransactionFormData {
   notes?: string;
 }
 
+export interface AccountFormData {
+  name: string;
+  type: FinanceAccountType;
+  /** UUID de public.banks; null/ausente para contas sem banco (carteira, investimento) */
+  bank_id?: string | null;
+  /** Saldo inicial em REAIS (não em centavos) */
+  initial_balance?: number;
+  color?: string;
+  icon?: string;
+}
+
+/**
+ * Uso da conta nas demais entidades, para bloquear a exclusão.
+ * Transações CANCELADO não entram na contagem (não bloqueiam).
+ */
+export interface AccountUsage {
+  transactions: number;
+  recurrences: number;
+  invoice_payments: number;
+  goals: number;
+  can_delete: boolean;
+}
+
 export interface FinanceCreditCard {
   id: string;
   user_id: string;
@@ -126,7 +166,27 @@ export const ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
   POUPANCA: 'Poupanca',
   CARTEIRA: 'Carteira',
   INVESTIMENTO: 'Investimento',
+  BENEFICIO: 'Beneficio',
 };
+
+// ==================== PALETA DE CORES ====================
+
+// Mesma paleta usada pela web (COLOR_PALETTE em CategoryIcon.tsx), para a
+// identidade visual da conta ficar coerente entre app e web.
+export const ACCOUNT_COLOR_PALETTE = [
+  // Cinzas
+  '#1e293b', '#475569', '#64748b', '#94a3b8',
+  // Cores saturadas
+  '#dc2626', '#ea580c', '#d97706', '#ca8a04',
+  '#65a30d', '#16a34a', '#059669', '#0d9488',
+  '#0891b2', '#0284c7', '#2563eb', '#4f46e5',
+  '#7c3aed', '#9333ea', '#c026d3', '#db2777',
+  // Cores pastel
+  '#f87171', '#fb923c', '#fbbf24', '#facc15',
+  '#a3e635', '#4ade80', '#34d399', '#2dd4bf',
+  '#22d3ee', '#38bdf8', '#60a5fa', '#818cf8',
+  '#a78bfa', '#c084fc', '#e879f9', '#f472b6',
+] as const;
 
 // ==================== DASHBOARD TYPES ====================
 

@@ -3,7 +3,8 @@ import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { getCategoryIcon } from '@/lib/category-icons';
-import { formatCurrency, formatDate, type UpcomingPayment } from '@/types/finance';
+import { MoneyText } from '@/components/atoms/MoneyText';
+import { formatDate, type UpcomingPayment } from '@/types/finance';
 
 interface UpcomingPaymentItemProps {
   payment: UpcomingPayment;
@@ -85,9 +86,7 @@ export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
         </View>
       </View>
       <View style={styles.rightContent}>
-        <Text style={[styles.amount, { color: colors.text }]}>
-          {formatCurrency(payment.amount)}
-        </Text>
+        <MoneyText value={payment.amount} style={styles.amount} />
         <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
           <Text style={[styles.urgencyText, { color: urgency.text }]}>
             {urgency.label}

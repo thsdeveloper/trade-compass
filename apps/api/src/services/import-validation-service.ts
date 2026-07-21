@@ -16,6 +16,8 @@ export interface ConfirmImportItem {
   notes?: string;
   /** Conta contraparte (obrigatoria quando kind = TRANSFERENCIA_INTERNA) */
   transfer_account_id?: string;
+  /** FITID do OFX (gravado na transacao para dedup exato em reimportacoes) */
+  fitid?: string | null;
 }
 
 export interface ConfirmMultiGroup {

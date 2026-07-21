@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/atoms/Button';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import { Skeleton, SkeletonProvider } from '@/components/atoms/Skeleton';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { BorderRadius, Colors, FontSize, FontWeight, Spacing } from '@/constants/theme';
@@ -84,9 +85,7 @@ const TransactionRow = memo(function TransactionRow({
           {item.is_credit_card ? (
             <IconSymbol name="creditcard.fill" size={12} color={colors.textSecondary} />
           ) : null}
-          <Text style={[styles.rowAmount, { color: colors.text }]}>
-            {formatCurrency(item.amount)}
-          </Text>
+          <MoneyText value={item.amount} style={styles.rowAmount} />
         </View>
         <View style={styles.rowMetaLine}>
           {item.status === 'PENDENTE' ? (

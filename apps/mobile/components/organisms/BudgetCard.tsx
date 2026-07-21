@@ -11,16 +11,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useMonthlySpendingSeries } from '@/hooks/use-monthly-spending-series';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { BudgetGauge } from '@/components/molecules/BudgetGauge';
 import { formatCurrency } from '@/types/finance';
 
 // Acento do gráfico de gastos, validado contra as superfícies do app
 // (claro exige tom mais escuro para manter 3:1 de contraste)
 const SPEND_LINE_DARK = '#A3E635';
 const SPEND_LINE_LIGHT = '#65a30d';
-
-// Linha-guia "pode gastar" (azul), em contraste com o verde do gasto real
-const GUIDE_LINE_DARK = '#60A5FA';
-const GUIDE_LINE_LIGHT = '#3B82F6';
 
 const CHART_HEIGHT = 88;
 
@@ -51,7 +48,6 @@ export function BudgetCard({ isBalanceVisible }: BudgetCardProps) {
       : profile?.monthly_income ?? 0;
 
   const lineColor = isDark ? SPEND_LINE_DARK : SPEND_LINE_LIGHT;
-  const guideColor = isDark ? GUIDE_LINE_DARK : GUIDE_LINE_LIGHT;
 
   // Só o último ponto ganha marcador, como na referência
   const chartData = useMemo(
@@ -65,26 +61,9 @@ export function BudgetCard({ isBalanceVisible }: BudgetCardProps) {
     [points, lineColor]
   );
 
-  // Linha-guia "pode gastar": ritmo linear que chega à renda ao fim do mês.
-  // Dá vida ao card mesmo sem gastos — o usuário vê quanto poderia ir gastando.
-  const daysInMonth = new Date(
-    selectedMonth.getFullYear(),
-    selectedMonth.getMonth() + 1,
-    0
-  ).getDate();
-  const guideData = useMemo(
-    () =>
-      points.map((point) => ({
-        value: effectiveIncome * (point.day / daysInMonth),
-      })),
-    [points, effectiveIncome, daysInMonth]
-  );
-  const hasGuide = effectiveIncome > 0;
-
-  const usedShare = useMemo(() => {
-    if (effectiveIncome <= 0) return null;
-    return Math.round((total / effectiveIncome) * 100);
-  }, [effectiveIncome, total]);
+  // Com renda conhecida o card vira gauge (pode gastar × já gastou);
+  // sem renda, sobra a curva de gasto acumulado como fallback
+  const hasBudget = effectiveIncome > 0;
 
   // Vazio só quando não há renda (nem lançada, nem do onboarding) nem gastos
   const isEmpty = effectiveIncome <= 0 && total <= 0;
@@ -142,64 +121,56 @@ export function BudgetCard({ isBalanceVisible }: BudgetCardProps) {
                     <Text style={[styles.title, { color: colors.text }]}>
                       Orçamento
                     </Text>
-                    <Text style={[styles.value, { color: colors.text }]}>
-                      {isBalanceVisible ? formatCurrency(total) : 'R$ ••••••'}
-                    </Text>
-                    <Text style={[styles.description, { color: colors.textSecondary }]}>
-                      {usedShare !== null
-                        ? `Você usou ${usedShare}% da renda do mês`
-                        : 'Gastos acumulados neste mês'}
-                    </Text>
+                    {!hasBudget && (
+                      <>
+                        <Text style={[styles.value, { color: colors.text }]}>
+                          {isBalanceVisible ? formatCurrency(total) : 'R$ ••••••'}
+                        </Text>
+                        <Text
+                          style={[styles.description, { color: colors.textSecondary }]}
+                        >
+                          Gastos acumulados neste mês
+                        </Text>
+                      </>
+                    )}
                   </View>
                   <IconSymbol name="chevron.right" size={18} color={colors.icon} />
                 </View>
 
-                {hasGuide && (
-                  <View style={styles.legendRow}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: guideColor }]} />
-                      <Text style={[styles.legendText, { color: colors.textSecondary }]}>
-                        Pode gastar
-                      </Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: lineColor }]} />
-                      <Text style={[styles.legendText, { color: colors.textSecondary }]}>
-                        Gasto
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {chartData.length > 1 && (
-                  <View style={styles.chartArea} pointerEvents="none">
-                    <LineChart
-                      data={chartData}
-                      data2={hasGuide ? guideData : undefined}
-                      areaChart={!hasGuide}
-                      curved
-                      thickness={2.5}
-                      color={lineColor}
-                      color2={guideColor}
-                      thickness2={2}
-                      hideDataPoints2
-                      startFillColor={lineColor}
-                      startOpacity={isDark ? 0.35 : 0.25}
-                      endFillColor={lineColor}
-                      endOpacity={0.02}
-                      maxValue={hasGuide ? Math.max(effectiveIncome, total) : undefined}
-                      hideAxesAndRules
-                      hideYAxisText
-                      yAxisThickness={0}
-                      xAxisThickness={0}
-                      initialSpacing={0}
-                      endSpacing={8}
-                      adjustToWidth
-                      width={chartWidth}
-                      height={CHART_HEIGHT}
-                      disableScroll
+                {hasBudget ? (
+                  <View style={styles.gaugeArea} pointerEvents="none">
+                    <BudgetGauge
+                      spent={total}
+                      limit={effectiveIncome}
+                      isBalanceVisible={isBalanceVisible}
                     />
                   </View>
+                ) : (
+                  chartData.length > 1 && (
+                    <View style={styles.chartArea} pointerEvents="none">
+                      <LineChart
+                        data={chartData}
+                        areaChart
+                        curved
+                        thickness={2.5}
+                        color={lineColor}
+                        startFillColor={lineColor}
+                        startOpacity={isDark ? 0.35 : 0.25}
+                        endFillColor={lineColor}
+                        endOpacity={0.02}
+                        hideAxesAndRules
+                        hideYAxisText
+                        yAxisThickness={0}
+                        xAxisThickness={0}
+                        initialSpacing={0}
+                        endSpacing={8}
+                        adjustToWidth
+                        width={chartWidth}
+                        height={CHART_HEIGHT}
+                        disableScroll
+                      />
+                    </View>
+                  )
                 )}
               </>
             )}
@@ -245,24 +216,9 @@ const styles = StyleSheet.create({
   chartArea: {
     marginTop: Spacing.sm,
   },
-  legendRow: {
-    flexDirection: 'row',
-    gap: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: FontSize.xs,
+  gaugeArea: {
+    marginTop: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   emptyHeader: {
     flexDirection: 'row',

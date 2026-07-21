@@ -19,6 +19,7 @@ import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { Button } from '@/components/atoms/Button';
 import { BankLogo } from '@/components/atoms/BankLogo';
+import { MoneyText } from '@/components/atoms/MoneyText';
 import { resolveBankKey } from '@/lib/bancos-brasil';
 import { PickerModal, type PickerOption } from '@/components/organisms/PickerModal';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
@@ -28,7 +29,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
 import { getCreditCards, payTransaction, updateTransaction } from '@/lib/finance-api';
 import {
-  formatCurrency,
   formatFullDate,
   getStatusColor,
   TRANSACTION_STATUS_LABELS,
@@ -490,7 +490,6 @@ export function TransactionDetailModal({
   // Regra do backend: transação paga não altera valor, conta, tipo ou data
   const canEditMoneyFields = !isPaid && !isTransfer;
 
-  const amountColor = isIncome ? colors.success : colors.text;
   const statusColor = getStatusColor(current.status);
   const statusLabel =
     isPaid && current.payment_date
@@ -525,9 +524,11 @@ export function TransactionDetailModal({
         >
           {/* Valor animado + status */}
           <View style={styles.amountSection}>
-            <Text style={[styles.amountValue, { color: amountColor }]}>
-              {isIncome ? '+ ' : ''}{formatCurrency(animatedAmount)}
-            </Text>
+            <MoneyText
+              value={animatedAmount}
+              type={current.type === 'RECEITA' ? 'RECEITA' : null}
+              style={styles.amountValue}
+            />
             <View
               style={[
                 styles.statusBadge,

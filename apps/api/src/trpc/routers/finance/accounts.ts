@@ -8,32 +8,10 @@ import {
   updateAccount,
   deleteAccount,
 } from '../../../data/finance/account-repository.js';
-
-const accountTypeEnum = z.enum([
-  'CONTA_CORRENTE',
-  'POUPANCA',
-  'CARTEIRA',
-  'INVESTIMENTO',
-  'BENEFICIO',
-]);
-
-const createAccountSchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório'),
-  type: accountTypeEnum,
-  bank_id: z.string().uuid().optional(),
-  initial_balance: z.number().default(0),
-  color: z.string().optional(),
-  icon: z.string().optional(),
-});
-
-const updateAccountSchema = z.object({
-  name: z.string().optional(),
-  bank_id: z.string().uuid().optional(),
-  color: z.string().optional(),
-  icon: z.string().optional(),
-  is_active: z.boolean().optional(),
-  initial_balance: z.number().optional(),
-});
+import {
+  createAccountSchema,
+  updateAccountSchema,
+} from '../../../domain/finance-schemas.js';
 
 export const accountsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {

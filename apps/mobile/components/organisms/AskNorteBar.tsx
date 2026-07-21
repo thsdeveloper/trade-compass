@@ -1,28 +1,75 @@
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useReducedMotion,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { AIRing, AI_TINT, AI_GLOW } from '@/components/atoms/AIRing';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
-// Tint violeta "IA" — único elemento com tintColor na tela (alpha baixo:
-// tint forte mata o efeito do Liquid Glass).
-const AI_TINT = 'rgba(168, 85, 247, 0.45)';
+// Espessura do anel de gradiente que circula a cápsula
+const RING_WIDTH = 2.5;
+// Distância acima da tab bar (mais colada que os 80 antigos do FAB)
+const BOTTOM_OFFSET = 64;
 
 /**
- * Barra flutuante "Pergunte ao Norte" — entrada do agente de IA em telas de
- * lista, no lugar do FAB circular. Cápsula de Liquid Glass (camada funcional);
- * o badge de gradiente é conteúdo dentro do vidro, não outro vidro.
+ * Barra flutuante "Pergunte ao Norte" — entrada do agente de IA nas telas
+ * principais, no lugar do FAB circular. Cápsula de Liquid Glass (camada
+ * funcional) envolta pelo AIRing — as cores circulando na borda sinalizam
+ * "inteligência artificial".
  */
 export function AskNorteBar() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const reduceMotion = useReducedMotion();
+
+  const pressScale = useSharedValue(1);
+  const badgeScale = useSharedValue(1);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      badgeScale.value = 1;
+      return;
+    }
+    // Pulso sutil no ícone de sparkles — "respiração" da IA
+    badgeScale.value = withRepeat(
+      withSequence(
+        withTiming(1.12, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) })
+      ),
+      -1
+    );
+  }, [badgeScale, reduceMotion]);
+
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+  }));
+
+  const badgeStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: badgeScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    pressScale.value = withSpring(0.96, { damping: 18, stiffness: 320 });
+  };
+
+  const handlePressOut = () => {
+    pressScale.value = withSpring(1, { damping: 14, stiffness: 220 });
+  };
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -31,35 +78,35 @@ export function AskNorteBar() {
 
   return (
     <View
-      style={[styles.container, { bottom: insets.bottom + 80 }]}
+      style={[styles.container, { bottom: insets.bottom + BOTTOM_OFFSET }]}
       pointerEvents="box-none"
     >
-      <Pressable
-        onPress={handlePress}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir o Norte, seu assistente financeiro"
-        // Feedback por escala: opacidade quebraria o Liquid Glass nativo
-        style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
-      >
-        <GlassSurface
-          variant="glass"
-          isInteractive
-          tintColor={AI_TINT}
-          style={styles.pill}
+      <Animated.View style={[styles.shadowWrap, pressStyle]}>
+        <Pressable
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir o Norte, seu assistente financeiro"
         >
-          <LinearGradient
-            colors={AI_GRADIENT}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.iconBadge}
-          >
-            <IconSymbol name="sparkles" size={14} color="#FFFFFF" />
-          </LinearGradient>
-          <Text style={[styles.label, { color: colors.text }]}>
-            Pergunte ao Norte
-          </Text>
-        </GlassSurface>
-      </Pressable>
+          <AIRing width={RING_WIDTH} borderRadius={BorderRadius.full}>
+            <GlassSurface
+              variant="glass"
+              isInteractive
+              tintColor={AI_TINT}
+              style={styles.pill}
+            >
+              {/* Ícone direto no vidro, sem badge: mais limpo e mais legível */}
+              <Animated.View style={badgeStyle}>
+                <IconSymbol name="sparkles" size={18} color="#FFFFFF" />
+              </Animated.View>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Pergunte ao Norte
+              </Text>
+            </GlassSurface>
+          </AIRing>
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -72,16 +119,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 100,
   },
-  pressable: {
+  shadowWrap: {
     borderRadius: BorderRadius.full,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+    // Glow violeta em vez de sombra neutra: reforça a identidade "IA"
+    shadowColor: AI_GLOW,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
     elevation: 10,
-  },
-  pressed: {
-    transform: [{ scale: 0.97 }],
   },
   pill: {
     flexDirection: 'row',
@@ -90,13 +135,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.full,
-  },
-  iconBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   label: {
     fontSize: FontSize.md,

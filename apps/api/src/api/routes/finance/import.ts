@@ -7,6 +7,7 @@ import { getProfileByUserId } from '../../../data/profile-repository.js';
 import { getCreditCardById, getCreditCardsByUser } from '../../../data/finance/credit-card-repository.js';
 import {
   getTransactionsByUser,
+  getExistingImportFitids,
   createTransactionsBatch,
   createPaidTransactionsBatch,
   createTransfer,
@@ -18,8 +19,12 @@ import {
   type StatementFileKind,
 } from '../../../services/statement-import-service.js';
 import type { ConfirmImportItem } from '../../../services/import-validation-service.js';
+import { createRateLimiter } from '../../middleware/simple-rate-limit.js';
 
 export type { ConfirmImportItem };
+
+// Parse usa LLM (visão em PDF/imagem) — limite próprio, como na extração de nota
+const checkParseLimit = createRateLimiter(6, 60 * 1000);
 
 interface ParseStatementBody {
   kind: StatementFileKind;
@@ -32,6 +37,8 @@ interface ParseStatementBody {
 
 export interface ImportPreviewTransaction extends ParsedStatementTransaction {
   possible_duplicate: boolean;
+  /** true quando o FITID do OFX ja existe no destino: duplicata certa, nao heuristica */
+  duplicate_exact: boolean;
 }
 
 interface ParseStatementResponse {
@@ -68,6 +75,14 @@ export async function importRoutes(app: FastifyInstance) {
   }>('/finance/import/parse', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
     const { user, accessToken } = request as AuthenticatedRequest;
     const body = request.body;
+
+    if (!checkParseLimit(user.id)) {
+      return reply.status(429).send({
+        error: 'Too Many Requests',
+        message: 'Muitas importacoes em sequencia. Aguarde um minuto e tente novamente.',
+        statusCode: 429,
+      });
+    }
 
     if (!body.kind || !VALID_KINDS.includes(body.kind)) {
       return reply.status(400).send({
@@ -138,18 +153,33 @@ export async function importRoutes(app: FastifyInstance) {
         accessToken
       );
 
+      // Dedup exato por FITID (OFX): reimportar o mesmo arquivo/periodo marca
+      // a linha como ja importada com certeza, sem depender da heuristica
+      const fitids = parsed
+        .map((tx) => tx.fitid)
+        .filter((f): f is string => Boolean(f));
+      const existingFitids = await getExistingImportFitids(
+        user.id,
+        { accountId: body.account_id, creditCardId: body.credit_card_id },
+        fitids,
+        accessToken
+      );
+
       const transactions: ImportPreviewTransaction[] = parsed.map((tx) => {
-        const possibleDuplicate = existing.some(
-          (e) =>
-            e.type === tx.type &&
-            Math.abs(e.amount - tx.amount) < 0.005 &&
-            Math.abs(
-              new Date(`${e.due_date}T00:00:00Z`).getTime() -
-                new Date(`${tx.due_date}T00:00:00Z`).getTime()
-            ) <=
-              3 * 24 * 60 * 60 * 1000
-        );
-        return { ...tx, possible_duplicate: possibleDuplicate };
+        const duplicateExact = Boolean(tx.fitid && existingFitids.has(tx.fitid));
+        const possibleDuplicate =
+          duplicateExact ||
+          existing.some(
+            (e) =>
+              e.type === tx.type &&
+              Math.abs(e.amount - tx.amount) < 0.005 &&
+              Math.abs(
+                new Date(`${e.due_date}T00:00:00Z`).getTime() -
+                  new Date(`${tx.due_date}T00:00:00Z`).getTime()
+              ) <=
+                3 * 24 * 60 * 60 * 1000
+          );
+        return { ...tx, possible_duplicate: possibleDuplicate, duplicate_exact: duplicateExact };
       });
 
       return { transactions };
@@ -270,6 +300,7 @@ export async function importRoutes(app: FastifyInstance) {
           amount: item.amount,
           due_date: item.due_date,
           notes: item.notes,
+          import_fitid: item.fitid ?? null,
         }));
         const created = await createTransactionsBatch(user.id, dtos, accessToken);
         return reply.status(201).send({
@@ -293,6 +324,7 @@ export async function importRoutes(app: FastifyInstance) {
           amount: item.amount,
           due_date: item.due_date,
           notes: item.notes,
+          import_fitid: item.fitid ?? null,
         }));
         const created = await createPaidTransactionsBatch(user.id, accountId, dtos, accessToken);
         transactionsCreated = created.length;

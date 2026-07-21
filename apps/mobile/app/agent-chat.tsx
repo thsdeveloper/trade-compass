@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSharedValue } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -21,10 +22,17 @@ import { useAgent } from '@/contexts/AgentContext';
 import { MAX_MESSAGE_LENGTH } from '@/lib/agent-api';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { AIRing } from '@/components/atoms/AIRing';
+import { ScrollEdgeEffect } from '@/components/atoms/ScrollEdgeEffect';
 import { Button } from '@/components/atoms/Button';
+import { ConfirmDialog } from '@/components/organisms/ConfirmDialog';
 import type { ChatMessage } from '@/types/agent';
 
 const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
+// Espessura do anel "IA" (mesma assinatura visual da AskNorteBar)
+const RING_WIDTH = 2;
+// Altura da linha do header (avatar + títulos + ações)
+const HEADER_BAR_HEIGHT = 56;
 
 const SUGGESTIONS = [
   'Qual é o meu saldo atual?',
@@ -99,9 +107,20 @@ export default function AgentChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const { messages, isLoading, error, sendMessage, clearMessages } = useAgent();
+  const {
+    messages,
+    isLoading,
+    error,
+    sendMessage,
+    clearMessages,
+    stopStreaming,
+    retryLast,
+  } = useAgent();
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
+  const [confirmClearVisible, setConfirmClearVisible] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const scrollY = useSharedValue(0);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -153,45 +172,6 @@ export default function AgentChatScreen() {
         pointerEvents="none"
       />
 
-      {/* Header: cápsula de Liquid Glass flutuando sobre o gradiente */}
-      <View style={styles.header}>
-        <GlassSurface variant="glass" style={styles.headerCapsule}>
-          <View style={styles.headerLeft}>
-            <AvatarBadge size={34} />
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Norte</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-                Seu norte financeiro
-              </Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            {messages.length > 0 && (
-              <Pressable
-                onPress={clearMessages}
-                accessibilityLabel="Limpar conversa"
-                style={({ pressed }) => [
-                  styles.headerButton,
-                  pressed && styles.pressedScale,
-                ]}
-              >
-                <IconSymbol name="trash" size={20} color={colors.text} />
-              </Pressable>
-            )}
-            <Pressable
-              onPress={() => router.back()}
-              accessibilityLabel="Fechar chat"
-              style={({ pressed }) => [
-                styles.headerButton,
-                pressed && styles.pressedScale,
-              ]}
-            >
-              <IconSymbol name="xmark" size={20} color={colors.text} />
-            </Pressable>
-          </View>
-        </GlassSurface>
-      </View>
-
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -232,6 +212,10 @@ export default function AgentChatScreen() {
             contentContainerStyle={styles.listContent}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             keyboardDismissMode="interactive"
+            onScroll={(event) => {
+              scrollY.value = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
           />
         )}
 
@@ -239,6 +223,16 @@ export default function AgentChatScreen() {
           <View style={[styles.errorBanner, { backgroundColor: colors.dangerLight }]}>
             <IconSymbol name="exclamationmark.circle" size={16} color={colors.danger} />
             <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+            <Pressable
+              onPress={retryLast}
+              accessibilityRole="button"
+              accessibilityLabel="Tentar enviar novamente"
+              style={({ pressed }) => [pressed && styles.pressedScale]}
+            >
+              <Text style={[styles.retryText, { color: colors.danger }]}>
+                Tentar novamente
+              </Text>
+            </Pressable>
           </View>
         )}
 
@@ -249,34 +243,116 @@ export default function AgentChatScreen() {
             { paddingBottom: Math.max(insets.bottom, Spacing.md) },
           ]}
         >
-          {/* Campo de texto em cápsula de material frosted */}
-          <GlassSurface variant="material" style={styles.inputCapsule}>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Pergunte sobre suas finanças..."
-              placeholderTextColor={colors.textSecondary}
-              maxLength={MAX_MESSAGE_LENGTH}
-              multiline
-              editable={!isLoading}
-              onSubmitEditing={handleSend}
-              submitBehavior="submit"
-              returnKeyType="send"
+          {/* Campo de texto em cápsula de material frosted; o anel "IA"
+              acende no foco e enquanto o Norte responde */}
+          <AIRing
+            width={RING_WIDTH}
+            borderRadius={24 + RING_WIDTH}
+            active={inputFocused || isLoading}
+            style={styles.inputRing}
+          >
+            <GlassSurface variant="material" style={styles.inputCapsule}>
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={input}
+                onChangeText={setInput}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder="Pergunte sobre suas finanças..."
+                placeholderTextColor={colors.textSecondary}
+                maxLength={MAX_MESSAGE_LENGTH}
+                multiline
+                editable={!isLoading}
+                onSubmitEditing={handleSend}
+                submitBehavior="submit"
+                returnKeyType="send"
+              />
+              {input.length >= MAX_MESSAGE_LENGTH - 100 && (
+                <Text style={[styles.charCounter, { color: colors.textSecondary }]}>
+                  {input.length}/{MAX_MESSAGE_LENGTH}
+                </Text>
+              )}
+            </GlassSurface>
+          </AIRing>
+          {/* Enviar vira Parar durante o streaming (recurso padrão de chat IA) */}
+          {isLoading ? (
+            <Button
+              iconOnly
+              icon="stop"
+              size="md"
+              onPress={stopStreaming}
+              accessibilityLabel="Parar resposta"
             />
-          </GlassSurface>
-          {/* Enviar: pill do design system (unificado) */}
-          <Button
-            iconOnly
-            icon="arrow-up"
-            size="md"
-            onPress={handleSend}
-            loading={isLoading}
-            disabled={!canSend}
-            accessibilityLabel="Enviar mensagem"
-          />
+          ) : (
+            <Button
+              iconOnly
+              icon="arrow-up"
+              size="md"
+              onPress={handleSend}
+              disabled={!canSend}
+              accessibilityLabel="Enviar mensagem"
+            />
+          )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Header integrado ao corpo: transparente em repouso, um corpo só com
+          o conteúdo. Renderizado por último para o material de sistema se
+          materializar atrás dele (blur no header todo) quando a conversa
+          rola por baixo. */}
+      <View style={styles.header}>
+        <ScrollEdgeEffect scrollY={scrollY} />
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <AvatarBadge size={34} />
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Norte</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                Seu norte financeiro
+              </Text>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            {messages.length > 0 && (
+              <Pressable
+                onPress={() => setConfirmClearVisible(true)}
+                accessibilityLabel="Limpar conversa"
+                style={({ pressed }) => [
+                  styles.headerButton,
+                  pressed && styles.pressedScale,
+                ]}
+              >
+                <IconSymbol name="trash" size={20} color={colors.text} />
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityLabel="Fechar chat"
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.pressedScale,
+              ]}
+            >
+              <IconSymbol name="xmark" size={20} color={colors.text} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* Limpar é destrutivo e irreversível: sempre passa pelo alerta */}
+      <ConfirmDialog
+        visible={confirmClearVisible}
+        title="Limpar conversa?"
+        message="Todas as mensagens desta conversa serão apagadas. Essa ação não pode ser desfeita."
+        confirmLabel="Limpar"
+        icon="trash"
+        onConfirm={() => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          clearMessages();
+          setConfirmClearVisible(false);
+        }}
+        onCancel={() => setConfirmClearVisible(false)}
+      />
     </View>
   );
 }
@@ -296,17 +372,21 @@ const styles = StyleSheet.create({
     height: 380,
   },
   header: {
+    // Flutua sobre o conteúdo: transparente em repouso, o ScrollEdgeEffect
+    // (absoluteFill) materializa o blur atrás dele durante o scroll
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },
-  headerCapsule: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 56,
-    paddingHorizontal: Spacing.md,
-    // Cápsula: radius = altura / 2
-    borderRadius: 28,
+    height: HEADER_BAR_HEIGHT,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -341,6 +421,8 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: Spacing.lg,
+    // Começa abaixo do header flutuante; ao rolar, passa por baixo do blur
+    paddingTop: HEADER_BAR_HEIGHT + Spacing.sm * 2 + Spacing.md,
     gap: Spacing.md,
   },
   userRow: {
@@ -412,6 +494,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FontSize.sm,
   },
+  retryText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+  },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -419,17 +505,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
   },
-  inputCapsule: {
+  inputRing: {
     flex: 1,
-    // Cápsula: radius = altura mínima / 2
-    borderRadius: 22,
+  },
+  inputCapsule: {
+    // Cápsula: radius = altura mínima / 2 (48, casando com o botão de enviar)
+    borderRadius: 24,
+    justifyContent: 'center',
   },
   input: {
-    minHeight: 44,
+    // Mesma altura do botão de enviar (Buttons.heightMd)
+    minHeight: 48,
     maxHeight: 120,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
+    paddingTop: 13,
+    paddingBottom: 13,
     fontSize: FontSize.md,
+  },
+  charCounter: {
+    fontSize: FontSize.xs,
+    textAlign: 'right',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xs,
   },
 });

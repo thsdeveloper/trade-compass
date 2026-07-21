@@ -10,6 +10,8 @@ type SelectableChipProps = {
   icon?: ComponentProps<typeof Ionicons>['name'];
   selected: boolean;
   onToggle: () => void;
+  /** 'radio' quando o grupo é de escolha única (padrão: múltipla escolha). */
+  accessibilityRole?: 'checkbox' | 'radio';
 };
 
 /** Chip de seleção múltipla usado na personalização do onboarding. */
@@ -18,6 +20,7 @@ export function SelectableChip({
   icon,
   selected,
   onToggle,
+  accessibilityRole = 'checkbox',
 }: SelectableChipProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -30,7 +33,7 @@ export function SelectableChip({
   return (
     <TouchableOpacity
       onPress={onToggle}
-      accessibilityRole="checkbox"
+      accessibilityRole={accessibilityRole}
       accessibilityState={{ checked: selected }}
       style={[
         styles.chip,

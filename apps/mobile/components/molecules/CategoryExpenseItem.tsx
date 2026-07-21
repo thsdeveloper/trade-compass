@@ -3,7 +3,8 @@ import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { getCategoryIcon } from '@/lib/category-icons';
-import { formatCurrency, type ExpensesByCategory } from '@/types/finance';
+import { MoneyText } from '@/components/atoms/MoneyText';
+import type { ExpensesByCategory } from '@/types/finance';
 
 interface CategoryExpenseItemProps {
   item: ExpensesByCategory;
@@ -60,9 +61,7 @@ export function CategoryExpenseItem({ item }: CategoryExpenseItemProps) {
         </View>
       </View>
       <View style={styles.rightContent}>
-        <Text style={[styles.amount, { color: colors.text }]}>
-          {formatCurrency(item.total)}
-        </Text>
+        <MoneyText value={item.total} style={styles.amount} />
         <Text style={[styles.percentage, { color: colors.textSecondary }]}>
           {item.percentage.toFixed(1)}%
         </Text>

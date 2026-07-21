@@ -3,6 +3,15 @@ import type { Bank } from '../../domain/finance-types.js';
 
 const TABLE = 'banks';
 
+// Virgula, parentese, ponto e aspas quebram o parser do filtro .or() do PostgREST.
+// Remove esses caracteres e limita o tamanho do termo antes de interpolar.
+function sanitizeSearchTerm(term: string): string {
+  return term
+    .replace(/[,().*"'\\%]/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
 export async function getAllBanks(): Promise<Bank[]> {
   const client = supabaseAdmin;
 
@@ -10,7 +19,8 @@ export async function getAllBanks(): Promise<Bank[]> {
     .from(TABLE)
     .select('*')
     .eq('is_active', true)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(200);
 
   if (error) {
     throw new Error(`Erro ao buscar bancos: ${error.message}`);
@@ -22,12 +32,18 @@ export async function getAllBanks(): Promise<Bank[]> {
 export async function searchBanks(query: string): Promise<Bank[]> {
   const client = supabaseAdmin;
 
+  const term = sanitizeSearchTerm(query);
+
+  if (!term) {
+    return [];
+  }
+
   // Busca por nome ou codigo
   const { data, error } = await client
     .from(TABLE)
     .select('*')
     .eq('is_active', true)
-    .or(`name.ilike.%${query}%,full_name.ilike.%${query}%,code.eq.${parseInt(query) || 0}`)
+    .or(`name.ilike.%${term}%,full_name.ilike.%${term}%,code.eq.${parseInt(term) || 0}`)
     .order('name', { ascending: true })
     .limit(50);
 

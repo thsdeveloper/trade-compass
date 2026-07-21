@@ -18,6 +18,7 @@ import { profileRoutes } from './routes/profile.js';
 import { agentStreamRoutes } from './routes/agent-stream.js';
 import { agentTransactionRoutes } from './routes/agent-transaction.js';
 import { waitlistRoutes } from './routes/waitlist.js';
+import { pluggyWebhookRoutes } from './routes/pluggy-webhook.js';
 import { appRouter, createContext, type AppRouter } from '../trpc/index.js';
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -70,6 +71,8 @@ export async function buildServer() {
   await app.register(agentStreamRoutes);
   await app.register(agentTransactionRoutes);
   await app.register(waitlistRoutes);
+  // Webhook público da Pluggy (sem auth — chamado pela Pluggy, não pelo usuário).
+  await app.register(pluggyWebhookRoutes);
 
   // Error handler
   app.setErrorHandler((error: FastifyError, request, reply) => {

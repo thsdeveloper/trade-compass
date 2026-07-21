@@ -2,7 +2,9 @@
   "name": "api",
   "version": "0.1.0",
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     "./trpc": "./src/trpc/index.ts"
   },
@@ -16,6 +18,8 @@
     "sync:signals": "tsx src/jobs/sync-signals.ts",
     "algolia:configure": "tsx src/scripts/algolia-configure.ts",
     "algolia:sync": "tsx src/scripts/algolia-initial-sync.ts",
+    "pluggy:register-webhook": "tsx src/scripts/pluggy-register-webhook.ts",
+    "pluggy:drain": "tsx src/scripts/pluggy-drain.ts",
     "lint": "echo 'No lint configured yet'"
   },
   "dependencies": {
@@ -27,6 +31,7 @@
     "fastify": "^5.0.0",
     "jspdf": "^2.5.2",
     "openai": "^6.17.0",
+    "pluggy-sdk": "^0.89.0",
     "resend": "^4.0.0",
     "zod": "^4.3.6"
   },

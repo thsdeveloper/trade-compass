@@ -63,6 +63,15 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="conectar-banco"
+          options={{
+            presentation: 'modal',
+            title: 'Conectar banco',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen name="bancos-conectados" options={{ headerShown: false }} />
+        <Stack.Screen
           name="orcamento"
           options={{
             presentation: 'transparentModal',

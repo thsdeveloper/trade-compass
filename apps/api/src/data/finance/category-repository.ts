@@ -99,3 +99,34 @@ export async function getOrCreateAdjustmentCategory(
 
   return data;
 }
+
+/**
+ * Categoria pai "Não categorizado" por tipo (seed 20260723000100). Toda
+ * transação sincronizada da Pluggy recebe esta categoria (category_id é NOT
+ * NULL e a categoria da Pluggy ainda não é mapeada). Se o seed ainda não rodou,
+ * cai no fallback de "Ajuste de saldo"/legado — o insert nunca fica sem categoria.
+ */
+export async function getOrCreateUncategorizedCategory(
+  type: FinanceCategoryType,
+  accessToken: string
+): Promise<FinanceCategory> {
+  const client = createUserClient(accessToken);
+
+  const { data, error } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('type', type)
+    .is('parent_id', null)
+    .eq('name', 'Não categorizado')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Erro ao obter categoria padrão: ${error.message}`);
+  }
+  if (data) {
+    return data;
+  }
+
+  // Seed ainda não aplicado: reusa a categoria de ajuste como último recurso.
+  return getOrCreateAdjustmentCategory('', type, accessToken);
+}

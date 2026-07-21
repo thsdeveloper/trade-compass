@@ -127,6 +127,13 @@ export default function ContasScreen() {
     router.push('/nova-conta');
   }, [router]);
 
+  // Open Finance (Pluggy): abre o hub de bancos conectados (conectar / reconectar
+  // / desconectar). Os dados importados caem em finance_accounts/transactions.
+  const handleConnectBank = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/bancos-conectados');
+  }, [router]);
+
   const handleEditAccount = useCallback(
     (accountId: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -300,7 +307,16 @@ export default function ContasScreen() {
         <Button
           label="Adicionar conta"
           onPress={handleAddAccount}
-          style={styles.addButton}
+          style={styles.addAccountButton}
+        />
+
+        {/* Ação: conectar banco via Open Finance (Pluggy) */}
+        <Button
+          label="Conectar banco (Open Finance)"
+          variant="tertiary"
+          iconRight="chevron-forward"
+          onPress={handleConnectBank}
+          style={styles.connectBankButton}
         />
 
         {/* Últimos lançamentos */}
@@ -478,7 +494,11 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: FontSize.sm,
   },
-  addButton: {
+  addAccountButton: {
+    marginBottom: Spacing.md,
+  },
+  connectBankButton: {
+    alignSelf: 'center',
     marginBottom: Spacing['2xl'],
   },
   sectionTitle: {

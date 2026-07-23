@@ -2,6 +2,7 @@ import { createUserClient } from '../../lib/supabase.js';
 import { getCreditCardsByUser } from './credit-card-repository.js';
 import { getTransactionsByCreditCardAndPeriod } from './transaction-repository.js';
 import { getInvoicePaymentsByMonth } from './invoice-payment-repository.js';
+import { getInvoicePeriodForDueMonth } from '../../domain/finance/invoice.js';
 import type {
   FinanceSummary,
   ExpensesByCategory,
@@ -433,17 +434,9 @@ export async function getUpcomingPaymentsByMonth(
   );
 
   // Faturas de cartão que vencem no mês pedido, com o valor ainda em aberto.
-  // Mesma convenção da tela de fatura: a fatura "do mês X" fecha no
-  // closing_day de X e vence no due_day de X (ou de X+1 quando o vencimento
-  // é antes ou igual ao fechamento) — logo, a fatura que vence no mês pedido
-  // fecha no próprio mês ou no anterior.
+  // Período e vencimento vêm de getInvoicePeriodForDueMonth (fonte única,
+  // compartilhada com o cron de lembretes diários).
   const [yearNum, monthNum] = month.split('-').map(Number);
-  const formatDate = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
 
   const cards = (await getCreditCardsByUser(userId, accessToken)).filter(
     (card) => card.is_active
@@ -451,25 +444,19 @@ export async function getUpcomingPaymentsByMonth(
 
   const invoiceEntries = await Promise.all(
     cards.map(async (card): Promise<UpcomingPayment | null> => {
-      let invoiceYear = yearNum;
-      let invoiceMonth = monthNum;
-      if (card.due_day <= card.closing_day) {
-        invoiceMonth -= 1;
-        if (invoiceMonth < 1) {
-          invoiceMonth = 12;
-          invoiceYear -= 1;
-        }
-      }
-      const invoiceMonthStr = `${invoiceYear}-${String(invoiceMonth).padStart(2, '0')}`;
-      const periodStart = new Date(invoiceYear, invoiceMonth - 2, card.closing_day + 1);
-      const periodEnd = new Date(invoiceYear, invoiceMonth - 1, card.closing_day);
+      const {
+        invoiceMonth: invoiceMonthStr,
+        periodStart,
+        periodEnd,
+        dueDate: dueDateStr,
+      } = getInvoicePeriodForDueMonth(card.closing_day, card.due_day, yearNum, monthNum);
 
       const [cardTransactions, payments] = await Promise.all([
         getTransactionsByCreditCardAndPeriod(
           card.id,
           userId,
-          formatDate(periodStart),
-          formatDate(periodEnd),
+          periodStart,
+          periodEnd,
           accessToken
         ),
         getInvoicePaymentsByMonth(card.id, invoiceMonthStr, userId, accessToken),
@@ -479,10 +466,6 @@ export async function getUpcomingPaymentsByMonth(
       const paidAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const remaining = Math.max(0, total - paidAmount);
       if (remaining <= 0) return null;
-
-      const dueDateStr = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(
-        card.due_day
-      ).padStart(2, '0')}`;
 
       return {
         id: `invoice-${card.id}-${invoiceMonthStr}`,

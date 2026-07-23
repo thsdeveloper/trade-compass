@@ -7,6 +7,10 @@ export interface Profile {
   avatar_url: string | null;
   monthly_income: number | null;
   onboarding_goals: string[] | null;
+  daily_email_enabled: boolean;
+  daily_email_hour: number;
+  timezone: string;
+  daily_email_last_sent_on: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -17,6 +21,10 @@ export interface UpdateProfileDTO {
   avatar_url?: string | null;
   monthly_income?: number | null;
   onboarding_goals?: string[] | null;
+  daily_email_enabled?: boolean;
+  daily_email_hour?: number;
+  timezone?: string;
+  // daily_email_last_sent_on não é editável pelo usuário — só o cron escreve.
 }
 
 const TABLE = 'profiles';

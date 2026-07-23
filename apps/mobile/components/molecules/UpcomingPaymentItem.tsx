@@ -10,6 +10,42 @@ interface UpcomingPaymentItemProps {
   payment: UpcomingPayment;
 }
 
+// Luminância relativa (WCAG) de um hex #RRGGBB, 0 (preto) a 1 (branco).
+function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const toLinear = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return (
+    0.2126 * toLinear((n >> 16) & 255) +
+    0.7152 * toLinear((n >> 8) & 255) +
+    0.0722 * toLinear(n & 255)
+  );
+}
+
+// Mistura dois hex #RRGGBB (ratio 0 = a, 1 = b).
+function mixHex(a: string, b: string, ratio: number): string {
+  const na = parseInt(a.slice(1), 16);
+  const nb = parseInt(b.slice(1), 16);
+  const m = (x: number, y: number) => Math.round(x + (y - x) * ratio);
+  const r = m((na >> 16) & 255, (nb >> 16) & 255);
+  const g = m((na >> 8) & 255, (nb >> 8) & 255);
+  const bl = m(na & 255, nb & 255);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1)}`;
+}
+
+// Garante um tom legível do accent contra o fundo do tema: cartões com cor
+// escura (ex.: preto) somem no dark mode — clareia-os mantendo a matiz.
+// Retorna a cor original se não for um hex #RRGGBB válido.
+function legibleAccent(hex: string, isDark: boolean): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const l = luminance(hex);
+  if (isDark && l < 0.45) return mixHex(hex, '#FFFFFF', 0.55);
+  if (!isDark && l > 0.72) return mixHex(hex, '#000000', 0.4);
+  return hex;
+}
+
 export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -44,9 +80,14 @@ export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
   };
 
   const urgency = getUrgency();
-  // Fatura de cartão agregada não tem categoria: usa a cor do cartão
-  const accentColor =
+  // Fatura de cartão agregada não tem categoria: usa a cor do cartão, que pode
+  // ser escura demais para o fundo do app — aí garantimos um tom legível. As
+  // categorias mantêm a cor exata (já escolhidas para contrastar).
+  const rawAccent =
     payment.category?.color ?? payment.credit_card?.color ?? colors.textSecondary;
+  const accentColor = payment.category
+    ? rawAccent
+    : legibleAccent(rawAccent, isDark);
   const iconBg = accentColor + (isDark ? '30' : '15');
 
   return (

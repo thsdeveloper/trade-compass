@@ -23,6 +23,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 const RING_WIDTH = 2.5;
 // Distância acima da tab bar (mais colada que os 80 antigos do FAB)
 const BOTTOM_OFFSET = 64;
+// Altura aproximada da cápsula: paddingVertical (md*2) + conteúdo (~22) + anel
+const ASK_NORTE_BAR_HEIGHT = 52;
+/**
+ * Folga vertical que a barra flutuante ocupa acima da tab bar. Telas com
+ * conteúdo rolável somam isto (+ insets.bottom) ao paddingBottom para que o
+ * último item role até acima da cápsula, em vez de ficar escondido sob ela.
+ */
+export const ASK_NORTE_CLEARANCE = BOTTOM_OFFSET + ASK_NORTE_BAR_HEIGHT + Spacing.lg;
 
 /**
  * Barra flutuante "Pergunte ao Norte" — entrada do agente de IA nas telas

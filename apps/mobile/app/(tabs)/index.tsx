@@ -48,7 +48,7 @@ import {
   SummarySkeleton,
   BudgetSkeleton,
 } from '@/components/organisms/DashboardSkeletons';
-import { AskNorteBar } from '@/components/organisms/AskNorteBar';
+import { AskNorteBar, ASK_NORTE_CLEARANCE } from '@/components/organisms/AskNorteBar';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
 
@@ -210,6 +210,10 @@ export default function DashboardScreen() {
   // Espaço para o conteúdo começar abaixo da cápsula do header (estado de
   // repouso limpo: a interseção com o vidro só acontece durante o scroll)
   const contentTopPadding = insets.top + Spacing.sm + HEADER_BAR_HEIGHT + Spacing.md;
+  // Reserva no fim do scroll para o último item ("Ver todas as contas") rolar
+  // acima da barra flutuante "Pergunte ao Norte" e da tab bar, em vez de ficar
+  // escondido sob elas
+  const contentBottomPadding = insets.bottom + ASK_NORTE_CLEARANCE;
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
@@ -229,7 +233,10 @@ export default function DashboardScreen() {
       <SkeletonProvider active={anyPending}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingTop: contentTopPadding }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: contentTopPadding, paddingBottom: contentBottomPadding },
+        ]}
         showsVerticalScrollIndicator={false}
         onScroll={(event) => {
           scrollY.value = event.nativeEvent.contentOffset.y;
@@ -274,6 +281,13 @@ export default function DashboardScreen() {
         {dashboardError && renderError()}
 
         <>
+            {/* Orçamento: card-resumo com curva de gastos; toque abre /orcamento */}
+            {dashboardPending ? (
+              <BudgetSkeleton />
+            ) : (
+              <BudgetCard isBalanceVisible={isBalanceVisible} />
+            )}
+
             {/* Resumo do mês: um cartão, três colunas */}
             <ContentSection title="Resumo do mês" showChevron={false}>
               {dashboardPending ? (
@@ -355,13 +369,6 @@ export default function DashboardScreen() {
               </View>
               )}
             </ContentSection>
-
-            {/* Orçamento: card-resumo com curva de gastos; toque abre /orcamento */}
-            {dashboardPending ? (
-              <BudgetSkeleton />
-            ) : (
-              <BudgetCard isBalanceVisible={isBalanceVisible} />
-            )}
 
             {/* Expenses by Category */}
             <ContentSection
@@ -481,9 +488,6 @@ export default function DashboardScreen() {
               )}
             </ContentSection>
         </>
-
-        {/* Bottom Spacing */}
-        <View style={styles.bottomSpacer} />
       </ScrollView>
       </SkeletonProvider>
 
@@ -537,7 +541,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: Spacing['3xl'],
+    // paddingBottom é calculado em runtime (insets + folga da AskNorteBar)
   },
   summaryLedger: {
     paddingTop: Spacing.xs,
@@ -667,8 +671,5 @@ const styles = StyleSheet.create({
   accountBalance: {
     fontSize: FontSize.md,
     fontWeight: '600',
-  },
-  bottomSpacer: {
-    height: Spacing['3xl'],
   },
 });

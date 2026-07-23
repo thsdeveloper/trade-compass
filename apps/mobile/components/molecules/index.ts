@@ -3,7 +3,6 @@ export * from './AIActionButton';
 export * from './AmountInput';
 export * from './BalanceSection';
 export * from './BudgetGauge';
-export * from './BudgetProgressCard';
 export * from './CategoryExpenseItem';
 export * from './CodeInput';
 export * from './ContentSection';

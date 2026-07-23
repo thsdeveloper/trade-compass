@@ -8,6 +8,9 @@ interface Profile {
   avatar_url: string | null;
   monthly_income: number | null;
   onboarding_goals: string[] | null;
+  daily_email_enabled: boolean;
+  daily_email_hour: number;
+  timezone: string;
 }
 
 interface ApiResponse<T = unknown> {
@@ -50,6 +53,9 @@ export async function updateProfile(updates: {
   phone?: string | null;
   monthly_income?: number | null;
   onboarding_goals?: string[] | null;
+  daily_email_enabled?: boolean;
+  daily_email_hour?: number;
+  timezone?: string;
 }): Promise<ApiResponse<Profile>> {
   try {
     const headers = await getAuthHeaders();

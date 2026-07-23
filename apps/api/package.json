@@ -20,6 +20,7 @@
     "algolia:sync": "tsx src/scripts/algolia-initial-sync.ts",
     "pluggy:register-webhook": "tsx src/scripts/pluggy-register-webhook.ts",
     "pluggy:drain": "tsx src/scripts/pluggy-drain.ts",
+    "daily:reminders": "tsx src/scripts/daily-due-reminders.ts",
     "lint": "echo 'No lint configured yet'"
   },
   "dependencies": {

@@ -47,6 +47,8 @@ function RootLayoutNav() {
         <Stack.Screen name="cartoes" options={{ headerShown: false }} />
         {/* O grupo profile tem Stack próprio; sem isto o raiz põe header padrão */}
         <Stack.Screen name="profile" options={{ headerShown: false }} />
+        {/* O grupo settings também tem Stack próprio */}
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen
           name="nova-conta"
           options={{

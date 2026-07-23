@@ -20,6 +20,9 @@ export interface Profile {
   avatar_url: string | null;
   monthly_income: number | null;
   onboarding_goals: string[] | null;
+  daily_email_enabled: boolean;
+  daily_email_hour: number;
+  timezone: string;
 }
 
 interface AuthContextType {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,18 +22,17 @@ import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
 import { Skeleton, SkeletonProvider } from '@/components/atoms/Skeleton';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
-import { BudgetBreakdownSection } from '@/components/organisms/BudgetBreakdownSection';
 import { BudgetInfoSheet } from '@/components/organisms/BudgetInfoSheet';
 import { IncomeSheet } from '@/components/organisms/IncomeSheet';
 import { Button } from '@/components/atoms/Button';
-import { BudgetProgressCard } from '@/components/molecules/BudgetProgressCard';
 import { MonthSlider } from '@/components/molecules/MonthSlider';
-import { getBudgetAllocation, getBudgetBreakdown } from '@/lib/finance-api';
+import { getBudgetAllocation } from '@/lib/finance-api';
 import {
   formatCurrency,
   BUDGET_CATEGORY_ICONS,
   BUDGET_CATEGORY_LABELS,
-  type BudgetBreakdown,
+  BUDGET_STATUS_LABELS,
+  type BudgetAllocation,
   type BudgetCategory,
   type BudgetSummary,
 } from '@/types/finance';
@@ -54,6 +54,18 @@ const CATEGORY_COLORS_DARK: Record<BudgetCategory, string> = {
 const SPEND_LINE_DARK = '#A3E635';
 const SPEND_LINE_LIGHT = '#65a30d';
 
+// Clareia um hex misturando-o com branco (0 = cor original, 1 = branco).
+// Usado para o topo do gradiente das barras "atual" — dá profundidade sem
+// sair da matiz da categoria.
+function lightenHex(hex: string, ratio: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * ratio);
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
 export default function OrcamentoScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -73,8 +85,6 @@ export default function OrcamentoScreen() {
 
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(true);
-  const [breakdown, setBreakdown] = useState<BudgetBreakdown | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
   const [incomeVisible, setIncomeVisible] = useState(false);
 
@@ -82,10 +92,9 @@ export default function OrcamentoScreen() {
     selectedMonth.getMonth() + 1
   ).padStart(2, '0')}`;
 
-  // Alocação 50-30-20 + detalhamento (bucket → categoria → transações) do mês
-  // exibido. dataVersion nas deps: mutações de transação refazem as buscas —
-  // em silêncio (sem skeleton) quando o mês não mudou; a renda do perfil nas
-  // deps cobre a edição pelo IncomeSheet.
+  // Alocação 50-30-20 do mês exibido. dataVersion nas deps: mutações de
+  // transação refazem a busca — em silêncio (sem skeleton) quando o mês não
+  // mudou; a renda do perfil nas deps cobre a edição pelo IncomeSheet.
   const lastLoadedMonthRef = useRef('');
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +102,6 @@ export default function OrcamentoScreen() {
     lastLoadedMonthRef.current = monthKey;
     if (isMonthChange) {
       setBudgetLoading(true);
-      setBreakdownLoading(true);
     }
     getBudgetAllocation(monthKey)
       .then((data) => {
@@ -104,16 +112,6 @@ export default function OrcamentoScreen() {
       })
       .finally(() => {
         if (!cancelled) setBudgetLoading(false);
-      });
-    getBudgetBreakdown(monthKey)
-      .then((data) => {
-        if (!cancelled) setBreakdown(data);
-      })
-      .catch(() => {
-        if (!cancelled) setBreakdown(null);
-      })
-      .finally(() => {
-        if (!cancelled) setBreakdownLoading(false);
       });
     return () => {
       cancelled = true;
@@ -142,6 +140,26 @@ export default function OrcamentoScreen() {
     [budgetSummary]
   );
 
+  // Total efetivamente gasto no mês (soma dos buckets) — centro do donut e
+  // base do % de cada categoria na distribuição
+  const spentTotal = useMemo(
+    () => allocations.reduce((sum, a) => sum + a.actual_amount, 0),
+    [allocations]
+  );
+
+  // Cores de status (No limite / Acima / Abaixo) para os badges das linhas
+  const statusColorsFor = (status: BudgetAllocation['status']) => {
+    switch (status) {
+      case 'on_track':
+        return { text: colors.success, bg: colors.successLight };
+      case 'over_budget':
+        return { text: colors.danger, bg: colors.dangerLight };
+      case 'under_budget':
+      default:
+        return { text: colors.info, bg: colors.infoLight };
+    }
+  };
+
   // Donut: distribuição do gasto real entre as 3 categorias do orçamento
   const donutData = useMemo(
     () =>
@@ -154,11 +172,13 @@ export default function OrcamentoScreen() {
     [allocations, categoryColors]
   );
 
-  // Barras: ideal (cinza, contexto) vs atual (cor da categoria) — ênfase
+  // Barras agrupadas: ideal (cinza, contexto) vs atual (cor da categoria, com
+  // gradiente e rótulo de % no topo) — ênfase na barra "atual"
   const barData = useMemo(() => {
     const idealGray = isDark ? '#4B5563' : '#D1D5DB';
     return allocations.flatMap((allocation) => {
       const ideal = totalIncome * (allocation.ideal_percentage / 100);
+      const color = categoryColors[allocation.category];
       return [
         {
           value: ideal,
@@ -168,10 +188,52 @@ export default function OrcamentoScreen() {
           labelWidth: 90,
           labelTextStyle: { color: colors.textSecondary, fontSize: 11 },
         },
-        { value: allocation.actual_amount, frontColor: categoryColors[allocation.category], spacing: 28 },
+        {
+          value: allocation.actual_amount,
+          frontColor: color,
+          gradientColor: lightenHex(color, 0.35),
+          showGradient: true,
+          spacing: 28,
+          topLabelComponent: () => (
+            <Text style={[styles.barTopLabel, { color: colors.textSecondary }]}>
+              {allocation.actual_percentage}%
+            </Text>
+          ),
+        },
       ];
     });
   }, [allocations, categoryColors, colors.textSecondary, isDark, totalIncome]);
+
+  // Teto do eixo com folga (~20%) para os rótulos de % no topo das barras
+  // "atual" não encostarem no topo do gráfico
+  const barMaxValue = useMemo(() => {
+    const values = allocations.flatMap((a) => [
+      totalIncome * (a.ideal_percentage / 100),
+      a.actual_amount,
+    ]);
+    const max = Math.max(0, ...values);
+    return max > 0 ? max * 1.2 : undefined;
+  }, [allocations, totalIncome]);
+
+  // Barras empilhadas: composição de cada bucket entre Pago (tom cheio) e
+  // A pagar (mesmo matiz, translúcido) — revela o pendente que a barra de
+  // progresso antiga escondia
+  const stackData = useMemo(
+    () =>
+      allocations.map((allocation) => {
+        const color = categoryColors[allocation.category];
+        return {
+          label: BUDGET_CATEGORY_LABELS[allocation.category],
+          labelWidth: 96,
+          labelTextStyle: { color: colors.textSecondary, fontSize: 11 },
+          stacks: [
+            { value: allocation.paid_amount, color },
+            { value: allocation.pending_amount, color: color + '40', marginBottom: 2 },
+          ],
+        };
+      }),
+    [allocations, categoryColors, colors.textSecondary]
+  );
 
   const chartData = useMemo(
     () =>
@@ -283,7 +345,7 @@ export default function OrcamentoScreen() {
           )}
         </GlassSurface>
 
-        {/* Donut: para onde o dinheiro foi */}
+        {/* Donut: para onde o dinheiro foi (fatias tocáveis, centro = total) */}
         {donutData.length > 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
             <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
@@ -293,39 +355,64 @@ export default function OrcamentoScreen() {
               <PieChart
                 data={donutData}
                 donut
-                radius={72}
-                innerRadius={48}
+                radius={80}
+                innerRadius={52}
                 innerCircleColor={isDark ? '#1E1E1E' : '#FFFFFF'}
+                focusOnPress
+                sectionAutoFocus
                 centerLabelComponent={() => (
                   <View style={styles.donutCenter}>
-                    <Text style={[styles.donutCenterValue, { color: colors.text }]}>
-                      {usedShare !== null ? `${usedShare}%` : '—'}
+                    <Text
+                      style={[styles.donutCenterValue, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {formatCurrency(spentTotal)}
                     </Text>
                     <Text style={[styles.donutCenterLabel, { color: colors.textSecondary }]}>
-                      da renda
+                      gasto no mês
                     </Text>
                   </View>
                 )}
               />
-              {/* Legenda com valores: identidade nunca só pela cor */}
+              {/* Legenda com ícone + valor + % da distribuição: identidade
+                  nunca só pela cor (par verde/âmbar exige rótulo direto) */}
               <View style={styles.legend}>
-                {allocations.map((allocation) => (
-                  <View key={allocation.category} style={styles.legendRow}>
-                    <IconSymbol
-                      name={BUDGET_CATEGORY_ICONS[allocation.category]}
-                      size={13}
-                      color={categoryColors[allocation.category]}
-                    />
-                    <View style={styles.legendText}>
-                      <Text style={[styles.legendLabel, { color: colors.text }]}>
-                        {BUDGET_CATEGORY_LABELS[allocation.category]}
-                      </Text>
-                      <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
-                        {formatCurrency(allocation.actual_amount)}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                {allocations
+                  .filter((allocation) => allocation.actual_amount > 0)
+                  .map((allocation) => {
+                    const share =
+                      spentTotal > 0
+                        ? Math.round((allocation.actual_amount / spentTotal) * 100)
+                        : 0;
+                    return (
+                      <View key={allocation.category} style={styles.legendRow}>
+                        <View
+                          style={[
+                            styles.legendSwatch,
+                            { backgroundColor: categoryColors[allocation.category] + '22' },
+                          ]}
+                        >
+                          <IconSymbol
+                            name={BUDGET_CATEGORY_ICONS[allocation.category]}
+                            size={12}
+                            color={categoryColors[allocation.category]}
+                          />
+                        </View>
+                        <View style={styles.legendText}>
+                          <Text
+                            style={[styles.legendLabel, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {BUDGET_CATEGORY_LABELS[allocation.category]}
+                          </Text>
+                          <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
+                            {formatCurrency(allocation.actual_amount)} · {share}%
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
               </View>
             </View>
           </GlassSurface>
@@ -366,6 +453,7 @@ export default function OrcamentoScreen() {
               xAxisThickness={StyleSheet.hairlineWidth}
               xAxisColor={colors.border}
               hideYAxisText
+              maxValue={barMaxValue}
               height={150}
               width={contentWidth - Spacing.lg * 2}
               initialSpacing={12}
@@ -374,7 +462,8 @@ export default function OrcamentoScreen() {
           </GlassSurface>
         )}
 
-        {/* Detalhes por categoria (progresso + status + drill-down) */}
+        {/* Detalhes por categoria: barras empilhadas Pago/A pagar + linhas
+            tocáveis com status e drill-down do bucket */}
         {budgetSummary && allocations.length > 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
             <View style={styles.cardHeaderRow}>
@@ -393,23 +482,100 @@ export default function OrcamentoScreen() {
                 />
               </TouchableOpacity>
             </View>
-            {allocations.map((allocation) => (
-              <BudgetProgressCard
-                key={allocation.category}
-                allocation={allocation}
-                totalIncome={totalIncome}
-                onPress={() =>
-                  router.push(
-                    `/orcamento-categoria?bucket=${allocation.category}&month=${monthKey}` as never
-                  )
-                }
-              />
-            ))}
+
+            {/* Legenda da composição: cheio = pago, translúcido = a pagar */}
+            <View style={styles.barLegendRow}>
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: colors.text }]} />
+                <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
+                  Pago
+                </Text>
+              </View>
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: colors.text + '40' }]} />
+                <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
+                  A pagar
+                </Text>
+              </View>
+            </View>
+
+            <BarChart
+              stackData={stackData}
+              barWidth={40}
+              roundedTop
+              barBorderTopLeftRadius={4}
+              barBorderTopRightRadius={4}
+              hideRules
+              yAxisThickness={0}
+              xAxisThickness={StyleSheet.hairlineWidth}
+              xAxisColor={colors.border}
+              hideYAxisText
+              noOfSections={3}
+              height={150}
+              width={contentWidth - Spacing.lg * 2}
+              initialSpacing={24}
+              spacing={44}
+              disableScroll
+            />
+
+            {/* Linhas tocáveis: identidade + status + drill-down por bucket */}
+            <View style={styles.detailList}>
+              {allocations.map((allocation) => {
+                const sc = statusColorsFor(allocation.status);
+                return (
+                  <Pressable
+                    key={allocation.category}
+                    style={({ pressed }) => [
+                      styles.detailRow,
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() =>
+                      router.push(
+                        `/orcamento-categoria?bucket=${allocation.category}&month=${monthKey}` as never
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ver gastos de ${allocation.label}`}
+                  >
+                    <View
+                      style={[
+                        styles.iconBadge,
+                        { backgroundColor: categoryColors[allocation.category] + '22' },
+                      ]}
+                    >
+                      <IconSymbol
+                        name={BUDGET_CATEGORY_ICONS[allocation.category]}
+                        size={15}
+                        color={categoryColors[allocation.category]}
+                      />
+                    </View>
+                    <View style={styles.detailText}>
+                      <Text
+                        style={[styles.legendLabel, { color: colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {allocation.label}
+                      </Text>
+                      <Text
+                        style={[styles.legendValue, { color: colors.textSecondary }]}
+                        numberOfLines={1}
+                      >
+                        Pago {formatCurrency(allocation.paid_amount)} · A pagar{' '}
+                        {formatCurrency(allocation.pending_amount)}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                      <Text style={[styles.statusText, { color: sc.text }]}>
+                        {BUDGET_STATUS_LABELS[allocation.status]}
+                      </Text>
+                    </View>
+                    <IconSymbol name="chevron.right" size={14} color={colors.icon} />
+                  </Pressable>
+                );
+              })}
+            </View>
           </GlassSurface>
         )}
-
-        {/* Detalhamento: quanto e quais gastos em cada bucket */}
-        <BudgetBreakdownSection breakdown={breakdown} loading={breakdownLoading} />
 
         {totalIncome <= 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
@@ -505,6 +671,7 @@ const styles = StyleSheet.create({
   },
   donutCenter: {
     alignItems: 'center',
+    maxWidth: 92,
   },
   donutCenterValue: {
     fontSize: FontSize.xl,
@@ -527,8 +694,53 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  legendSwatch: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   legendText: {
     flex: 1,
+  },
+  barTopLabel: {
+    fontSize: 10,
+    fontWeight: FontWeight.semibold,
+    marginBottom: 3,
+    textAlign: 'center',
+  },
+  iconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailList: {
+    marginTop: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
+  detailText: {
+    flex: 1,
+  },
+  statusBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  statusText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+  },
+  pressed: {
+    opacity: 0.6,
   },
   legendLabel: {
     fontSize: FontSize.sm,

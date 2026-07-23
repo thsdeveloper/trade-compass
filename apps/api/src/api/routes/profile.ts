@@ -8,6 +8,19 @@ import {
   getPublicAvatarUrl,
 } from '../../data/profile-repository.js';
 
+// Fusos aceitos para o lembrete diário (Brasil). Evita texto livre no timezone.
+const ALLOWED_TIMEZONES = new Set([
+  'America/Sao_Paulo',
+  'America/Manaus',
+  'America/Fortaleza',
+  'America/Recife',
+  'America/Bahia',
+  'America/Cuiaba',
+  'America/Rio_Branco',
+  'America/Belem',
+  'America/Noronha',
+]);
+
 /**
  * Helper to extract user from Authorization header
  */
@@ -66,6 +79,9 @@ export async function profileRoutes(app: FastifyInstance) {
         avatar_url: profile?.avatar_url ?? null,
         monthly_income: profile?.monthly_income ?? null,
         onboarding_goals: profile?.onboarding_goals ?? null,
+        daily_email_enabled: profile?.daily_email_enabled ?? false,
+        daily_email_hour: profile?.daily_email_hour ?? 8,
+        timezone: profile?.timezone ?? 'America/Sao_Paulo',
       });
     } catch (err) {
       app.log.error(err);
@@ -88,6 +104,9 @@ export async function profileRoutes(app: FastifyInstance) {
       phone?: string | null;
       monthly_income?: number | null;
       onboarding_goals?: string[] | null;
+      daily_email_enabled?: boolean;
+      daily_email_hour?: number;
+      timezone?: string;
     };
   }>('/profile/update', async (request, reply) => {
     const { user, token, error } = await getUserFromToken(request.headers.authorization);
@@ -100,7 +119,15 @@ export async function profileRoutes(app: FastifyInstance) {
       });
     }
 
-    const { full_name, phone, monthly_income, onboarding_goals } = request.body;
+    const {
+      full_name,
+      phone,
+      monthly_income,
+      onboarding_goals,
+      daily_email_enabled,
+      daily_email_hour,
+      timezone,
+    } = request.body;
 
     // Validate name
     if (full_name !== undefined && full_name !== null) {
@@ -159,12 +186,45 @@ export async function profileRoutes(app: FastifyInstance) {
       }
     }
 
+    // Validate daily email enabled flag
+    if (daily_email_enabled !== undefined && typeof daily_email_enabled !== 'boolean') {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'daily_email_enabled invalido',
+        statusCode: 400,
+      });
+    }
+
+    // Validate daily email hour (0-23)
+    if (
+      daily_email_hour !== undefined &&
+      (!Number.isInteger(daily_email_hour) || daily_email_hour < 0 || daily_email_hour > 23)
+    ) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Hora do e-mail invalida (0-23)',
+        statusCode: 400,
+      });
+    }
+
+    // Validate timezone against allowlist
+    if (timezone !== undefined && !ALLOWED_TIMEZONES.has(timezone)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Fuso horario invalido',
+        statusCode: 400,
+      });
+    }
+
     try {
       const updates: {
         full_name?: string | null;
         phone?: string | null;
         monthly_income?: number | null;
         onboarding_goals?: string[] | null;
+        daily_email_enabled?: boolean;
+        daily_email_hour?: number;
+        timezone?: string;
       } = {};
 
       if (full_name !== undefined) {
@@ -183,6 +243,18 @@ export async function profileRoutes(app: FastifyInstance) {
         updates.onboarding_goals = onboarding_goals;
       }
 
+      if (daily_email_enabled !== undefined) {
+        updates.daily_email_enabled = daily_email_enabled;
+      }
+
+      if (daily_email_hour !== undefined) {
+        updates.daily_email_hour = daily_email_hour;
+      }
+
+      if (timezone !== undefined) {
+        updates.timezone = timezone;
+      }
+
       const profile = await upsertProfile(user.id, updates, token);
 
       return reply.status(200).send({
@@ -191,6 +263,9 @@ export async function profileRoutes(app: FastifyInstance) {
         avatar_url: profile.avatar_url,
         monthly_income: profile.monthly_income,
         onboarding_goals: profile.onboarding_goals,
+        daily_email_enabled: profile.daily_email_enabled,
+        daily_email_hour: profile.daily_email_hour,
+        timezone: profile.timezone,
       });
     } catch (err) {
       app.log.error(err);

@@ -1,4 +1,7 @@
 import { createUserClient } from '../../lib/supabase.js';
+import { getCreditCardsByUser } from './credit-card-repository.js';
+import { getTransactionsByCreditCardAndPeriod } from './transaction-repository.js';
+import { getInvoicePaymentsByMonth } from './invoice-payment-repository.js';
 import type {
   FinanceSummary,
   ExpensesByCategory,
@@ -342,6 +345,8 @@ export async function getUpcomingPayments(
     `)
     .eq('user_id', userId)
     .eq('status', 'PENDENTE')
+    // Compra no cartão não é um vencimento: a obrigação real é a fatura
+    .is('credit_card_id', null)
     .gte('due_date', today.toISOString().split('T')[0])
     .lte('due_date', futureDate.toISOString().split('T')[0])
     .order('due_date', { ascending: true })
@@ -394,40 +399,106 @@ export async function getUpcomingPaymentsByMonth(
       description,
       amount,
       due_date,
-      category:finance_global_categories(*),
-      credit_card:finance_credit_cards(*)
+      category:finance_global_categories(*)
     `)
     .eq('user_id', userId)
     .eq('status', 'PENDENTE')
+    // Compra no cartão não é um vencimento: a obrigação real é a fatura,
+    // agregada abaixo com a data de vencimento do cartão
+    .is('credit_card_id', null)
     .gte('due_date', startDate)
     .lte('due_date', endDate)
     .order('due_date', { ascending: true })
     .limit(10);
 
-  if (!transactions) return [];
-
   const todayTime = today.getTime();
+  const daysUntil = (dateStr: string) =>
+    Math.ceil((new Date(dateStr).getTime() - todayTime) / (1000 * 60 * 60 * 24));
 
-  return transactions.map((t: { id: string; description: string; amount: unknown; due_date: string; category: unknown; credit_card: unknown }) => {
-    const dueDate = new Date(t.due_date);
-    const daysUntilDue = Math.ceil(
-      (dueDate.getTime() - todayTime) / (1000 * 60 * 60 * 24)
-    );
-    const catData = t.category;
-    const category = Array.isArray(catData) ? catData[0] : catData;
-    const cardData = t.credit_card;
-    const credit_card = Array.isArray(cardData) ? cardData[0] : cardData;
+  const upcoming: UpcomingPayment[] = (transactions ?? []).map(
+    (t: { id: string; description: string; amount: unknown; due_date: string; category: unknown }) => {
+      const catData = t.category;
+      const category = Array.isArray(catData) ? catData[0] : catData;
 
-    return {
-      id: t.id,
-      description: t.description,
-      amount: Number(t.amount),
-      due_date: t.due_date,
-      days_until_due: daysUntilDue,
-      category,
-      credit_card: credit_card || undefined,
-    };
-  });
+      return {
+        id: t.id,
+        description: t.description,
+        amount: Number(t.amount),
+        due_date: t.due_date,
+        days_until_due: daysUntil(t.due_date),
+        category,
+        credit_card: undefined,
+      };
+    }
+  );
+
+  // Faturas de cartão que vencem no mês pedido, com o valor ainda em aberto.
+  // Mesma convenção da tela de fatura: a fatura "do mês X" fecha no
+  // closing_day de X e vence no due_day de X (ou de X+1 quando o vencimento
+  // é antes ou igual ao fechamento) — logo, a fatura que vence no mês pedido
+  // fecha no próprio mês ou no anterior.
+  const [yearNum, monthNum] = month.split('-').map(Number);
+  const formatDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const cards = (await getCreditCardsByUser(userId, accessToken)).filter(
+    (card) => card.is_active
+  );
+
+  const invoiceEntries = await Promise.all(
+    cards.map(async (card): Promise<UpcomingPayment | null> => {
+      let invoiceYear = yearNum;
+      let invoiceMonth = monthNum;
+      if (card.due_day <= card.closing_day) {
+        invoiceMonth -= 1;
+        if (invoiceMonth < 1) {
+          invoiceMonth = 12;
+          invoiceYear -= 1;
+        }
+      }
+      const invoiceMonthStr = `${invoiceYear}-${String(invoiceMonth).padStart(2, '0')}`;
+      const periodStart = new Date(invoiceYear, invoiceMonth - 2, card.closing_day + 1);
+      const periodEnd = new Date(invoiceYear, invoiceMonth - 1, card.closing_day);
+
+      const [cardTransactions, payments] = await Promise.all([
+        getTransactionsByCreditCardAndPeriod(
+          card.id,
+          userId,
+          formatDate(periodStart),
+          formatDate(periodEnd),
+          accessToken
+        ),
+        getInvoicePaymentsByMonth(card.id, invoiceMonthStr, userId, accessToken),
+      ]);
+
+      const total = cardTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+      const paidAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const remaining = Math.max(0, total - paidAmount);
+      if (remaining <= 0) return null;
+
+      const dueDateStr = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(
+        card.due_day
+      ).padStart(2, '0')}`;
+
+      return {
+        id: `invoice-${card.id}-${invoiceMonthStr}`,
+        description: `Fatura ${card.name}`,
+        amount: remaining,
+        due_date: dueDateStr,
+        days_until_due: daysUntil(dueDateStr),
+        category: null,
+        credit_card: card,
+      };
+    })
+  );
+
+  return [...upcoming, ...invoiceEntries.filter((entry) => entry !== null)]
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .slice(0, 10);
 }
 
 // Funcao auxiliar para calcular em qual fatura uma transacao de cartao pertence
@@ -491,7 +562,23 @@ export async function getBudgetAllocation(
 
   const { data: incomeTransactions } = await incomeQuery;
 
-  const totalIncome = incomeTransactions?.reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0) || 0;
+  // Base do orcamento: a renda mensal declarada no perfil tem prioridade —
+  // e o valor que o usuario define conscientemente (tela de orcamento /
+  // aba Mais) e editar la deve refletir na hora. As receitas lancadas no
+  // mes so viram a base quando nao ha renda declarada.
+  const { data: profileRow } = await client
+    .from('profiles')
+    .select('monthly_income')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const declaredIncome = Number(profileRow?.monthly_income) || 0;
+  const monthIncome =
+    incomeTransactions?.reduce(
+      (sum: number, t: { amount: unknown }) => sum + Number(t.amount),
+      0
+    ) || 0;
+  const totalIncome = declaredIncome > 0 ? declaredIncome : monthIncome;
 
   // Buscar despesas de CONTA (sem cartao) do mes calendario - excluir transferencias e contas excluidas
   let accountExpensesQuery = client

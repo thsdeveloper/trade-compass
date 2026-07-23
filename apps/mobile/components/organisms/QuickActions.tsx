@@ -23,7 +23,8 @@ interface QuickAction {
   highlight?: boolean;
 }
 
-// Quatro ações fixas, uniformemente distribuídas — o excedente vive em "Mais".
+// Quatro ações fixas, uniformemente distribuídas — o excedente vive na aba
+// "Mais" da tab bar.
 const DEFAULT_ACTIONS: QuickAction[] = [
   {
     id: 'new-transaction',
@@ -45,10 +46,10 @@ const DEFAULT_ACTIONS: QuickAction[] = [
     route: '/contas',
   },
   {
-    id: 'more',
-    label: 'Mais',
-    icon: 'ellipsis',
-    route: '/more',
+    id: 'cards',
+    label: 'Cartões',
+    icon: 'creditcard',
+    route: '/cartoes',
   },
 ];
 
@@ -89,7 +90,7 @@ export function QuickActions({ actions = DEFAULT_ACTIONS }: QuickActionsProps) {
                     <IconSymbol
                       name={action.icon}
                       size={24}
-                      color={action.highlight ? colors.primary : colors.text}
+                      color={action.highlight ? '#FFFFFF' : colors.text}
                     />
                   </GlassSurface>
                 </View>

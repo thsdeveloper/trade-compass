@@ -101,6 +101,37 @@ export async function getOrCreateAdjustmentCategory(
 }
 
 /**
+ * Regra de negocio: as pernas de uma transferencia entre contas usam a
+ * categoria pai "Transferências entre contas" do tipo correspondente
+ * (seed 20260724000000) quando o cliente nao envia category_id — DESPESA na
+ * perna de origem e RECEITA na de destino. O fallback para a categoria de
+ * ajuste so existe para ambientes onde o seed ainda nao rodou.
+ */
+export async function getTransferCategory(
+  type: FinanceCategoryType,
+  accessToken: string
+): Promise<FinanceCategory> {
+  const client = createUserClient(accessToken);
+
+  const { data, error } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('type', type)
+    .is('parent_id', null)
+    .eq('name', 'Transferências entre contas')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Erro ao obter categoria de transferência: ${error.message}`);
+  }
+  if (data) {
+    return data;
+  }
+
+  return getOrCreateAdjustmentCategory('', type, accessToken);
+}
+
+/**
  * Categoria pai "Não categorizado" por tipo (seed 20260723000100). Toda
  * transação sincronizada da Pluggy recebe esta categoria (category_id é NOT
  * NULL e a categoria da Pluggy ainda não é mapeada). Se o seed ainda não rodou,

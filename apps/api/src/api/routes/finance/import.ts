@@ -19,6 +19,7 @@ import {
   type StatementFileKind,
 } from '../../../services/statement-import-service.js';
 import type { ConfirmImportItem } from '../../../services/import-validation-service.js';
+import { registerInvoiceAdjustment } from '../../../data/finance/invoice-payment-repository.js';
 import { createRateLimiter } from '../../middleware/simple-rate-limit.js';
 
 export type { ConfirmImportItem };
@@ -43,12 +44,25 @@ export interface ImportPreviewTransaction extends ParsedStatementTransaction {
 
 interface ParseStatementResponse {
   transactions: ImportPreviewTransaction[];
+  /** Mes de referencia da fatura (YYYY-MM) — so fatura de cartao */
+  invoice_month: string | null;
+  /** Saldo liquido "fatura anterior e pagamentos" (negativo = credito) — so fatura */
+  invoice_previous_balance: number | null;
 }
 
 interface ConfirmImportBody {
   account_id?: string;
   credit_card_id?: string;
   items: ConfirmImportItem[];
+  /**
+   * Ajuste "saldo fatura anterior e pagamentos" da fatura importada (so
+   * cartao): amount negativo = credito que abate a fatura, positivo = saldo
+   * devedor carregado. Registrado como pagamento AJUSTE do mes.
+   */
+  invoice_adjustment?: {
+    invoice_month: string;
+    amount: number;
+  };
 }
 
 interface ConfirmImportResponse {
@@ -124,7 +138,7 @@ export async function importRoutes(app: FastifyInstance) {
         getProfileByUserId(user.id, accessToken).catch(() => null),
       ]);
 
-      const parsed = await parseStatement(
+      const parseResult = await parseStatement(
         {
           kind: body.kind,
           filename: body.filename || 'extrato',
@@ -136,8 +150,14 @@ export async function importRoutes(app: FastifyInstance) {
         { categories, accounts, creditCards, ownerName: profile?.full_name ?? null }
       );
 
+      const parsed = parseResult.transactions;
+
       if (parsed.length === 0) {
-        return { transactions: [] };
+        return {
+          transactions: [],
+          invoice_month: parseResult.invoice_month,
+          invoice_previous_balance: parseResult.invoice_previous_balance,
+        };
       }
 
       // Detectar possiveis duplicatas: mesmo destino, mesmo valor e data proxima (+-3 dias)
@@ -182,7 +202,11 @@ export async function importRoutes(app: FastifyInstance) {
         return { ...tx, possible_duplicate: possibleDuplicate, duplicate_exact: duplicateExact };
       });
 
-      return { transactions };
+      return {
+        transactions,
+        invoice_month: parseResult.invoice_month,
+        invoice_previous_balance: parseResult.invoice_previous_balance,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao processar extrato';
       const isConfigError = message.includes('OPENAI_API_KEY');
@@ -272,10 +296,9 @@ export async function importRoutes(app: FastifyInstance) {
     }
 
     try {
-      // ===== Fatura de cartao: fluxo padrao (PENDENTE + limite) =====
+      // ===== Fatura de cartao: fluxo padrao (PENDENTE) =====
       if (isCardTarget) {
         const cardId = body.credit_card_id!;
-        const total = items.reduce((sum, item) => sum + item.amount, 0);
         const card = await getCreditCardById(cardId, user.id, accessToken);
         if (!card) {
           return reply.status(404).send({
@@ -284,13 +307,10 @@ export async function importRoutes(app: FastifyInstance) {
             statusCode: 404,
           });
         }
-        if (card.available_limit < total) {
-          return reply.status(400).send({
-            error: 'Bad Request',
-            message: `Limite insuficiente no cartao ${card.name}. Disponivel: R$ ${card.available_limit.toFixed(2)}, necessario: R$ ${total.toFixed(2)}`,
-            statusCode: 400,
-          });
-        }
+        // Importacao e registro historico: as compras ja aconteceram e o banco
+        // ja as aprovou (a fatura pode exceder o limite cadastrado por
+        // encargos, saque ou ajuste de limite). Nao bloqueia por limite — o
+        // disponivel e debitado com clamp em [0, total_limit] no repositorio.
 
         const dtos: CreateTransactionDTO[] = items.map((item) => ({
           category_id: item.category_id,
@@ -303,6 +323,28 @@ export async function importRoutes(app: FastifyInstance) {
           import_fitid: item.fitid ?? null,
         }));
         const created = await createTransactionsBatch(user.id, dtos, accessToken);
+
+        // "Saldo fatura anterior e pagamentos" da fatura: registrado como
+        // ajuste (crédito/débito) para o valor em aberto no app bater com o
+        // "total a pagar" do banco. Idempotente por (cartão, mês).
+        const adjustment = body.invoice_adjustment;
+        if (
+          adjustment &&
+          typeof adjustment.amount === 'number' &&
+          Number.isFinite(adjustment.amount) &&
+          adjustment.amount !== 0 &&
+          typeof adjustment.invoice_month === 'string' &&
+          /^\d{4}-\d{2}$/.test(adjustment.invoice_month)
+        ) {
+          await registerInvoiceAdjustment(
+            user.id,
+            cardId,
+            adjustment.invoice_month,
+            adjustment.amount,
+            accessToken
+          );
+        }
+
         return reply.status(201).send({
           transactions_created: created.length,
           transfers_created: 0,

@@ -182,12 +182,36 @@ export async function pluggyRoutes(app: FastifyInstance) {
         }
 
         if (isPluggyConfigured()) {
-          await deletePluggyItemRemote(connection.pluggy_item_id);
+          try {
+            await deletePluggyItemRemote(connection.pluggy_item_id);
+          } catch (err) {
+            // A Pluggy pode recusar a revogação (item de outro ambiente/app,
+            // credencial trocada, instabilidade). Loga o motivo real e devolve
+            // uma mensagem acionável em vez de estourar um 500 opaco.
+            request.log.error(
+              { err, pluggy_item_id: connection.pluggy_item_id },
+              'Falha ao revogar item na Pluggy'
+            );
+            // A SDK rejeita com o corpo do erro da Pluggy ({ code, message }),
+            // que nao e uma instancia de Error.
+            const detail =
+              err instanceof Error
+                ? err.message
+                : typeof err === 'object' && err !== null && 'message' in err
+                  ? String((err as { message: unknown }).message)
+                  : String(err);
+            return reply.status(502).send({
+              error: 'Bad Gateway',
+              message: `Falha ao revogar o consentimento na Pluggy: ${detail}`,
+              statusCode: 502,
+            });
+          }
         }
         await deletePluggyItem(connection.pluggy_item_id);
 
         return reply.send({ disconnected: true });
       } catch (err) {
+        request.log.error({ err }, 'Erro ao desconectar banco');
         const message = err instanceof Error ? err.message : 'Erro ao desconectar banco';
         return reply.status(500).send({
           error: 'Internal Server Error',

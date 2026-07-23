@@ -156,6 +156,7 @@ const MAPPING = {
   'questionmark.circle': 'help-outline',
   'questionmark.circle.fill': 'help',
   'line.3.horizontal': 'menu',
+  'line.3.horizontal.decrease': 'filter-list',
   'gearshape': 'settings',
   'gearshape.fill': 'settings',
   'tag': 'local-offer',

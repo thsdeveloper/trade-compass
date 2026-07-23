@@ -31,7 +31,9 @@ export type RecurrenceFrequency =
   | 'SEMESTRAL'
   | 'ANUAL';
 
-export type InvoicePaymentType = 'TOTAL' | 'PARCIAL' | 'MINIMO';
+// AJUSTE: crédito/saldo da fatura anterior trazido pela importação de fatura
+// (não tem conta de origem e não movimenta saldo)
+export type InvoicePaymentType = 'TOTAL' | 'PARCIAL' | 'MINIMO' | 'AJUSTE';
 
 export type BudgetCategory = 'ESSENCIAL' | 'ESTILO_VIDA' | 'INVESTIMENTO';
 
@@ -148,6 +150,7 @@ export interface FinanceRecurrence {
   user_id: string;
   category_id: string;
   account_id: string | null;
+  destination_account_id: string | null;
   credit_card_id: string | null;
   description: string;
   amount: number;
@@ -190,6 +193,7 @@ export interface RecurrenceCreditCardDetails {
 export interface RecurrenceWithDetails extends FinanceRecurrence {
   category: RecurrenceCategoryDetails;
   account: RecurrenceAccountDetails | null;
+  destination_account: RecurrenceAccountDetails | null;
   credit_card: RecurrenceCreditCardDetails | null;
 }
 
@@ -197,7 +201,8 @@ export interface FinanceInvoicePayment {
   id: string;
   user_id: string;
   credit_card_id: string;
-  account_id: string;
+  /** null quando payment_type = AJUSTE (ajuste importado, sem conta de origem) */
+  account_id: string | null;
   transaction_id: string | null;
   invoice_month: string;
   amount: number;
@@ -289,6 +294,12 @@ export interface CreateTransactionDTO {
   due_date: string;
   notes?: string;
   tag_ids?: string[];
+  /**
+   * 'PAGO' cria a transacao ja efetuada (paid_amount/payment_date preenchidos
+   * e saldo da conta ajustado na hora). Default: 'PENDENTE'. Ignorado em
+   * despesa de cartao — compra de cartao e liquidada pela fatura.
+   */
+  status?: 'PENDENTE' | 'PAGO';
   /** FITID do OFX na importacao de extrato (dedup exato em reimportacoes) */
   import_fitid?: string | null;
 }
@@ -323,6 +334,21 @@ export interface UpdateTransactionDTO {
   tag_ids?: string[];
 }
 
+export interface BulkDeleteTransactionsDTO {
+  ids: string[];
+}
+
+export type BulkDeleteSkipReason =
+  | 'not_found'
+  | 'transfer'
+  | 'already_cancelled'
+  | 'credit_card_paid';
+
+export interface BulkCancelTransactionsResult {
+  deleted: string[];
+  skipped: { id: string; reason: BulkDeleteSkipReason }[];
+}
+
 export interface PayTransactionDTO {
   paid_amount?: number;
   payment_date?: string;
@@ -333,12 +359,15 @@ export interface PayTransactionDTO {
 export interface CreateTransferDTO {
   source_account_id: string;
   destination_account_id: string;
-  category_id: string;
+  // Opcional: sem categoria, a API usa "Transferências entre contas"
+  // (DESPESA na perna de origem, RECEITA na de destino).
+  category_id?: string;
   description: string;
   amount: number;
   transfer_date: string;
   notes?: string;
   goal_id?: string; // Vincular transferencia a um objetivo
+  recurrence_id?: string; // Pernas geradas por recorrencia de transferencia
 }
 
 export interface TransferResult {
@@ -349,8 +378,11 @@ export interface TransferResult {
 
 // Recurrence DTOs
 export interface CreateRecurrenceDTO {
-  category_id: string;
+  // Opcional apenas para TRANSFERENCIA (a API resolve a categoria
+  // "Transferências entre contas"); obrigatorio para RECEITA/DESPESA.
+  category_id?: string;
   account_id?: string;
+  destination_account_id?: string;
   credit_card_id?: string;
   description: string;
   amount: number;
@@ -363,6 +395,7 @@ export interface CreateRecurrenceDTO {
 export interface UpdateRecurrenceDTO {
   category_id?: string;
   account_id?: string;
+  destination_account_id?: string;
   credit_card_id?: string;
   description?: string;
   amount?: number;
@@ -389,6 +422,8 @@ export interface TransactionFilters {
   category_id?: string;
   account_id?: string;
   credit_card_id?: string;
+  /** Origem do lançamento: 'card' = qualquer cartão; 'account' = conta (sem cartão). */
+  source?: 'account' | 'card';
   tag_id?: string;
   type?: TransactionType;
   status?: TransactionStatus;
@@ -467,7 +502,8 @@ export interface UpcomingPayment {
   amount: number;
   due_date: string;
   days_until_due: number;
-  category: FinanceCategory;
+  /** null nas faturas de cartão agregadas (não têm categoria única) */
+  category: FinanceCategory | null;
   credit_card?: FinanceCreditCard;
 }
 

@@ -10,8 +10,10 @@ import type {
   CreateTransferDTO,
   TransferResult,
   FinanceAccount,
+  BulkCancelTransactionsResult,
 } from '../../domain/finance-types.js';
 import { updateAccountBalance, getAccountById } from './account-repository.js';
+import { getTransferCategory } from './category-repository.js';
 import { updateCreditCardAvailableLimit } from './credit-card-repository.js';
 import { setTransactionTags, getTagsForTransaction, getTransactionIdsByTag } from './tag-repository.js';
 
@@ -82,6 +84,11 @@ export async function getTransactionsByUser(
   }
   if (filters.credit_card_id) {
     query = query.eq('credit_card_id', filters.credit_card_id);
+  }
+  if (filters.source === 'card') {
+    query = query.not('credit_card_id', 'is', null);
+  } else if (filters.source === 'account') {
+    query = query.is('credit_card_id', null);
   }
   if (filters.type) {
     query = query.eq('type', filters.type);
@@ -155,6 +162,9 @@ export async function createTransaction(
 ): Promise<FinanceTransaction> {
   const client = createUserClient(accessToken);
 
+  // Compra de cartao nunca nasce PAGA: quem a liquida e o pagamento da fatura
+  const isPaid = transaction.status === 'PAGO' && !transaction.credit_card_id;
+
   const { data, error } = await client
     .from(TABLE)
     .insert({
@@ -164,10 +174,12 @@ export async function createTransaction(
       credit_card_id: transaction.credit_card_id || null,
       goal_id: transaction.goal_id || null,
       type: transaction.type,
-      status: 'PENDENTE',
+      status: isPaid ? 'PAGO' : 'PENDENTE',
       description: transaction.description,
       amount: transaction.amount,
+      paid_amount: isPaid ? transaction.amount : null,
       due_date: transaction.due_date,
+      payment_date: isPaid ? transaction.due_date : null,
       notes: transaction.notes || null,
     })
     .select()
@@ -185,6 +197,22 @@ export async function createTransaction(
       -transaction.amount,
       accessToken
     );
+  }
+
+  // Transacao ja efetuada em conta: aplica o efeito no saldo na hora
+  // (mesma regra do payTransaction: +receita, -despesa)
+  if (isPaid && transaction.account_id) {
+    const account = await getAccountById(transaction.account_id, userId, accessToken);
+    if (account) {
+      const adjustment =
+        transaction.type === 'RECEITA' ? transaction.amount : -transaction.amount;
+      await updateAccountBalance(
+        transaction.account_id,
+        userId,
+        account.current_balance + adjustment,
+        accessToken
+      );
+    }
   }
 
   // Associar tags a transacao
@@ -538,6 +566,102 @@ export async function cancelTransaction(
   if (error) {
     throw new Error(`Erro ao cancelar transacao: ${error.message}`);
   }
+}
+
+// Cancelamento em massa. Diferente do cancelamento individual, transacoes PAGO
+// de conta sao aceitas: o saldo da conta e estornado (importacoes de extrato e
+// pagamentos aplicam o valor no current_balance, entao o estorno mantem a
+// consistencia). Transferencias e transacoes PAGO de cartao sao puladas.
+export async function bulkCancelTransactions(
+  ids: string[],
+  userId: string,
+  accessToken: string
+): Promise<BulkCancelTransactionsResult> {
+  const client = createUserClient(accessToken);
+  const CHUNK_SIZE = 100;
+
+  const found: Pick<
+    FinanceTransaction,
+    'id' | 'status' | 'transfer_id' | 'credit_card_id' | 'account_id' | 'type' | 'amount' | 'paid_amount'
+  >[] = [];
+
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE);
+    const { data, error } = await client
+      .from(TABLE)
+      .select('id, status, transfer_id, credit_card_id, account_id, type, amount, paid_amount')
+      .in('id', chunk)
+      .eq('user_id', userId);
+
+    if (error) {
+      throw new Error(`Erro ao buscar transacoes: ${error.message}`);
+    }
+    found.push(...(data || []));
+  }
+
+  const foundById = new Map(found.map((t) => [t.id, t]));
+  const skipped: BulkCancelTransactionsResult['skipped'] = [];
+  const cancellable: typeof found = [];
+
+  for (const id of ids) {
+    const transaction = foundById.get(id);
+    if (!transaction) {
+      skipped.push({ id, reason: 'not_found' });
+    } else if (transaction.transfer_id) {
+      skipped.push({ id, reason: 'transfer' });
+    } else if (transaction.status === 'CANCELADO') {
+      skipped.push({ id, reason: 'already_cancelled' });
+    } else if (transaction.status === 'PAGO' && transaction.credit_card_id) {
+      skipped.push({ id, reason: 'credit_card_paid' });
+    } else {
+      cancellable.push(transaction);
+    }
+  }
+
+  if (cancellable.length === 0) {
+    return { deleted: [], skipped };
+  }
+
+  const cancellableIds = cancellable.map((t) => t.id);
+  for (let i = 0; i < cancellableIds.length; i += CHUNK_SIZE) {
+    const chunk = cancellableIds.slice(i, i + CHUNK_SIZE);
+    const { error } = await client
+      .from(TABLE)
+      .update({ status: 'CANCELADO' })
+      .in('id', chunk)
+      .eq('user_id', userId);
+
+    if (error) {
+      throw new Error(`Erro ao cancelar transacoes: ${error.message}`);
+    }
+  }
+
+  // Estornar saldo das contas pelo liquido das transacoes PAGO canceladas
+  const netByAccount = new Map<string, number>();
+  for (const transaction of cancellable) {
+    if (transaction.status !== 'PAGO' || !transaction.account_id) continue;
+    const paid = transaction.paid_amount ?? transaction.amount;
+    const delta = transaction.type === 'RECEITA' ? -paid : paid;
+    netByAccount.set(
+      transaction.account_id,
+      (netByAccount.get(transaction.account_id) || 0) + delta
+    );
+  }
+
+  for (const [accountId, net] of netByAccount) {
+    if (net === 0) continue;
+    const account = await getAccountById(accountId, userId, accessToken);
+    if (account) {
+      await updateAccountBalance(
+        accountId,
+        userId,
+        account.current_balance + net,
+        accessToken
+      );
+    }
+  }
+
+  return { deleted: cancellableIds, skipped };
 }
 
 export async function cancelInstallmentGroup(
@@ -981,13 +1105,26 @@ export async function createTransfer(
     throw new Error('Conta de destino nao encontrada');
   }
 
+  // Sem categoria do cliente, cada perna usa "Transferências entre contas"
+  // do tipo correspondente (DESPESA na origem, RECEITA no destino).
+  let sourceCategoryId = transfer.category_id;
+  let destCategoryId = transfer.category_id;
+  if (!sourceCategoryId || !destCategoryId) {
+    const [expenseCategory, incomeCategory] = await Promise.all([
+      getTransferCategory('DESPESA', accessToken),
+      getTransferCategory('RECEITA', accessToken),
+    ]);
+    sourceCategoryId = expenseCategory.id;
+    destCategoryId = incomeCategory.id;
+  }
+
   // 3. Criar transacao de saida (DESPESA na conta origem)
   const sourceTransactionData = {
     user_id: userId,
     account_id: transfer.source_account_id,
-    category_id: transfer.category_id,
+    category_id: sourceCategoryId,
     credit_card_id: null,
-    recurrence_id: null,
+    recurrence_id: transfer.recurrence_id || null,
     installment_group_id: null,
     invoice_payment_id: null,
     debt_id: null,
@@ -1007,9 +1144,9 @@ export async function createTransfer(
   const destTransactionData = {
     user_id: userId,
     account_id: transfer.destination_account_id,
-    category_id: transfer.category_id,
+    category_id: destCategoryId,
     credit_card_id: null,
-    recurrence_id: null,
+    recurrence_id: transfer.recurrence_id || null,
     installment_group_id: null,
     invoice_payment_id: null,
     debt_id: null,

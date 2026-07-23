@@ -8,8 +8,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  default as Animated,
   Extrapolation,
   interpolate,
+  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -27,7 +29,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import { MoneyText } from '@/components/atoms/MoneyText';
 
-import { NubankHeader, HEADER_BAR_HEIGHT } from '@/components/organisms/NubankHeader';
+import {
+  NubankHeader,
+  HEADER_BAR_HEIGHT,
+  COMPACT_HEADER_BAR_HEIGHT,
+} from '@/components/organisms/NubankHeader';
 import { QuickActions } from '@/components/organisms/QuickActions';
 import { BalanceSection } from '@/components/molecules/BalanceSection';
 import { ContentSection } from '@/components/molecules/ContentSection';
@@ -87,6 +93,19 @@ export default function DashboardScreen() {
       Extrapolation.CLAMP
     )
   );
+
+  // Recolhe também a camada estrutural atrás da cápsula. Sem isso, apenas o
+  // conteúdo interno diminuiria e o header continuaria reservando a área cheia.
+  const edgeBarStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [
+        insets.top + Spacing.sm + HEADER_BAR_HEIGHT + Spacing.sm,
+        insets.top + Spacing.sm + COMPACT_HEADER_BAR_HEIGHT,
+      ]
+    ),
+  }));
 
   // Set status bar style when screen gains focus
   useFocusEffect(
@@ -469,20 +488,21 @@ export default function DashboardScreen() {
       </SkeletonProvider>
 
       {/* Scroll edge effect: material que aparece atrás do header ao rolar */}
-      <View
+      <Animated.View
         style={[
           styles.edgeBar,
-          { height: insets.top + Spacing.sm + HEADER_BAR_HEIGHT + Spacing.sm },
+          edgeBarStyle,
         ]}
         pointerEvents="none"
       >
         <ScrollEdgeEffect scrollY={scrollY} />
-      </View>
+      </Animated.View>
 
       {/* Camada funcional (Liquid Glass): renderizada depois do scroll para
           o material capturar o conteúdo passando por baixo */}
       <NubankHeader
         userPhoto={profile?.avatar_url}
+        userName={profile?.full_name || 'Usuario'}
         balance={totalAccountsBalance}
         collapseProgress={collapseProgress}
         isBalanceVisible={isBalanceVisible}

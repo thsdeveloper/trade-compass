@@ -18,9 +18,9 @@ import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { TransactionDetailModal } from '@/components/organisms/TransactionDetailModal';
 import { TransactionListItem } from '@/components/molecules/TransactionListItem';
 import { getCategoryIcon } from '@/lib/category-icons';
-import { getTransactions } from '@/lib/finance-api';
+import { getExpensesByCategory, getTransactions } from '@/lib/finance-api';
 import { MoneyText } from '@/components/atoms/MoneyText';
-import type { TransactionWithDetails } from '@/types/finance';
+import type { ExpensesByCategory, TransactionWithDetails } from '@/types/finance';
 
 const PAGE_SIZE = 30;
 
@@ -44,13 +44,25 @@ export default function CategoriaTransacoesScreen() {
   const isDark = colorScheme === 'dark';
   const router = useRouter();
 
-  const { id, name, color, icon } = useLocalSearchParams<{
+  const { id, name, color, icon, month } = useLocalSearchParams<{
     id: string;
     name: string;
     color: string;
     icon: string;
+    month?: string;
   }>();
-  const { selectedMonth, expensesByCategory } = useFinance();
+  const { dataVersion } = useFinance();
+
+  // O mês vem por parâmetro (a tela anterior tem o slider de mês); o
+  // dashboard do contexto é sempre o mês corrente e não serve para meses
+  // navegados. Sem parâmetro, cai no mês atual.
+  const selectedMonth = useMemo(() => {
+    if (month) {
+      const [year, monthNumber] = month.split('-').map(Number);
+      if (year && monthNumber) return new Date(year, monthNumber - 1, 1);
+    }
+    return new Date();
+  }, [month]);
 
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +75,24 @@ export default function CategoriaTransacoesScreen() {
   const categoryColor = color || colors.textSecondary;
   const range = useMemo(() => monthRange(selectedMonth), [selectedMonth]);
 
-  // Total/participação da categoria no mês (já carregados no dashboard)
+  // Total/participação da categoria no mês exibido. dataVersion nas deps:
+  // editar/excluir uma transação pelo modal atualiza o cabeçalho.
+  const [expensesByCategory, setExpensesByCategory] = useState<ExpensesByCategory[]>([]);
+  const monthParam = range.start.slice(0, 7);
+  useEffect(() => {
+    let cancelled = false;
+    getExpensesByCategory(monthParam)
+      .then((data) => {
+        if (!cancelled) setExpensesByCategory(data);
+      })
+      .catch(() => {
+        if (!cancelled) setExpensesByCategory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthParam, dataVersion]);
+
   const summary = useMemo(
     () => expensesByCategory.find((item) => item.category_id === id) ?? null,
     [expensesByCategory, id]

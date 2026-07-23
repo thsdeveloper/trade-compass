@@ -18,6 +18,7 @@ import { Image } from 'expo-image';
 
 import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
 import { GlassSurface } from '@/components/atoms/GlassSurface';
+import { IncomeSheet } from '@/components/organisms/IncomeSheet';
 import { Colors, Spacing, BorderRadius, FontSize } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,7 +32,10 @@ interface MenuItem {
   danger?: boolean;
 }
 
-const createMenuSections = (signOut: () => Promise<void>): { title?: string; items: MenuItem[] }[] => [
+const createMenuSections = (
+  signOut: () => Promise<void>,
+  onEditIncome: () => void
+): { title?: string; items: MenuItem[] }[] => [
   {
     title: 'Conta',
     items: [
@@ -42,7 +46,9 @@ const createMenuSections = (signOut: () => Promise<void>): { title?: string; ite
     title: 'Financas',
     items: [
       { id: 'accounts', label: 'Contas', icon: 'wallet.pass', route: '/contas' },
+      { id: 'cards', label: 'Cartoes', icon: 'creditcard', route: '/cartoes' },
       { id: 'transactions', label: 'Transacoes', icon: 'arrow.up.arrow.down', route: '/transactions' },
+      { id: 'income', label: 'Renda mensal', icon: 'dollarsign.circle', onPress: onEditIncome },
     ],
   },
   {
@@ -81,8 +87,9 @@ export default function MoreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, profile, signOut, refreshProfile } = useAuth();
+  const [incomeVisible, setIncomeVisible] = React.useState(false);
 
-  const MENU_SECTIONS = createMenuSections(signOut);
+  const MENU_SECTIONS = createMenuSections(signOut, () => setIncomeVisible(true));
 
   // Set status bar style and refresh profile when screen gains focus
   useFocusEffect(
@@ -209,6 +216,9 @@ export default function MoreScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Edição da renda mensal declarada (base do orçamento 50-30-20) */}
+      <IncomeSheet visible={incomeVisible} onClose={() => setIncomeVisible(false)} />
     </View>
   );
 }

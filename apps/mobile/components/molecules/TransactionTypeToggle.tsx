@@ -6,35 +6,71 @@ import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TransactionType } from '@/types/finance';
 
+/**
+ * Modo da tela de nova transação: os tipos do backend mais o modo Cartão,
+ * que vira uma DESPESA com credit_card_id na hora de salvar.
+ */
+export type TransactionMode = TransactionType | 'CARTAO';
+
 interface TransactionTypeToggleProps {
-  value: TransactionType;
-  onChange: (type: TransactionType) => void;
+  value: TransactionMode;
+  onChange: (type: TransactionMode) => void;
+  /** Exibe o 3º modo Transferência (tela de nova transação). */
+  includeTransfer?: boolean;
+  /** Exibe o modo Cartão de crédito (compra que vai para a fatura). */
+  includeCard?: boolean;
 }
 
 /**
- * Seletor Despesa/Receita em pill segmentado: o segmento ativo é preenchido
- * com a cor semântica (vermelho/verde) e ganha ícone, coerente com o dark
- * da tela de nova transação.
+ * Seletor Despesa/Receita (e opcionalmente Transferência e Cartão) em pill
+ * segmentado: o segmento ativo é preenchido com a cor semântica
+ * (vermelho/verde/azul/laranja) e ganha ícone, coerente com o dark da tela
+ * de nova transação.
  */
 export function TransactionTypeToggle({
   value,
   onChange,
+  includeTransfer = false,
+  includeCard = false,
 }: TransactionTypeToggleProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
 
   const segments: {
-    key: TransactionType;
+    key: TransactionMode;
     label: string;
     icon: IconSymbolName;
     color: string;
   }[] = [
     { key: 'DESPESA', label: 'Despesa', icon: 'arrow.down', color: colors.danger },
     { key: 'RECEITA', label: 'Receita', icon: 'arrow.up', color: colors.success },
+    ...(includeTransfer
+      ? [
+          {
+            key: 'TRANSFERENCIA' as const,
+            label: 'Transferir',
+            icon: 'arrow.triangle.swap' as IconSymbolName,
+            color: colors.primary,
+          },
+        ]
+      : []),
+    ...(includeCard
+      ? [
+          {
+            key: 'CARTAO' as const,
+            label: 'Cartão',
+            icon: 'creditcard' as IconSymbolName,
+            color: colors.warning,
+          },
+        ]
+      : []),
   ];
 
-  const select = (next: TransactionType) => {
+  // Com 4 modos o pill fica apertado: o ícone só aparece no segmento ativo
+  const compact = segments.length >= 4;
+
+  const select = (next: TransactionMode) => {
     if (next === value) return;
     Haptics.selectionAsync();
     onChange(next);
@@ -58,16 +94,20 @@ export function TransactionTypeToggle({
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
           >
-            <IconSymbol
-              name={seg.icon}
-              size={16}
-              color={active ? '#FFFFFF' : colors.textSecondary}
-            />
+            {!compact || active ? (
+              <IconSymbol
+                name={seg.icon}
+                size={16}
+                color={active ? '#FFFFFF' : colors.textSecondary}
+              />
+            ) : null}
             <Text
               style={[
                 styles.label,
+                compact && styles.labelCompact,
                 { color: active ? '#FFFFFF' : colors.textSecondary },
               ]}
+              numberOfLines={1}
             >
               {seg.label}
             </Text>
@@ -97,5 +137,8 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
+  },
+  labelCompact: {
+    fontSize: FontSize.sm,
   },
 });

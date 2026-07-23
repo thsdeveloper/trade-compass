@@ -23,15 +23,18 @@ import { Skeleton, SkeletonProvider } from '@/components/atoms/Skeleton';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { BudgetBreakdownSection } from '@/components/organisms/BudgetBreakdownSection';
 import { BudgetInfoSheet } from '@/components/organisms/BudgetInfoSheet';
+import { IncomeSheet } from '@/components/organisms/IncomeSheet';
+import { Button } from '@/components/atoms/Button';
 import { BudgetProgressCard } from '@/components/molecules/BudgetProgressCard';
 import { MonthSlider } from '@/components/molecules/MonthSlider';
-import { getBudgetBreakdown } from '@/lib/finance-api';
+import { getBudgetAllocation, getBudgetBreakdown } from '@/lib/finance-api';
 import {
   formatCurrency,
   BUDGET_CATEGORY_ICONS,
   BUDGET_CATEGORY_LABELS,
   type BudgetBreakdown,
   type BudgetCategory,
+  type BudgetSummary,
 } from '@/types/finance';
 
 // Paleta categórica validada (scripts/validate_palette.js do skill dataviz):
@@ -59,45 +62,49 @@ export default function OrcamentoScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
 
-  const {
-    budgetSummary,
-    selectedMonth,
-    setSelectedMonth,
-    isDashboardLoading,
-    loadDashboard,
-  } = useFinance();
+  const { dataVersion } = useFinance();
   const { profile } = useAuth();
+
+  // Mês local à tela: navegar entre meses aqui NÃO toca o dashboard do
+  // contexto, que alimenta a home sempre com o mês corrente. A tela abre
+  // sempre no mês atual.
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const { points, total, isLoading: seriesLoading } = useMonthlySpendingSeries(selectedMonth);
 
+  const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
+  const [budgetLoading, setBudgetLoading] = useState(true);
   const [breakdown, setBreakdown] = useState<BudgetBreakdown | null>(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
+  const [incomeVisible, setIncomeVisible] = useState(false);
 
   const monthKey = `${selectedMonth.getFullYear()}-${String(
     selectedMonth.getMonth() + 1
   ).padStart(2, '0')}`;
 
-  useEffect(() => {
-    if (!budgetSummary) {
-      loadDashboard();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Ao trocar o mês no slider, recarrega o dashboard (alocação 50-30-20).
-  // O ref evita um refetch redundante na montagem (o contexto já carregou).
-  const lastLoadedMonthRef = useRef(monthKey);
-  useEffect(() => {
-    if (lastLoadedMonthRef.current !== monthKey) {
-      lastLoadedMonthRef.current = monthKey;
-      loadDashboard();
-    }
-  }, [monthKey, loadDashboard]);
-
-  // Detalhamento por categoria (bucket → categoria → transações) do mês
+  // Alocação 50-30-20 + detalhamento (bucket → categoria → transações) do mês
+  // exibido. dataVersion nas deps: mutações de transação refazem as buscas —
+  // em silêncio (sem skeleton) quando o mês não mudou; a renda do perfil nas
+  // deps cobre a edição pelo IncomeSheet.
+  const lastLoadedMonthRef = useRef('');
   useEffect(() => {
     let cancelled = false;
-    setBreakdownLoading(true);
+    const isMonthChange = lastLoadedMonthRef.current !== monthKey;
+    lastLoadedMonthRef.current = monthKey;
+    if (isMonthChange) {
+      setBudgetLoading(true);
+      setBreakdownLoading(true);
+    }
+    getBudgetAllocation(monthKey)
+      .then((data) => {
+        if (!cancelled) setBudgetSummary(data);
+      })
+      .catch(() => {
+        if (!cancelled) setBudgetSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setBudgetLoading(false);
+      });
     getBudgetBreakdown(monthKey)
       .then((data) => {
         if (!cancelled) setBreakdown(data);
@@ -111,7 +118,7 @@ export default function OrcamentoScreen() {
     return () => {
       cancelled = true;
     };
-  }, [monthKey]);
+  }, [monthKey, dataVersion, profile?.monthly_income]);
 
   const categoryColors = isDark ? CATEGORY_COLORS_DARK : CATEGORY_COLORS_LIGHT;
   const lineColor = isDark ? SPEND_LINE_DARK : SPEND_LINE_LIGHT;
@@ -120,9 +127,10 @@ export default function OrcamentoScreen() {
     borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
   } as const;
 
-  // Renda-base: receitas lançadas no mês ou, na ausência delas, a renda
-  // declarada no onboarding (profile.monthly_income), para o orçamento já
-  // nascer preenchido com a distribuição 50/30/20.
+  // Renda-base: o backend já prioriza a renda declarada no perfil
+  // (total_income) e cai para as receitas do mês na ausência dela;
+  // profile.monthly_income aqui é só rede de segurança enquanto o
+  // dashboard ainda não carregou.
   const totalIncome =
     (budgetSummary?.total_income ?? 0) > 0
       ? budgetSummary!.total_income
@@ -184,7 +192,7 @@ export default function OrcamentoScreen() {
       {/* Seleção de mês (padrão Revolut: pills horizontais, mês atual à direita) */}
       <MonthSlider selectedDate={selectedMonth} onMonthChange={setSelectedMonth} />
 
-      <SkeletonProvider active={seriesLoading || isDashboardLoading}>
+      <SkeletonProvider active={seriesLoading || budgetLoading}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -209,9 +217,18 @@ export default function OrcamentoScreen() {
             {formatCurrency(total)}
           </Text>
           {usedShare !== null && (
-            <Text style={[styles.cardHint, { color: colors.textSecondary }]}>
-              {usedShare}% da renda de {formatCurrency(totalIncome)}
-            </Text>
+            <TouchableOpacity
+              style={styles.incomeRow}
+              onPress={() => setIncomeVisible(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Editar renda mensal"
+            >
+              <Text style={[styles.cardHint, { color: colors.textSecondary }]}>
+                {usedShare}% da renda de {formatCurrency(totalIncome)}
+              </Text>
+              <Ionicons name="pencil" size={12} color={colors.textSecondary} />
+            </TouchableOpacity>
           )}
           {chartData.length > 1 && (
             <View style={styles.chartArea}>
@@ -397,9 +414,14 @@ export default function OrcamentoScreen() {
         {totalIncome <= 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Cadastre receitas neste mês para ver a distribuição 50-30-20 do seu
-              orçamento.
+              Cadastre receitas neste mês ou defina sua renda mensal para ver a
+              distribuição 50-30-20 do seu orçamento.
             </Text>
+            <Button
+              label="Definir renda mensal"
+              onPress={() => setIncomeVisible(true)}
+              style={styles.incomeButton}
+            />
           </GlassSurface>
         )}
       </ScrollView>
@@ -407,6 +429,9 @@ export default function OrcamentoScreen() {
 
       {/* Explicação das categorias 50-30-20 (bottom sheet estilo Revolut) */}
       <BudgetInfoSheet visible={infoVisible} onClose={() => setInfoVisible(false)} />
+
+      {/* Edição da renda mensal declarada (base do orçamento) */}
+      <IncomeSheet visible={incomeVisible} onClose={() => setIncomeVisible(false)} />
     </FullScreenOverlay>
   );
 }
@@ -445,6 +470,15 @@ const styles = StyleSheet.create({
   },
   cardHint: {
     fontSize: FontSize.xs,
+  },
+  incomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  incomeButton: {
+    marginTop: Spacing.sm,
   },
   chartArea: {
     marginTop: Spacing.md,

@@ -11,6 +11,8 @@ import type {
   TransactionFilters,
   CreateTransferDTO,
   TransferResult,
+  BulkDeleteTransactionsDTO,
+  BulkCancelTransactionsResult,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -22,6 +24,7 @@ import {
   updateTransaction,
   payTransaction,
   cancelTransaction,
+  bulkCancelTransactions,
   cancelInstallmentGroup,
   cancelRecurrenceTransactionsFromDate,
   cancelAllRecurrenceTransactions,
@@ -105,6 +108,14 @@ export async function transactionRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         error: 'Bad Request',
         message: 'Informe conta OU cartao, nao ambos',
+        statusCode: 400,
+      });
+    }
+
+    if (body.status !== undefined && body.status !== 'PAGO' && body.status !== 'PENDENTE') {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Status deve ser PAGO ou PENDENTE',
         statusCode: 400,
       });
     }
@@ -375,14 +386,6 @@ export async function transactionRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!body.category_id) {
-      return reply.status(400).send({
-        error: 'Bad Request',
-        message: 'Categoria e obrigatoria',
-        statusCode: 400,
-      });
-    }
-
     if (!body.description) {
       return reply.status(400).send({
         error: 'Bad Request',
@@ -556,6 +559,45 @@ export async function transactionRoutes(app: FastifyInstance) {
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao cancelar transacao';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // POST /finance/transactions/bulk-delete - Cancel multiple transactions at once.
+  // Transacoes PAGO de conta sao canceladas com estorno do saldo; transferencias
+  // e PAGO de cartao sao puladas e retornadas em `skipped` com o motivo.
+  app.post<{
+    Body: BulkDeleteTransactionsDTO;
+    Reply: ({ success: boolean } & BulkCancelTransactionsResult) | ApiError;
+  }>('/finance/transactions/bulk-delete', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { ids } = request.body ?? {};
+
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string' || !id)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Informe uma lista de ids de transacoes',
+        statusCode: 400,
+      });
+    }
+
+    if (ids.length > 500) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Limite de 500 transacoes por exclusao em massa',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const result = await bulkCancelTransactions([...new Set(ids)], user.id, accessToken);
+      return { success: true, ...result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao excluir transacoes';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,

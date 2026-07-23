@@ -16,7 +16,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/atoms/icon-symbol';
-import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -101,7 +100,9 @@ export function BottomSheet({ visible, title, onClose, children }: BottomSheetPr
     }
   }, [visible, animateIn, animateOut, translateY, backdrop, screenHeight]);
 
-  // Arrastar para baixo na área da alça/cabeçalho fecha o sheet
+  // Arrastar para baixo fecha o sheet. O responder fica no painel inteiro
+  // (não só na alça): o gesto só é reivindicado em arrasto claramente vertical
+  // para baixo, então taps em chips/botões continuam chegando aos filhos.
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, gesture) =>
@@ -122,6 +123,7 @@ export function BottomSheet({ visible, title, onClose, children }: BottomSheetPr
           }).start();
         }
       },
+      onPanResponderTerminationRequest: () => true,
     })
   ).current;
 
@@ -143,39 +145,42 @@ export function BottomSheet({ visible, title, onClose, children }: BottomSheetPr
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
 
-        {/* Painel em Liquid Glass (camada funcional flutuante); o conteúdo
-            interno permanece plano — nunca vidro dentro de vidro */}
-        <Animated.View style={{ transform: [{ translateY }] }}>
-          <GlassSurface
-            variant="glass"
-            style={[
-              styles.sheetPanel,
-              { paddingBottom: Math.max(insets.bottom, Spacing.lg) + Spacing.sm },
-            ]}
-          >
-            <View {...panResponder.panHandlers}>
-              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-              <View style={styles.sheetHeader}>
-                <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.closeChip,
-                    {
-                      backgroundColor: isDark
-                        ? 'rgba(255,255,255,0.10)'
-                        : 'rgba(0,0,0,0.06)',
-                    },
-                  ]}
-                  onPress={onClose}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityLabel="Fechar"
-                >
-                  <IconSymbol name="xmark" size={15} color={colors.icon} />
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View style={styles.sheetBody}>{children}</View>
-          </GlassSurface>
+        {/* Painel sólido (mesmo padrão do sheet de data da tela de nova
+            transação): views RN puras — sem GlassView nativo, que causava
+            vazamento visual do conteúdo de trás e conflitos de toque no
+            arrasto. O panResponder no próprio painel torna qualquer área
+            arrastável para baixo. */}
+        <Animated.View
+          style={[
+            styles.sheetPanel,
+            {
+              backgroundColor: colors.surface,
+              paddingBottom: Math.max(insets.bottom, Spacing.lg) + Spacing.sm,
+              transform: [{ translateY }],
+            },
+          ]}
+          {...panResponder.panHandlers}
+        >
+          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity
+              style={[
+                styles.closeChip,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255,255,255,0.10)'
+                    : 'rgba(0,0,0,0.06)',
+                },
+              ]}
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel="Fechar"
+            >
+              <IconSymbol name="xmark" size={15} color={colors.icon} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.sheetBody}>{children}</View>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>

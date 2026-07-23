@@ -36,12 +36,16 @@ export function BudgetCard({ isBalanceVisible }: BudgetCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
 
-  const { budgetSummary, selectedMonth } = useFinance();
+  const { budgetSummary } = useFinance();
   const { profile } = useAuth();
-  const { points, total } = useMonthlySpendingSeries(selectedMonth);
+  // Card da home: sempre o mês corrente (como todo o dashboard do contexto)
+  const currentMonth = useMemo(() => new Date(), []);
+  const { points, total } = useMonthlySpendingSeries(currentMonth);
 
-  // Renda-base do orçamento: receitas lançadas no mês ou, na ausência delas,
-  // a renda declarada no onboarding (profile.monthly_income).
+  // Renda-base do orçamento: o backend já prioriza a renda declarada no
+  // perfil (total_income) e cai para as receitas do mês na ausência dela;
+  // profile.monthly_income aqui é só rede de segurança enquanto o dashboard
+  // ainda não carregou.
   const effectiveIncome =
     (budgetSummary?.total_income ?? 0) > 0
       ? budgetSummary!.total_income

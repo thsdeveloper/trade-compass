@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,10 +16,19 @@ import {
   createAccount as apiCreateAccount,
   updateAccount as apiUpdateAccount,
   deleteAccount as apiDeleteAccount,
+  getCreditCards,
+  createCreditCard as apiCreateCreditCard,
+  updateCreditCard as apiUpdateCreditCard,
+  deleteCreditCard as apiDeleteCreditCard,
   getDashboardSummary,
   getExpensesByCategory,
   getUpcomingPayments,
   getBudgetAllocation,
+  getTags,
+  createTag as apiCreateTag,
+  createTransfer as apiCreateTransfer,
+  createRecurrence as apiCreateRecurrence,
+  generateDueRecurrences,
 } from '@/lib/finance-api';
 import type {
   FinanceCategory,
@@ -26,10 +36,15 @@ import type {
   TransactionWithDetails,
   TransactionFormData,
   AccountFormData,
+  FinanceCreditCard,
+  CreditCardFormData,
   FinanceSummary,
   ExpensesByCategory,
   UpcomingPayment,
   BudgetSummary,
+  FinanceTag,
+  CreateTransferInput,
+  CreateRecurrenceInput,
 } from '@/types/finance';
 import type { UpdateAccountPayload } from '@/lib/finance-api';
 
@@ -37,21 +52,36 @@ interface FinanceContextType {
   transactions: TransactionWithDetails[];
   categories: FinanceCategory[];
   accounts: FinanceAccount[];
-  selectedMonth: Date;
+  creditCards: FinanceCreditCard[];
+  tags: FinanceTag[];
   isLoading: boolean;
   error: string | null;
+  /**
+   * Incrementado a cada mutação de transação (criar/transferir/recorrência).
+   * Fontes independentes do contexto (ex.: feed paginado da aba Transações)
+   * observam este contador para se atualizarem sem pull-to-refresh.
+   */
+  dataVersion: number;
   /** Flags de "primeira carga concluída" por fonte, para skeletons por seção */
   accountsLoaded: boolean;
   transactionsLoaded: boolean;
   dashboardLoaded: boolean;
-  setSelectedMonth: (date: Date) => void;
+  creditCardsLoaded: boolean;
   loadTransactions: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadAccounts: () => Promise<void>;
+  loadCreditCards: () => Promise<void>;
+  loadTags: () => Promise<void>;
   createTransaction: (data: TransactionFormData) => Promise<void>;
+  createTransfer: (data: CreateTransferInput) => Promise<void>;
+  createRecurrence: (data: CreateRecurrenceInput) => Promise<void>;
+  createTag: (name: string) => Promise<FinanceTag>;
   createAccount: (data: AccountFormData) => Promise<void>;
   updateAccount: (id: string, data: UpdateAccountPayload) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  createCreditCard: (data: CreditCardFormData) => Promise<void>;
+  updateCreditCard: (id: string, data: Partial<CreditCardFormData>) => Promise<void>;
+  deleteCreditCard: (id: string) => Promise<void>;
   refreshAll: () => Promise<void>;
   // Dashboard
   dashboardSummary: FinanceSummary | null;
@@ -74,12 +104,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   );
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [creditCards, setCreditCards] = useState<FinanceCreditCard[]>([]);
+  const [tags, setTags] = useState<FinanceTag[]>([]);
+  const [dataVersion, setDataVersion] = useState(0);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [transactionsLoaded, setTransactionsLoaded] = useState(false);
   const [dashboardLoaded, setDashboardLoaded] = useState(false);
+  const [creditCardsLoaded, setCreditCardsLoaded] = useState(false);
 
   // Dashboard state
   const [dashboardSummary, setDashboardSummary] = useState<FinanceSummary | null>(null);
@@ -106,12 +139,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     return `${year}-${month}`;
   }, []);
 
+  // Transações e dashboard do contexto são SEMPRE do mês corrente: é o que a
+  // home exibe. Telas com navegação de mês (orçamento, despesas por categoria)
+  // têm estado de mês próprio e buscam seus dados direto na API — navegar lá
+  // não pode refletir aqui.
   const loadTransactions = useCallback(async () => {
     if (!isLoggedIn) return;
     setIsLoading(true);
     setError(null);
     try {
-      const { start_date, end_date } = getMonthRange(selectedMonth);
+      const { start_date, end_date } = getMonthRange(new Date());
       const data = await getTransactions({ start_date, end_date });
       setTransactions(data);
     } catch (err) {
@@ -120,7 +157,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       setTransactionsLoaded(true);
     }
-  }, [isLoggedIn, selectedMonth, getMonthRange]);
+  }, [isLoggedIn, getMonthRange]);
 
   const loadCategories = useCallback(async () => {
     if (!isLoggedIn) return;
@@ -144,13 +181,85 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isLoggedIn]);
 
+  const loadCreditCards = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const data = await getCreditCards();
+      setCreditCards(data.filter((card) => card.is_active));
+    } catch (err) {
+      console.error('Erro ao carregar cartoes:', err);
+    } finally {
+      setCreditCardsLoaded(true);
+    }
+  }, [isLoggedIn]);
+
+  const loadTags = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const data = await getTags();
+      setTags(data);
+    } catch (err) {
+      console.error('Erro ao carregar tags:', err);
+    }
+  }, [isLoggedIn]);
+
+  const createTag = useCallback(async (name: string) => {
+    const tag = await apiCreateTag(name.trim());
+    setTags((prev) =>
+      [...prev, tag].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    );
+    return tag;
+  }, []);
+
+  const loadDashboard = useCallback(async () => {
+    if (!isLoggedIn) return;
+    setIsDashboardLoading(true);
+    setDashboardError(null);
+    try {
+      const month = getMonthString(new Date());
+      const [summary, expenses, upcoming, budget] = await Promise.all([
+        getDashboardSummary(month),
+        getExpensesByCategory(month),
+        getUpcomingPayments({ month }),
+        getBudgetAllocation(month),
+      ]);
+      setDashboardSummary(summary);
+      setExpensesByCategory(expenses);
+      setUpcomingPayments(upcoming);
+      setBudgetSummary(budget);
+      setDashboardLoaded(true);
+    } catch (err) {
+      setDashboardError(err instanceof Error ? err.message : 'Erro ao carregar dashboard');
+    } finally {
+      setIsDashboardLoading(false);
+    }
+  }, [isLoggedIn, getMonthString]);
+
+  /**
+   * Invalidação pós-mutação: toda criação de transação/transferência/
+   * recorrência recarrega o mês e o dashboard da home imediatamente, e o
+   * dataVersion avisa fontes independentes (feed paginado da aba Transações).
+   * `extras` cobre fontes atingidas só por algumas mutações (contas, cartões).
+   */
+  const invalidateAfterMutation = useCallback(
+    async (...extras: Promise<void>[]) => {
+      await Promise.all([loadTransactions(), loadDashboard(), ...extras]);
+      setDataVersion((v) => v + 1);
+    },
+    [loadTransactions, loadDashboard]
+  );
+
   const createTransaction = useCallback(
     async (data: TransactionFormData) => {
       setIsLoading(true);
       setError(null);
       try {
         await apiCreateTransaction(data);
-        await loadTransactions();
+        // Cartao mexe no limite disponivel; transacao ja PAGA mexe no saldo
+        const extras: Promise<void>[] = [];
+        if (data.credit_card_id) extras.push(loadCreditCards());
+        if (data.status === 'PAGO' && data.account_id) extras.push(loadAccounts());
+        await invalidateAfterMutation(...extras);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao criar transacao';
         setError(message);
@@ -159,7 +268,49 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     },
-    [loadTransactions]
+    [invalidateAfterMutation, loadCreditCards, loadAccounts]
+  );
+
+  // Transferência move saldo das duas contas na hora — recarrega contas junto
+  const createTransfer = useCallback(
+    async (data: CreateTransferInput) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiCreateTransfer(data);
+        await invalidateAfterMutation(loadAccounts());
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao criar transferencia';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [invalidateAfterMutation, loadAccounts]
+  );
+
+  // O POST de recorrência já cria a primeira ocorrência; transferência
+  // recorrente com início hoje/passado também move saldos
+  const createRecurrence = useCallback(
+    async (data: CreateRecurrenceInput) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiCreateRecurrence(data);
+        const extras: Promise<void>[] = [];
+        if (data.type === 'TRANSFERENCIA') extras.push(loadAccounts());
+        if (data.credit_card_id) extras.push(loadCreditCards());
+        await invalidateAfterMutation(...extras);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao criar recorrencia';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [invalidateAfterMutation, loadAccounts, loadCreditCards]
   );
 
   const createAccount = useCallback(
@@ -220,6 +371,60 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     [loadAccounts, loadTransactions]
   );
 
+  const createCreditCard = useCallback(
+    async (data: CreditCardFormData) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiCreateCreditCard(data);
+        await loadCreditCards();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao criar cartao';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadCreditCards]
+  );
+
+  const updateCreditCard = useCallback(
+    async (id: string, data: Partial<CreditCardFormData>) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiUpdateCreditCard(id, data);
+        await loadCreditCards();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao editar cartao';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadCreditCards]
+  );
+
+  const deleteCreditCard = useCallback(
+    async (id: string) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await apiDeleteCreditCard(id);
+        await loadCreditCards();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao excluir cartao';
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadCreditCards]
+  );
+
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -232,35 +437,33 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [loadTransactions, loadCategories, loadAccounts]);
 
-  const loadDashboard = useCallback(async () => {
-    if (!isLoggedIn) return;
-    setIsDashboardLoading(true);
-    setDashboardError(null);
-    try {
-      const month = getMonthString(selectedMonth);
-      const [summary, expenses, upcoming, budget] = await Promise.all([
-        getDashboardSummary(month),
-        getExpensesByCategory(month),
-        getUpcomingPayments({ month }),
-        getBudgetAllocation(month),
-      ]);
-      setDashboardSummary(summary);
-      setExpensesByCategory(expenses);
-      setUpcomingPayments(upcoming);
-      setBudgetSummary(budget);
-      setDashboardLoaded(true);
-    } catch (err) {
-      setDashboardError(err instanceof Error ? err.message : 'Erro ao carregar dashboard');
-    } finally {
-      setIsDashboardLoading(false);
-    }
-  }, [isLoggedIn, selectedMonth, getMonthString]);
+  // Materialização de recorrências vencidas: não há cron no backend, então o
+  // app dispara uma vez por sessão logo após o login. Fire-and-forget — falha
+  // aqui não pode travar o bootstrap; a próxima sessão tenta de novo.
+  const generateDueRanRef = useRef(false);
+  useEffect(() => {
+    if (!isLoggedIn || generateDueRanRef.current) return;
+    generateDueRanRef.current = true;
+    (async () => {
+      try {
+        const { generated } = await generateDueRecurrences();
+        if (generated > 0) {
+          await invalidateAfterMutation(loadAccounts());
+        }
+      } catch (err) {
+        console.error('Erro ao gerar recorrencias vencidas:', err);
+      }
+    })();
+  }, [isLoggedIn, invalidateAfterMutation, loadAccounts]);
 
   // Ao sair da conta, zera dados e flags para o próximo login recomeçar com
   // skeletons — e para não vazar dados de um usuário para outro.
   useEffect(() => {
     if (isLoggedIn) return;
+    generateDueRanRef.current = false;
+    setTags([]);
     setAccounts([]);
+    setCreditCards([]);
     setTransactions([]);
     setDashboardSummary(null);
     setExpensesByCategory([]);
@@ -269,6 +472,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     setAccountsLoaded(false);
     setTransactionsLoaded(false);
     setDashboardLoaded(false);
+    setCreditCardsLoaded(false);
   }, [isLoggedIn]);
 
   return (
@@ -277,20 +481,30 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         transactions,
         categories,
         accounts,
-        selectedMonth,
+        creditCards,
+        tags,
         isLoading,
         error,
+        dataVersion,
         accountsLoaded,
         transactionsLoaded,
         dashboardLoaded,
-        setSelectedMonth,
+        creditCardsLoaded,
         loadTransactions,
         loadCategories,
         loadAccounts,
+        loadCreditCards,
+        loadTags,
         createTransaction,
+        createTransfer,
+        createRecurrence,
+        createTag,
         createAccount,
         updateAccount,
         deleteAccount,
+        createCreditCard,
+        updateCreditCard,
+        deleteCreditCard,
         refreshAll,
         // Dashboard
         dashboardSummary,

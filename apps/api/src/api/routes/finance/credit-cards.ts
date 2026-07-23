@@ -24,8 +24,82 @@ import {
   getInvoicePaymentsByCard,
   getInvoicePaymentsByMonth,
 } from '../../../data/finance/invoice-payment-repository.js';
+import {
+  extractCreditCardFromInvoice,
+  type CreditCardExtractionResult,
+} from '../../../services/credit-card-extraction-service.js';
+import { createRateLimiter } from '../../middleware/simple-rate-limit.js';
+
+// Extração usa LLM (visão em PDF/imagem) — limite próprio, como na importação
+const checkExtractLimit = createRateLimiter(6, 60 * 1000);
+
+interface ExtractInvoiceBody {
+  kind: 'pdf' | 'image';
+  filename?: string;
+  content: string;
+  mime_type?: string;
+}
+
+// Base64 de ~10MB de arquivo + JSON overhead (mesmo teto do /finance/import)
+const EXTRACT_BODY_LIMIT = 15 * 1024 * 1024;
 
 export async function creditCardRoutes(app: FastifyInstance) {
+  // POST /finance/credit-cards/extract-invoice - Identifica os dados do
+  // cartao em uma fatura (PDF/imagem) com IA. Nao cria nada: o app decide
+  // entre cadastrar direto ou abrir o formulario pre-preenchido.
+  app.post<{
+    Body: ExtractInvoiceBody;
+    Reply: CreditCardExtractionResult | ApiError;
+  }>(
+    '/finance/credit-cards/extract-invoice',
+    { bodyLimit: EXTRACT_BODY_LIMIT },
+    async (request, reply) => {
+      const { user } = request as AuthenticatedRequest;
+      const body = request.body;
+
+      if (!checkExtractLimit(user.id)) {
+        return reply.status(429).send({
+          error: 'Too Many Requests',
+          message: 'Muitas leituras em sequencia. Aguarde um minuto e tente novamente.',
+          statusCode: 429,
+        });
+      }
+
+      if (body.kind !== 'pdf' && body.kind !== 'image') {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Tipo de arquivo invalido. Envie um PDF ou uma imagem da fatura.',
+          statusCode: 400,
+        });
+      }
+
+      if (!body.content || typeof body.content !== 'string') {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Conteudo do arquivo e obrigatorio',
+          statusCode: 400,
+        });
+      }
+
+      try {
+        const result = await extractCreditCardFromInvoice({
+          kind: body.kind,
+          filename: body.filename || 'fatura',
+          content: body.content,
+          mimeType: body.mime_type,
+        });
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao ler a fatura';
+        return reply.status(500).send({
+          error: 'Internal Server Error',
+          message,
+          statusCode: 500,
+        });
+      }
+    }
+  );
+
   // GET /finance/credit-cards - List user credit cards
   app.get<{
     Reply: FinanceCreditCard[] | ApiError;

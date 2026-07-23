@@ -29,6 +29,11 @@ export type PickerOption = {
   subtitle?: string;
   /** Filhos, para exibição hierárquica pai → filhos */
   children?: PickerOption[];
+  /**
+   * Linha não selecionável — vira cabeçalho de seção (ex.: "Contas"/"Cartões"
+   * no seletor unificado de origem do pagamento).
+   */
+  disabled?: boolean;
 };
 
 type PickerModalProps = {
@@ -129,6 +134,16 @@ export function PickerModal({
     const isChild = item.kind === 'child';
     const isParent = item.kind === 'parent';
     const selected = option.id === selectedId;
+
+    if (option.disabled) {
+      return (
+        <View style={[styles.row, styles.rowHeader]}>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+            {option.label}
+          </Text>
+        </View>
+      );
+    }
 
     const iconBadge = option.iconName ? (
       <View
@@ -273,6 +288,16 @@ const styles = StyleSheet.create({
   },
   rowChild: {
     paddingLeft: Spacing['3xl'],
+  },
+  rowHeader: {
+    paddingBottom: Spacing.xs,
+    paddingTop: Spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   iconBadge: {
     width: 36,

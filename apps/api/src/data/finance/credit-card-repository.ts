@@ -152,7 +152,14 @@ export async function updateCreditCardAvailableLimit(
     throw new Error('Cartao nao encontrado');
   }
 
-  const newLimit = card.available_limit + delta;
+  // Clamp em [0, total_limit]: fatura importada pode exceder o limite
+  // cadastrado (o banco ja aprovou as compras) e o pagamento da fatura pode
+  // devolver mais do que o app chegou a debitar — o disponivel nunca fica
+  // negativo nem acima do limite total.
+  const newLimit = Math.min(
+    card.total_limit,
+    Math.max(0, card.available_limit + delta)
+  );
 
   const { data, error } = await client
     .from(TABLE)

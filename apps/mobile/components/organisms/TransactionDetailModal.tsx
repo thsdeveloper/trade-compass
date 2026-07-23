@@ -31,6 +31,7 @@ import { getCreditCards, payTransaction, updateTransaction } from '@/lib/finance
 import {
   formatFullDate,
   getStatusColor,
+  invoiceMonthLabel,
   TRANSACTION_STATUS_LABELS,
   ACCOUNT_TYPE_LABELS,
   type FinanceCategory,
@@ -404,6 +405,7 @@ export function TransactionDetailModal({
           ...current,
           account_id: source.id,
           credit_card_id: null,
+          credit_card: null,
           account,
         });
       } else {
@@ -411,6 +413,7 @@ export function TransactionDetailModal({
           ...current,
           account_id: null,
           credit_card_id: source.id,
+          credit_card: creditCards.find((c) => c.id === source.id) ?? null,
           account: undefined,
         });
       }
@@ -428,7 +431,7 @@ export function TransactionDetailModal({
         setError(err instanceof Error ? err.message : 'Erro ao alterar conta');
       }
     },
-    [current, accounts, loadTransactions]
+    [current, accounts, creditCards, loadTransactions]
   );
 
   const handleSaveNotes = useCallback(async () => {
@@ -485,20 +488,31 @@ export function TransactionDetailModal({
 
   const isIncome = current.type === 'RECEITA';
   const isTransfer = current.type === 'TRANSFERENCIA';
+  const isCardTransaction = !!current.credit_card_id;
   const isPaid = current.status === 'PAGO';
-  const isPayable = !isTransfer && (current.status === 'PENDENTE' || current.status === 'VENCIDO');
+  const isOpen = current.status === 'PENDENTE' || current.status === 'VENCIDO';
+  // Compra de cartão liquida pelo pagamento da fatura, nunca individualmente
+  const isPayable = !isTransfer && !isCardTransaction && isOpen;
   // Regra do backend: transação paga não altera valor, conta, tipo ou data
   const canEditMoneyFields = !isPaid && !isTransfer;
+
+  // Relação embutida no GET; o fallback cobre respostas antigas em cache
+  const selectedCard =
+    current.credit_card ??
+    (current.credit_card_id
+      ? creditCards.find((c) => c.id === current.credit_card_id)
+      : undefined);
 
   const statusColor = getStatusColor(current.status);
   const statusLabel =
     isPaid && current.payment_date
       ? `Pago em ${formatFullDate(current.payment_date)}`
-      : TRANSACTION_STATUS_LABELS[current.status];
-
-  const selectedCard = current.credit_card_id
-    ? creditCards.find((c) => c.id === current.credit_card_id)
-    : undefined;
+      : isCardTransaction && isOpen && selectedCard
+        ? `Lançamento para a fatura de ${invoiceMonthLabel(
+            selectedCard,
+            new Date(current.due_date.split('T')[0] + 'T12:00:00')
+          )}`
+        : TRANSACTION_STATUS_LABELS[current.status];
 
   const separator = (
     <View style={[styles.rowSeparator, { backgroundColor: isDark ? '#374151' : '#e5e7eb' }]} />

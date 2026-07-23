@@ -53,6 +53,7 @@ import type {
   DetectStatementResponse,
   ImportPreviewTransaction,
   ImportTarget,
+  InvoiceAdjustment,
   PickedStatementFile,
 } from '@/types/import';
 import type { FinanceAccount, FinanceCreditCard } from '@/types/finance';
@@ -60,6 +61,10 @@ import { formatCurrency } from '@/types/finance';
 
 const NOTA_GRADIENT = ['#0D9488', '#14B8A6', '#2DD4BF'] as const;
 const NOTA_ACCENT = '#14B8A6';
+// Balão do usuário na identidade teal do Nota, não no azul primário do app.
+// Teal-700 (mais escuro que o acento dos ícones) para manter contraste AA
+// (~5,4:1) com o texto branco do balão.
+const NOTA_BUBBLE = '#0F766E';
 // Espectro do anel "IA" na identidade teal da Nota (último stop repete o
 // primeiro para o anel girar sem emenda)
 const NOTA_RING_GRADIENT = [
@@ -109,6 +114,8 @@ interface PendingImport {
   transactions?: ImportPreviewTransaction[];
   /** Quantas transações do arquivo ficaram de fora por já terem sido importadas */
   alreadyImportedCount?: number;
+  /** Saldo "fatura anterior e pagamentos" da fatura (negativo = crédito) */
+  invoiceAdjustment?: InvoiceAdjustment | null;
   /** id da mensagem-resumo no chat (para marcar o resultado após o commit) */
   summaryMessageId?: string;
 }
@@ -404,7 +411,17 @@ export default function NotaChatScreen() {
       setImportPhase('parsing');
 
       try {
-        const { transactions } = await parseStatement(pendingImport.file, target);
+        const parseResponse = await parseStatement(pendingImport.file, target);
+        const { transactions } = parseResponse;
+        // Ajuste da fatura anterior: só existe em fatura de cartão e precisa
+        // do mês de referência para ser aplicado no confirm
+        const invoiceAdjustment: InvoiceAdjustment | null =
+          parseResponse.invoice_month && parseResponse.invoice_previous_balance
+            ? {
+                invoice_month: parseResponse.invoice_month,
+                amount: parseResponse.invoice_previous_balance,
+              }
+            : null;
 
         if (transactions.length === 0) {
           setMessages((prev) =>
@@ -473,6 +490,7 @@ export default function NotaChatScreen() {
                 targetLabel,
                 transactions: fresh,
                 alreadyImportedCount: alreadyImported,
+                invoiceAdjustment,
                 summaryMessageId: assistantId,
               }
             : prev
@@ -581,7 +599,7 @@ export default function NotaChatScreen() {
         return (
           <View style={styles.userRow}>
             <View
-              style={[styles.bubble, styles.userBubble, { backgroundColor: colors.primary }]}
+              style={[styles.bubble, styles.userBubble, { backgroundColor: NOTA_BUBBLE }]}
             >
               {item.imageUri && (
                 <Image source={{ uri: item.imageUri }} style={styles.attachedImage} />
@@ -1038,6 +1056,7 @@ export default function NotaChatScreen() {
           targetLabel={pendingImport.targetLabel ?? ''}
           transactions={pendingImport.transactions}
           alreadyImportedCount={pendingImport.alreadyImportedCount ?? 0}
+          invoiceAdjustment={pendingImport.invoiceAdjustment ?? null}
           categories={categories}
           accounts={activeAccounts}
           onClose={() => setReviewVisible(false)}

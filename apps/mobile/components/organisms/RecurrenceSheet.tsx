@@ -162,7 +162,7 @@ export function RecurrenceSheet({
               if (Platform.OS !== 'ios') setShowEndPicker(false);
               if (date) setEndDate(toISODate(date));
             }}
-            themeVariant="dark"
+            themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
             locale="pt-BR"
             style={styles.datePicker}
           />

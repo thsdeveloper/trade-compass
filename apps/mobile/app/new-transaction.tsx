@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -71,6 +71,9 @@ export default function NewTransactionScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
+
+  // Rascunho vindo da Nota (chat): abre o formulário já preenchido para revisão
+  const { draft: draftParam } = useLocalSearchParams<{ draft?: string }>();
 
   const {
     categories,
@@ -175,12 +178,28 @@ export default function NewTransactionScreen() {
         );
         if (match) setCategoryId(match.id);
       }
+      if (draft.notes) setNotes(draft.notes);
     },
     [categories],
   );
 
   const { isScanning, scanFromCamera, scanFromGallery, scanFromQr } =
     useReceiptScanner({ onDraft: applyDraft });
+
+  // Aplica o rascunho recebido por navegação (fluxo da Nota) uma única vez,
+  // após as categorias carregarem — assim a categoria sugerida é reconhecida.
+  const draftApplied = useRef(false);
+  useEffect(() => {
+    if (draftApplied.current || !draftParam || categories.length === 0) return;
+    try {
+      const parsed = JSON.parse(draftParam) as TransactionDraft;
+      applyDraft(parsed);
+      draftApplied.current = true;
+    } catch {
+      // Rascunho inválido: ignora e mantém o formulário em branco
+      draftApplied.current = true;
+    }
+  }, [draftParam, categories, applyDraft]);
 
   const openScanOptions = useCallback(() => {
     Keyboard.dismiss();
@@ -730,7 +749,7 @@ export default function NewTransactionScreen() {
                   setShowDatePicker(false);
                 }
               }}
-              themeVariant="dark"
+              themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
               locale="pt-BR"
               style={styles.datePicker}
             />

@@ -13,6 +13,8 @@ export interface SpendingPoint {
 interface MonthlySpendingSeries {
   points: SpendingPoint[];
   total: number;
+  /** Despesas reais ainda sem um bucket do orçamento 50-30-20. */
+  uncategorizedTotal: number;
   isLoading: boolean;
 }
 
@@ -28,6 +30,7 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
   const { dataVersion, accounts } = useFinance();
   const [points, setPoints] = useState<SpendingPoint[]>([]);
   const [total, setTotal] = useState(0);
+  const [uncategorizedTotal, setUncategorizedTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const monthKey = `${month.getFullYear()}-${month.getMonth()}`;
@@ -64,6 +67,7 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
       );
 
       const byDay = new Map<number, number>();
+      let uncategorized = 0;
       for (const transaction of transactions) {
         // Perna de transferência entre contas próprias não é gasto: tem type
         // DESPESA no banco, mas o dinheiro só mudou de conta (o backend já a
@@ -73,8 +77,19 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
         if (transaction.account_id && excludedAccountIds.has(transaction.account_id)) {
           continue;
         }
+
+        // "Ajuste de saldo" é uma correção técnica do saldo da conta, não uma
+        // compra ou pagamento feito pelo usuário.
+        if (transaction.category.name === 'Ajuste de saldo') continue;
+
         const day = parseInt(transaction.due_date.slice(8, 10), 10);
+        // No mês corrente, lançamentos futuros só entram quando o dia chegar.
+        if (day > lastDay) continue;
+
         byDay.set(day, (byDay.get(day) ?? 0) + transaction.amount);
+        if (!transaction.category.budget_category) {
+          uncategorized += transaction.amount;
+        }
       }
 
       let cumulative = 0;
@@ -86,9 +101,11 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
 
       setPoints(series);
       setTotal(cumulative);
+      setUncategorizedTotal(uncategorized);
     } catch {
       setPoints([]);
       setTotal(0);
+      setUncategorizedTotal(0);
     } finally {
       setIsLoading(false);
     }
@@ -108,5 +125,5 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
     load({ silent: true });
   }, [dataVersion, load]);
 
-  return { points, total, isLoading };
+  return { points, total, uncategorizedTotal, isLoading };
 }

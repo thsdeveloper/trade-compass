@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -20,15 +22,24 @@ import { GlassSurface } from '@/components/atoms/GlassSurface';
 import { Button } from '@/components/atoms/Button';
 import { BankLogo } from '@/components/atoms/BankLogo';
 import { MoneyText } from '@/components/atoms/MoneyText';
+import { AmountInput, type AmountInputHandle } from '@/components/molecules/AmountInput';
 import { resolveBankKey } from '@/lib/bancos-brasil';
 import { PickerModal, type PickerOption } from '@/components/organisms/PickerModal';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { BottomSheet } from '@/components/organisms/BottomSheet';
+import { ConfirmDialog } from '@/components/organisms/ConfirmDialog';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFinance } from '@/contexts/FinanceContext';
-import { getCreditCards, payTransaction, updateTransaction } from '@/lib/finance-api';
 import {
+  deleteTransaction,
+  getCreditCards,
+  payTransaction,
+  unpayTransaction,
+  updateTransaction,
+} from '@/lib/finance-api';
+import {
+  effectiveTransactionStatus,
   formatFullDate,
   getStatusColor,
   invoiceMonthLabel,
@@ -247,7 +258,8 @@ export function TransactionDetailModal({
   const isDark = colorScheme === 'dark';
   const reduceMotion = useReducedMotion();
 
-  const { categories, accounts, loadTransactions } = useFinance();
+  const { categories, accounts, loadTransactions, loadAccounts, loadCreditCards } =
+    useFinance();
 
   // Cópia local: edições refletem na hora, sem esperar o refetch da lista
   const [current, setCurrent] = useState<TransactionWithDetails | null>(transaction);
@@ -256,21 +268,44 @@ export function TransactionDetailModal({
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const [notesSheetOpen, setNotesSheetOpen] = useState(false);
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [amountSheetOpen, setAmountSheetOpen] = useState(false);
+  const [descSheetOpen, setDescSheetOpen] = useState(false);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
+  const [descDraft, setDescDraft] = useState('');
   const [dateDraft, setDateDraft] = useState(new Date());
-  const [isPaying, setIsPaying] = useState(false);
+  const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isSavingAmount, setIsSavingAmount] = useState(false);
+  const [isSavingDesc, setIsSavingDesc] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const amountRef = useRef<AmountInputHandle>(null);
 
   useEffect(() => {
     setCurrent(transaction);
     setNotesDraft(transaction?.notes ?? '');
+    setDescDraft(transaction?.description ?? '');
     setError(null);
     setCategorySheetOpen(false);
     setAccountSheetOpen(false);
     setNotesSheetOpen(false);
     setDateSheetOpen(false);
+    setAmountSheetOpen(false);
+    setDescSheetOpen(false);
+    setConfirmDeleteVisible(false);
   }, [transaction]);
+
+  // Preenche o editor de valor quando o sheet abre (o AmountInput só monta então)
+  useEffect(() => {
+    if (amountSheetOpen && current) {
+      const timer = setTimeout(
+        () => amountRef.current?.setCents(Math.round(current.amount * 100)),
+        50
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [amountSheetOpen, current]);
 
   useEffect(() => {
     if (visible) {
@@ -339,31 +374,45 @@ export function TransactionDetailModal({
     return opts;
   }, [accounts, creditCards, current]);
 
-  const handleMarkPaid = useCallback(async () => {
-    if (!current || isPaying) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setError(null);
-    setIsPaying(true);
-    try {
-      const updated = await payTransaction(current.id);
-      setCurrent((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: updated.status,
-              payment_date: updated.payment_date,
-              paid_amount: updated.paid_amount,
-            }
-          : prev
-      );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      loadTransactions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao marcar como paga');
-    } finally {
-      setIsPaying(false);
-    }
-  }, [current, isPaying, loadTransactions]);
+  // Alterna pago/não pago. Pagar aplica o efeito no saldo; desfazer o estorna.
+  const handleTogglePaid = useCallback(
+    async (next: boolean) => {
+      if (!current || isTogglingPaid) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setError(null);
+      setIsTogglingPaid(true);
+      try {
+        const updated = next
+          ? await payTransaction(current.id)
+          : await unpayTransaction(current.id);
+        setCurrent((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: updated.status,
+                payment_date: updated.payment_date,
+                paid_amount: updated.paid_amount,
+              }
+            : prev
+        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        loadTransactions();
+        // Pagar/estornar altera o saldo da conta: recarrega para refletir
+        loadAccounts();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : next
+              ? 'Erro ao marcar como paga'
+              : 'Erro ao desfazer pagamento'
+        );
+      } finally {
+        setIsTogglingPaid(false);
+      }
+    },
+    [current, isTogglingPaid, loadTransactions, loadAccounts]
+  );
 
   const handleSelectCategory = useCallback(
     async (category: FinanceCategory) => {
@@ -484,6 +533,94 @@ export function TransactionDetailModal({
     setDateSheetOpen(true);
   }, [current]);
 
+  const handleSaveAmount = useCallback(async () => {
+    if (!current || isSavingAmount) return;
+    const newAmount = (amountRef.current?.getCents() ?? 0) / 100;
+    if (newAmount <= 0) {
+      setError('Informe um valor maior que zero');
+      return;
+    }
+    if (newAmount === current.amount) {
+      setAmountSheetOpen(false);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(null);
+    setIsSavingAmount(true);
+    const previous = current;
+    // Numa transação paga, o valor efetivado (paid_amount) acompanha o novo valor
+    const isPaidTx = current.status === 'PAGO';
+    setCurrent({
+      ...current,
+      amount: newAmount,
+      paid_amount: isPaidTx ? newAmount : current.paid_amount,
+    });
+    try {
+      await updateTransaction(current.id, { amount: newAmount });
+      setAmountSheetOpen(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      loadTransactions();
+      // Valor de transação paga ou de cartão altera saldo/limite: recarrega ambos
+      loadAccounts();
+      loadCreditCards();
+    } catch (err) {
+      setCurrent(previous);
+      setError(err instanceof Error ? err.message : 'Erro ao alterar valor');
+    } finally {
+      setIsSavingAmount(false);
+    }
+  }, [current, isSavingAmount, loadTransactions, loadAccounts, loadCreditCards]);
+
+  const handleSaveDescription = useCallback(async () => {
+    if (!current || isSavingDesc) return;
+    const trimmed = descDraft.trim();
+    if (!trimmed) {
+      setError('A descrição não pode ficar vazia');
+      return;
+    }
+    if (trimmed === current.description) {
+      setDescSheetOpen(false);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(null);
+    setIsSavingDesc(true);
+    const previous = current;
+    setCurrent({ ...current, description: trimmed });
+    try {
+      await updateTransaction(current.id, { description: trimmed });
+      setDescSheetOpen(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      loadTransactions();
+    } catch (err) {
+      setCurrent(previous);
+      setError(err instanceof Error ? err.message : 'Erro ao alterar descrição');
+    } finally {
+      setIsSavingDesc(false);
+    }
+  }, [current, isSavingDesc, descDraft, loadTransactions]);
+
+  const handleDelete = useCallback(async () => {
+    if (!current || isDeleting) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsDeleting(true);
+    try {
+      await deleteTransaction(current.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setConfirmDeleteVisible(false);
+      // Exclusão de transação paga estorna o saldo; de cartão devolve o limite
+      loadTransactions();
+      loadAccounts();
+      loadCreditCards();
+      onClose();
+    } catch (err) {
+      setConfirmDeleteVisible(false);
+      setError(err instanceof Error ? err.message : 'Erro ao excluir transação');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [current, isDeleting, loadTransactions, loadAccounts, loadCreditCards, onClose]);
+
   if (!current) return null;
 
   const isIncome = current.type === 'RECEITA';
@@ -491,10 +628,14 @@ export function TransactionDetailModal({
   const isCardTransaction = !!current.credit_card_id;
   const isPaid = current.status === 'PAGO';
   const isOpen = current.status === 'PENDENTE' || current.status === 'VENCIDO';
-  // Compra de cartão liquida pelo pagamento da fatura, nunca individualmente
-  const isPayable = !isTransfer && !isCardTransaction && isOpen;
-  // Regra do backend: transação paga não altera valor, conta, tipo ou data
-  const canEditMoneyFields = !isPaid && !isTransfer;
+  // Compra de cartão liquida pela fatura; transferência é sempre efetuada.
+  // Nas demais, o usuário alterna pago/não pago (com efeito no saldo).
+  const canTogglePaid = !isTransfer && !isCardTransaction;
+  // Valor, conta e data são editáveis mesmo em transação paga: o backend
+  // reconcilia saldo/limite. Só transferências ficam de fora (fluxo próprio).
+  const canEditMoneyFields = !isTransfer;
+  // Transferência é excluída pelo seu próprio fluxo (par de lançamentos)
+  const canDelete = !isTransfer;
 
   // Relação embutida no GET; o fallback cobre respostas antigas em cache
   const selectedCard =
@@ -503,7 +644,14 @@ export function TransactionDetailModal({
       ? creditCards.find((c) => c.id === current.credit_card_id)
       : undefined);
 
-  const statusColor = getStatusColor(current.status);
+  // Status para exibição: uma conta em aberto e vencida vira "Vencido" mesmo
+  // gravada como PENDENTE (o sistema não reescreve por data). Cartão fica fora.
+  const displayStatus = effectiveTransactionStatus(
+    current.status,
+    current.due_date,
+    isCardTransaction
+  );
+  const statusColor = getStatusColor(displayStatus);
   const statusLabel =
     isPaid && current.payment_date
       ? `Pago em ${formatFullDate(current.payment_date)}`
@@ -512,7 +660,7 @@ export function TransactionDetailModal({
             selectedCard,
             new Date(current.due_date.split('T')[0] + 'T12:00:00')
           )}`
-        : TRANSACTION_STATUS_LABELS[current.status];
+        : TRANSACTION_STATUS_LABELS[displayStatus];
 
   const separator = (
     <View style={[styles.rowSeparator, { backgroundColor: isDark ? '#374151' : '#e5e7eb' }]} />
@@ -536,13 +684,26 @@ export function TransactionDetailModal({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Valor animado + status */}
+          {/* Valor animado + status. Toque abre o editor de valor. */}
           <View style={styles.amountSection}>
-            <MoneyText
-              value={animatedAmount}
-              type={current.type === 'RECEITA' ? 'RECEITA' : null}
-              style={styles.amountValue}
-            />
+            <Pressable
+              onPress={() => setAmountSheetOpen(true)}
+              disabled={!canEditMoneyFields}
+              accessibilityRole="button"
+              accessibilityLabel="Alterar valor"
+              style={({ pressed }) => [styles.amountPress, pressed && styles.cardPressed]}
+            >
+              <MoneyText
+                value={animatedAmount}
+                type={current.type === 'RECEITA' ? 'RECEITA' : null}
+                style={styles.amountValue}
+              />
+              {canEditMoneyFields && (
+                <View style={styles.amountPencil}>
+                  <IconSymbol name="pencil" size={16} color={colors.icon} />
+                </View>
+              )}
+            </Pressable>
             <View
               style={[
                 styles.statusBadge,
@@ -556,15 +717,44 @@ export function TransactionDetailModal({
             </View>
           </View>
 
-          {/* Ação principal: pagar */}
-          {isPayable && (
-            <Button
-              label="Marcar como paga"
-              icon="checkmark"
-              onPress={handleMarkPaid}
-              loading={isPaying}
-              accessibilityLabel="Marcar como paga"
-            />
+          {/* Pago/não pago: alternar aplica ou estorna o efeito no saldo */}
+          {canTogglePaid && (
+            <GlassSurface
+              variant="material"
+              style={[
+                styles.card,
+                styles.paidCard,
+                {
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)',
+                },
+              ]}
+            >
+              <View style={styles.paidText}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>
+                  {isIncome ? 'Recebido' : 'Pago'}
+                </Text>
+                <Text style={[styles.paidHint, { color: colors.textSecondary }]}>
+                  {isPaid
+                    ? isIncome
+                      ? 'Entrou no saldo da conta'
+                      : 'Saiu do saldo da conta'
+                    : isIncome
+                      ? 'Ainda não recebido — não afeta o saldo'
+                      : 'Ainda não pago — não afeta o saldo'}
+                </Text>
+              </View>
+              {isTogglingPaid ? (
+                <ActivityIndicator color={colors.success} />
+              ) : (
+                <Switch
+                  value={isPaid}
+                  onValueChange={handleTogglePaid}
+                  trackColor={{ true: colors.success }}
+                  accessibilityLabel={isIncome ? 'Recebido' : 'Pago'}
+                />
+              )}
+            </GlassSurface>
           )}
 
           {error && (
@@ -585,6 +775,32 @@ export function TransactionDetailModal({
               },
             ]}
           >
+            {/* Descrição (editável) */}
+            <TouchableOpacity
+              style={styles.detailRow}
+              onPress={() => {
+                setDescDraft(current.description);
+                setDescSheetOpen(true);
+              }}
+              accessibilityLabel="Alterar descrição"
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                Descrição
+              </Text>
+              <View style={styles.detailValueRow}>
+                <Text
+                  style={[styles.detailValue, { color: colors.text }]}
+                  numberOfLines={1}
+                >
+                  {current.description}
+                </Text>
+                <IconSymbol name="chevron.right" size={16} color={colors.icon} />
+              </View>
+            </TouchableOpacity>
+
+            {separator}
+
             {/* Categoria (editável, exceto em transferências) */}
             <TouchableOpacity
               style={styles.detailRow}
@@ -728,6 +944,18 @@ export function TransactionDetailModal({
               </Text>
             </GlassSurface>
           </Pressable>
+
+          {/* Excluir: se a transação já foi efetuada, o valor volta para a conta */}
+          {canDelete && (
+            <Button
+              label="Excluir transação"
+              variant="destructive"
+              icon="trash-outline"
+              onPress={() => setConfirmDeleteVisible(true)}
+              accessibilityLabel="Excluir transação"
+              style={styles.deleteButton}
+            />
+          )}
         </ScrollView>
 
         {/* Modal padrão: alterar categoria (busca, ícones coloridos, mãe → filhos) */}
@@ -806,6 +1034,7 @@ export function TransactionDetailModal({
                 mode="date"
                 display="spinner"
                 locale="pt-BR"
+                themeVariant={isDark ? 'dark' : 'light'}
                 onChange={(_event, date) => {
                   if (date) setDateDraft(date);
                 }}
@@ -835,6 +1064,68 @@ export function TransactionDetailModal({
             />
           )
         )}
+
+        {/* Sheet: valor (mesmo editor da tela de nova transação) */}
+        <BottomSheet
+          visible={amountSheetOpen}
+          title="Valor"
+          onClose={() => setAmountSheetOpen(false)}
+        >
+          <View style={styles.notesSheetBody}>
+            <AmountInput
+              ref={amountRef}
+              color={current.type === 'RECEITA' ? colors.success : colors.text}
+              autoFocus
+            />
+            <Button
+              label="Atualizar"
+              onPress={handleSaveAmount}
+              loading={isSavingAmount}
+              accessibilityLabel="Atualizar valor"
+            />
+          </View>
+        </BottomSheet>
+
+        {/* Sheet: descrição */}
+        <BottomSheet
+          visible={descSheetOpen}
+          title="Descrição"
+          onClose={() => setDescSheetOpen(false)}
+        >
+          <View style={styles.notesSheetBody}>
+            <TextInput
+              style={[styles.descInput, { backgroundColor: colors.card, color: colors.text }]}
+              value={descDraft}
+              onChangeText={setDescDraft}
+              placeholder="Descrição da transação"
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveDescription}
+            />
+            <Button
+              label="Atualizar"
+              onPress={handleSaveDescription}
+              loading={isSavingDesc}
+              accessibilityLabel="Atualizar descrição"
+            />
+          </View>
+        </BottomSheet>
+
+        {/* Excluir: destrutivo e irreversível — sempre confirma */}
+        <ConfirmDialog
+          visible={confirmDeleteVisible}
+          title="Excluir transação?"
+          message={
+            current.status === 'PAGO' && current.account_id
+              ? 'A transação será removida e o valor voltará para o saldo da conta.'
+              : 'A transação será removida. Essa ação não pode ser desfeita.'
+          }
+          confirmLabel="Excluir"
+          icon="trash"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDeleteVisible(false)}
+        />
       </FullScreenOverlay>
     </Modal>
   );
@@ -905,6 +1196,27 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     fontVariant: ['tabular-nums'],
   },
+  amountPress: {
+    // O valor fica centralizado; o lápis flutua à direita sem deslocá-lo
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  amountPencil: {
+    position: 'absolute',
+    right: 0,
+  },
+  deleteButton: {
+    marginTop: Spacing.sm,
+  },
+  descInput: {
+    minHeight: 52,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    fontSize: FontSize.md,
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -945,6 +1257,18 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
+  },
+  paidCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paidText: {
+    flex: 1,
+    gap: 2,
+  },
+  paidHint: {
+    fontSize: FontSize.sm,
   },
   detailRow: {
     flexDirection: 'row',

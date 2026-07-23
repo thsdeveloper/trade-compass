@@ -5,7 +5,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol, IconSymbolName } from '@/components/atoms/icon-symbol';
 import { BankLogo } from '@/components/atoms/BankLogo';
 import { MoneyText } from '@/components/atoms/MoneyText';
-import type { TransactionWithDetails } from '@/types/finance';
+import { isTransactionOverdue, type TransactionWithDetails } from '@/types/finance';
 
 interface TransactionListItemProps {
   transaction: TransactionWithDetails;
@@ -203,6 +203,13 @@ export const TransactionListItem = memo(function TransactionListItem({
   const accountInitial = account?.name?.trim().charAt(0).toUpperCase();
   const creditCard = transaction.credit_card;
   const isCardTransaction = !!transaction.credit_card_id;
+  // Em aberto e com vencimento passado: sinaliza "Vencida" (o status gravado
+  // pode ainda ser PENDENTE — o sistema não reescreve por data). Cartão fora.
+  const overdue = isTransactionOverdue(
+    transaction.status,
+    transaction.due_date,
+    isCardTransaction
+  );
 
   return (
     <TouchableOpacity
@@ -285,6 +292,11 @@ export const TransactionListItem = memo(function TransactionListItem({
             style={[styles.subtitle, { color: colors.textSecondary }]}
             numberOfLines={1}
           >
+            {overdue && (
+              <Text style={{ color: colors.danger, fontWeight: FontWeight.semibold }}>
+                Vencida •{' '}
+              </Text>
+            )}
             {formatItemDate(transaction.due_date)} • {transaction.category.name}
           </Text>
           {account?.name ? (

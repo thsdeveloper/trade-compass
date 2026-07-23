@@ -23,6 +23,7 @@ import {
   createInstallmentTransactions,
   updateTransaction,
   payTransaction,
+  unpayTransaction,
   cancelTransaction,
   bulkCancelTransactions,
   cancelInstallmentGroup,
@@ -466,20 +467,15 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      // Se a transacao esta paga, bloquear campos criticos
-      if (existing.status === 'PAGO') {
-        const blockedFields = ['amount', 'account_id', 'credit_card_id', 'type', 'due_date'];
-        const attemptedBlockedFields = blockedFields.filter(
-          (field) => updates[field as keyof UpdateTransactionDTO] !== undefined
-        );
-
-        if (attemptedBlockedFields.length > 0) {
-          return reply.status(400).send({
-            error: 'Bad Request',
-            message: `Transacoes pagas nao podem ter os seguintes campos alterados: ${attemptedBlockedFields.join(', ')}. Apenas categoria, descricao e notas podem ser editados.`,
-            statusCode: 400,
-          });
-        }
+      // Numa transacao paga o tipo permanece imutavel (mudar RECEITA<->DESPESA
+      // inverteria o efeito no saldo). Valor, conta e data podem ser editados:
+      // o repositorio reconcilia saldo e limite conforme a alteracao.
+      if (existing.status === 'PAGO' && updates.type !== undefined) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'O tipo de uma transacao paga nao pode ser alterado.',
+          statusCode: 400,
+        });
       }
 
       const transaction = await updateTransaction(id, user.id, updates, accessToken);
@@ -519,6 +515,28 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
   });
 
+  // PATCH /finance/transactions/:id/unpay - Desfaz o pagamento (estorna o saldo)
+  app.patch<{
+    Params: { id: string };
+    Reply: FinanceTransaction | ApiError;
+  }>('/finance/transactions/:id/unpay', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+
+    try {
+      const transaction = await unpayTransaction(id, user.id, accessToken);
+      return transaction;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao desfazer pagamento';
+      const status = message.includes('nao encontrada') ? 404 : 400;
+      return reply.status(status).send({
+        error: status === 404 ? 'Not Found' : 'Bad Request',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
   // DELETE /finance/transactions/:id - Cancel transaction
   app.delete<{
     Params: { id: string };
@@ -547,14 +565,8 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      if (transaction.status === 'PAGO') {
-        return reply.status(400).send({
-          error: 'Bad Request',
-          message: 'Transacoes ja pagas nao podem ser canceladas. Crie um estorno se necessario.',
-          statusCode: 400,
-        });
-      }
-
+      // Transacoes pagas podem ser excluidas: cancelTransaction estorna o saldo
+      // da conta (o valor volta) e devolve o limite do cartao, se houver.
       await cancelTransaction(id, user.id, accessToken);
       return { success: true };
     } catch (err) {

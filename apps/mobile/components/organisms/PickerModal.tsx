@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -42,7 +42,12 @@ type PickerModalProps = {
   title: string;
   options: PickerOption[];
   selectedId: string | null;
+  /** IDs marcados quando o seletor opera em modo de seleção múltipla. */
+  selectedIds?: string[];
+  multiple?: boolean;
   onSelect: (id: string) => void;
+  /** Confirma a seleção múltipla sem tratar cada toque como conclusão. */
+  onConfirm?: () => void;
   searchPlaceholder?: string;
   /** Espelha o termo digitado para quem busca no servidor (ex.: catálogo de bancos). */
   onQueryChange?: (query: string) => void;
@@ -52,6 +57,8 @@ type PickerModalProps = {
   isLoading?: boolean;
   /** Texto quando não há resultado (ou mensagem de erro). */
   emptyText?: string;
+  /** Abre o teclado automaticamente; pode ser desligado em seletores sobre outra folha. */
+  autoFocusSearch?: boolean;
 };
 
 type Row =
@@ -96,18 +103,32 @@ export function PickerModal({
   title,
   options,
   selectedId,
+  selectedIds = [],
+  multiple = false,
   onSelect,
+  onConfirm,
   searchPlaceholder = 'Buscar...',
   onQueryChange,
   filterLocally = true,
   isLoading = false,
   emptyText = 'Nada encontrado',
+  autoFocusSearch = true,
 }: PickerModalProps) {
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
+  const inputRef = useRef<TextInput>(null);
+
+  // Abre já com o cursor no campo de busca e o teclado aberto — o usuário só
+  // digita. Foca por ref (não autoFocus) porque o modal fica montado reabrindo
+  // via `visible`, e no iOS focar após a animação garante que o teclado suba.
+  useEffect(() => {
+    if (!visible || !autoFocusSearch) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 300);
+    return () => clearTimeout(timer);
+  }, [visible, autoFocusSearch]);
 
   const rows = useMemo(
     () => buildRows(options, filterLocally ? query : ''),
@@ -126,14 +147,21 @@ export function PickerModal({
 
   const handleSelect = (id: string) => {
     onSelect(id);
-    handleClose();
+    if (!multiple) handleClose();
+  };
+
+  const handleConfirm = () => {
+    handleQueryChange('');
+    onConfirm?.();
   };
 
   const renderRow = ({ item }: { item: Row }) => {
     const { option } = item;
     const isChild = item.kind === 'child';
     const isParent = item.kind === 'parent';
-    const selected = option.id === selectedId;
+    const selected = multiple
+      ? selectedIds.includes(option.id)
+      : option.id === selectedId;
 
     if (option.disabled) {
       return (
@@ -168,6 +196,8 @@ export function PickerModal({
         style={[styles.row, isChild && styles.rowChild]}
         onPress={() => handleSelect(option.id)}
         activeOpacity={0.6}
+        accessibilityRole={multiple ? 'checkbox' : 'button'}
+        accessibilityState={multiple ? { checked: selected } : undefined}
       >
         {option.bankKey ? (
           <BankLogo
@@ -213,7 +243,23 @@ export function PickerModal({
       statusBarTranslucent
       onRequestClose={handleClose}
     >
-      <FullScreenOverlay title={title} onClose={handleClose}>
+      <FullScreenOverlay
+        title={title}
+        onClose={handleClose}
+        headerRight={
+          multiple ? (
+            <TouchableOpacity
+              style={styles.confirmButton}
+              onPress={handleConfirm}
+              accessibilityRole="button"
+              accessibilityLabel="Concluir seleção de categorias"
+              hitSlop={10}
+            >
+              <IconSymbol name="checkmark" size={22} color={colors.tint} />
+            </TouchableOpacity>
+          ) : undefined
+        }
+      >
         <View
           style={[
             styles.searchBar,
@@ -222,6 +268,7 @@ export function PickerModal({
         >
           <Ionicons name="search" size={18} color={colors.textSecondary} />
           <TextInput
+            ref={inputRef}
             style={[styles.searchInput, { color: colors.text }]}
             value={query}
             onChangeText={handleQueryChange}
@@ -243,7 +290,7 @@ export function PickerModal({
           keyExtractor={(item) => `${item.kind}-${item.option.id}`}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: insets.bottom + Spacing['2xl'] }}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
             isLoading ? (
@@ -275,6 +322,12 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: FontSize.md,
+  },
+  confirmButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   list: {
     flex: 1,

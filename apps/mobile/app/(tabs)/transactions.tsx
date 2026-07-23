@@ -46,18 +46,125 @@ import {
   toFeedAdvancedFilters,
   type TransactionsFilterState,
 } from '@/components/organisms/TransactionFiltersSheet';
+import { useFinance } from '@/contexts/FinanceContext';
 import { bulkDeleteTransactions, type BulkDeleteSkipReason } from '@/lib/finance-api';
 import {
   groupTransactionsByDate,
+  invoiceMonthKey,
+  invoiceMonthKeyLabel,
+  type FinanceCreditCard,
   type TransactionWithDetails,
 } from '@/types/finance';
 
 const BALANCE_VISIBILITY_KEY = '@balance_visibility';
+const TRANSACTION_FILTERS_KEY = '@transaction_filters';
+
+/** Linha sintética que agrupa as compras de um cartão num mês de fatura. */
+interface InvoiceGroupItem {
+  kind: 'invoiceGroup';
+  id: string;
+  cardName: string;
+  monthLabel: string;
+  total: number;
+  count: number;
+  /** Data da compra mais recente do grupo — usada para posicioná-lo na lista. */
+  latestDate: string;
+  children: TransactionWithDetails[];
+}
+
+type FeedItem = TransactionWithDetails | InvoiceGroupItem;
+
+const isInvoiceGroup = (item: FeedItem): item is InvoiceGroupItem =>
+  'kind' in item && item.kind === 'invoiceGroup';
 
 interface SectionData {
   title: string;
   net: number;
-  data: TransactionWithDetails[];
+  data: FeedItem[];
+}
+
+const dateOf = (t: TransactionWithDetails) => t.due_date.split('T')[0];
+const txNet = (t: TransactionWithDetails) => (t.type === 'RECEITA' ? t.amount : -t.amount);
+
+/**
+ * Monta as seções do feed (por dia, mais recentes primeiro). Com
+ * `groupByInvoice`, as compras de cartão viram itens de fatura (cartão + mês),
+ * posicionados no dia da compra mais recente; expandir revela as compras.
+ * Transformação pura sobre o que já está carregado — memoizada no chamador.
+ */
+function buildFeedSections(
+  items: TransactionWithDetails[],
+  groupByInvoice: boolean,
+  cardsById: Map<string, FinanceCreditCard>,
+  expandedGroups: Set<string>
+): SectionData[] {
+  if (!groupByInvoice) {
+    const grouped = groupTransactionsByDate(items);
+    return Object.entries(grouped)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, data]) => ({
+        title: formatSectionDate(date),
+        net: data.reduce((sum, t) => sum + txNet(t), 0),
+        data,
+      }));
+  }
+
+  const nonCard: TransactionWithDetails[] = [];
+  const groups = new Map<string, InvoiceGroupItem>();
+
+  for (const t of items) {
+    const card = t.credit_card_id ? cardsById.get(t.credit_card_id) : undefined;
+    if (!card) {
+      nonCard.push(t);
+      continue;
+    }
+    const date = dateOf(t);
+    const monthKey = invoiceMonthKey(card, new Date(`${date}T12:00:00`));
+    const gid = `invoice:${card.id}:${monthKey}`;
+    let group = groups.get(gid);
+    if (!group) {
+      group = {
+        kind: 'invoiceGroup',
+        id: gid,
+        cardName: card.name,
+        monthLabel: invoiceMonthKeyLabel(monthKey),
+        total: 0,
+        count: 0,
+        latestDate: date,
+        children: [],
+      };
+      groups.set(gid, group);
+    }
+    group.total += t.amount;
+    group.count += 1;
+    group.children.push(t);
+    if (date > group.latestDate) group.latestDate = date;
+  }
+
+  const byDate = new Map<string, FeedItem[]>();
+  const place = (date: string, item: FeedItem) => {
+    const arr = byDate.get(date);
+    if (arr) arr.push(item);
+    else byDate.set(date, [item]);
+  };
+  for (const t of nonCard) place(dateOf(t), t);
+  for (const group of groups.values()) place(group.latestDate, group);
+
+  return [...byDate.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, list]) => {
+      const net = list.reduce(
+        (sum, it) => (isInvoiceGroup(it) ? sum - it.total : sum + txNet(it)),
+        0
+      );
+      // Expandido: insere as compras logo abaixo do item de fatura
+      const data: FeedItem[] = [];
+      for (const it of list) {
+        data.push(it);
+        if (isInvoiceGroup(it) && expandedGroups.has(it.id)) data.push(...it.children);
+      }
+      return { title: formatSectionDate(date), net, data };
+    });
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -123,6 +230,50 @@ const FeedRow = memo(function FeedRow({
       selectionMode={selectionMode}
       selected={selected}
     />
+  );
+});
+
+/** Linha de fatura agrupada: cartão + mês + total; toque expande as compras. */
+const InvoiceGroupRow = memo(function InvoiceGroupRow({
+  group,
+  expanded,
+  hideAmount,
+  onToggle,
+}: {
+  group: InvoiceGroupItem;
+  expanded: boolean;
+  hideAmount: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+
+  return (
+    <Pressable
+      onPress={() => onToggle(group.id)}
+      style={({ pressed }) => [styles.groupRow, pressed && styles.groupRowPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`Fatura ${group.cardName}, ${group.monthLabel}`}
+      accessibilityState={{ expanded }}
+    >
+      <View style={[styles.groupIcon, { backgroundColor: colors.primary + '22' }]}>
+        <IconSymbol name="creditcard.fill" size={20} color={colors.primary} />
+      </View>
+      <View style={styles.groupBody}>
+        <Text style={[styles.groupTitle, { color: colors.text }]} numberOfLines={1}>
+          Fatura {group.cardName}
+        </Text>
+        <Text style={[styles.groupSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+          {group.monthLabel} · {group.count} {group.count === 1 ? 'compra' : 'compras'}
+        </Text>
+      </View>
+      <MoneyText value={-group.total} hidden={hideAmount} style={styles.groupAmount} />
+      <IconSymbol
+        name={expanded ? 'chevron.down' : 'chevron.right'}
+        size={16}
+        color={colors.textSecondary}
+      />
+    </Pressable>
   );
 });
 
@@ -196,10 +347,70 @@ export default function TransactionsScreen() {
   const [filterState, setFilterState] = useState<TransactionsFilterState>(
     EMPTY_TRANSACTIONS_FILTERS
   );
+  // Hidratação dos filtros salvos: até carregar, não persistimos (não sobrescreve)
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const scrollY = useSharedValue(0);
+
+  const { creditCards, loadCreditCards } = useFinance();
+  const cardsById = useMemo(
+    () => new Map(creditCards.map((c) => [c.id, c])),
+    [creditCards]
+  );
 
   const selectionMode = selectedIds.size > 0;
   const activeFilterCount = countActiveFilters(filterState);
+
+  // Restaura os filtros persistidos ao montar; carrega cartões p/ o agrupamento
+  useEffect(() => {
+    loadCreditCards();
+    AsyncStorage.getItem(TRANSACTION_FILTERS_KEY)
+      .then((stored) => {
+        if (stored) {
+          const parsed = JSON.parse(stored) as Partial<TransactionsFilterState> & {
+            categoryId?: string | null;
+          };
+          const {
+            categoryId: legacyCategoryId,
+            categoryIds,
+            ...persistedFilters
+          } = parsed;
+          const persistedCategoryIds = Array.isArray(categoryIds)
+            ? categoryIds.filter(
+                (categoryId): categoryId is string => typeof categoryId === 'string'
+              )
+            : legacyCategoryId
+              ? [legacyCategoryId]
+              : [];
+
+          setFilterState({
+            ...EMPTY_TRANSACTIONS_FILTERS,
+            ...persistedFilters,
+            categoryIds: [...new Set(persistedCategoryIds)],
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFiltersHydrated(true));
+  }, [loadCreditCards]);
+
+  // Persiste os filtros a cada mudança (após a hidratação inicial)
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    AsyncStorage.setItem(TRANSACTION_FILTERS_KEY, JSON.stringify(filterState)).catch(
+      () => {}
+    );
+  }, [filterState, filtersHydrated]);
+
+  const toggleGroup = useCallback((id: string) => {
+    Haptics.selectionAsync();
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // A visibilidade de valores é controlada na home; aqui só refletimos a
   // preferência salva (relida a cada foco para acompanhar mudanças lá).
@@ -230,14 +441,19 @@ export default function TransactionsScreen() {
     removeItems,
   } = useTransactionsFeed();
 
-  // Cada mudança na folha de filtros é aplicada imediatamente ao feed.
-  // CARTAO não é um tipo do backend — vira source=card nos filtros avançados.
+  // Aplica os filtros ao feed. Deriva uma chave estável dos parâmetros de query
+  // para NÃO rebuscar no servidor quando muda só um modo de exibição (ex.: o
+  // switch de agrupar por fatura, que é 100% client-side).
+  const feedTypeFilter =
+    filterState.type === 'CARTAO' ? 'ALL' : (filterState.type ?? 'ALL');
+  const advancedFiltersKey = useMemo(
+    () => JSON.stringify(toFeedAdvancedFilters(filterState)),
+    [filterState]
+  );
   useEffect(() => {
-    setAdvancedFilters(toFeedAdvancedFilters(filterState));
-    setTypeFilter(
-      filterState.type === 'CARTAO' ? 'ALL' : (filterState.type ?? 'ALL')
-    );
-  }, [filterState, setAdvancedFilters, setTypeFilter]);
+    setAdvancedFilters(JSON.parse(advancedFiltersKey));
+    setTypeFilter(feedTypeFilter);
+  }, [advancedFiltersKey, feedTypeFilter, setAdvancedFilters, setTypeFilter]);
 
   const openSearch = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -361,19 +577,16 @@ export default function TransactionsScreen() {
     setSelectedTransaction(null);
   }, []);
 
-  const sections: SectionData[] = useMemo(() => {
-    const grouped = groupTransactionsByDate(items);
-    return Object.entries(grouped)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([date, data]) => ({
-        title: formatSectionDate(date),
-        net: data.reduce(
-          (sum, t) => sum + (t.type === 'RECEITA' ? t.amount : -t.amount),
-          0
-        ),
-        data,
-      }));
-  }, [items]);
+  const sections: SectionData[] = useMemo(
+    () =>
+      buildFeedSections(
+        items,
+        filterState.groupCardByInvoice,
+        cardsById,
+        expandedGroups
+      ),
+    [items, filterState.groupCardByInvoice, cardsById, expandedGroups]
+  );
 
 
   const renderHeader = () => (
@@ -422,21 +635,41 @@ export default function TransactionsScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item, index, section }: { item: TransactionWithDetails; index: number; section: SectionData }) => (
-      <FeedRow
-        item={item}
-        showDivider={index < section.data.length - 1}
-        hideAmount={!isBalanceVisible}
-        selectionMode={selectionMode}
-        selected={selectedIds.has(item.id)}
-        onPressItem={handleTransactionPress}
-        onLongPressItem={handleTransactionLongPress}
-      />
-    ),
-    [handleTransactionPress, handleTransactionLongPress, isBalanceVisible, selectionMode, selectedIds]
+    ({ item, index, section }: { item: FeedItem; index: number; section: SectionData }) => {
+      if (isInvoiceGroup(item)) {
+        return (
+          <InvoiceGroupRow
+            group={item}
+            expanded={expandedGroups.has(item.id)}
+            hideAmount={!isBalanceVisible}
+            onToggle={toggleGroup}
+          />
+        );
+      }
+      return (
+        <FeedRow
+          item={item}
+          showDivider={index < section.data.length - 1}
+          hideAmount={!isBalanceVisible}
+          selectionMode={selectionMode}
+          selected={selectedIds.has(item.id)}
+          onPressItem={handleTransactionPress}
+          onLongPressItem={handleTransactionLongPress}
+        />
+      );
+    },
+    [
+      handleTransactionPress,
+      handleTransactionLongPress,
+      isBalanceVisible,
+      selectionMode,
+      selectedIds,
+      expandedGroups,
+      toggleGroup,
+    ]
   );
 
-  const keyExtractor = useCallback((item: TransactionWithDetails) => item.id, []);
+  const keyExtractor = useCallback((item: FeedItem) => item.id, []);
 
   const ListFooterComponent = useCallback(
     () =>
@@ -581,18 +814,35 @@ export default function TransactionsScreen() {
         <Pressable
           onPress={openFilters}
           accessibilityRole="button"
-          accessibilityLabel="Filtrar transações"
+          accessibilityLabel={
+            activeFilterCount > 0
+              ? `Filtrar transações, ${activeFilterCount} ${
+                  activeFilterCount === 1 ? 'filtro aplicado' : 'filtros aplicados'
+                }`
+              : 'Filtrar transações'
+          }
         >
           {({ pressed }) => (
-            <View style={pressed && styles.buttonPressed}>
+            <View
+              style={[
+                styles.filterButtonWrapper,
+                pressed && styles.buttonPressed,
+              ]}
+            >
               <GlassSurface variant="glass" isInteractive style={styles.topBarButton}>
                 <IconSymbol name="line.3.horizontal.decrease" size={20} color={colors.text} />
-                {activeFilterCount > 0 && (
-                  <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
-                    <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-                  </View>
-                )}
               </GlassSurface>
+              {activeFilterCount > 0 && (
+                <View
+                  style={[
+                    styles.filterBadge,
+                    { backgroundColor: colors.warning },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                </View>
+              )}
             </View>
           )}
         </Pressable>
@@ -736,22 +986,29 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
   },
+  filterButtonWrapper: {
+    width: 40,
+    height: 40,
+    overflow: 'visible',
+  },
   filterBadge: {
-    // GlassSurface tem overflow hidden — o badge precisa ficar dentro do botão
+    // Fora da GlassSurface para não ser recortado pelo blur arredondado.
     position: 'absolute',
-    top: 3,
-    right: 3,
-    minWidth: 15,
-    height: 15,
-    borderRadius: 8,
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   filterBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
+    color: '#111827',
+    fontSize: 11,
     fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
   },
   topBarActions: {
     flexDirection: 'row',
@@ -818,6 +1075,39 @@ const styles = StyleSheet.create({
   },
   sectionNet: {
     fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    fontVariant: ['tabular-nums'],
+  },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+  },
+  groupRowPressed: {
+    opacity: 0.6,
+  },
+  groupIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupBody: {
+    flex: 1,
+    gap: 2,
+  },
+  groupTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+  },
+  groupSubtitle: {
+    fontSize: FontSize.xs,
+  },
+  groupAmount: {
+    fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
     fontVariant: ['tabular-nums'],
   },

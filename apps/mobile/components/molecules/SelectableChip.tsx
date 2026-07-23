@@ -16,6 +16,12 @@ type SelectableChipProps = {
   accessibilityRole?: 'checkbox' | 'radio';
   /** Versão reduzida (ex.: linha de tags da nova transação). */
   compact?: boolean;
+  /**
+   * Cor de destaque quando selecionado (ex.: status pago=verde). Aplica um
+   * fundo tonal (~15%) com borda e texto na cor — legível para verde/amarelo/
+   * vermelho. Sem isso, o selecionado usa o preenchimento primário padrão.
+   */
+  selectedColor?: string;
 };
 
 /** Chip de seleção múltipla usado na personalização do onboarding. */
@@ -27,6 +33,7 @@ export function SelectableChip({
   onToggle,
   accessibilityRole = 'checkbox',
   compact = false,
+  selectedColor,
 }: SelectableChipProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -34,7 +41,19 @@ export function SelectableChip({
 
   const idleBg = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.80)';
   const idleBorder = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
-  const contentColor = selected ? colors.textOnPrimary : colors.text;
+  // Selecionado com cor (status): fundo tonal + texto/borda na cor (legível).
+  // Selecionado padrão: preenchimento primário com texto sobre-primário.
+  const contentColor = !selected
+    ? colors.text
+    : selectedColor
+      ? selectedColor
+      : colors.textOnPrimary;
+
+  const selectedStyle = selected
+    ? selectedColor
+      ? { backgroundColor: selectedColor + '26', borderColor: selectedColor }
+      : { backgroundColor: colors.primary, borderColor: colors.primary }
+    : null;
 
   return (
     <TouchableOpacity
@@ -45,10 +64,7 @@ export function SelectableChip({
         styles.chip,
         compact && styles.chipCompact,
         { backgroundColor: idleBg, borderColor: idleBorder },
-        selected && {
-          backgroundColor: colors.primary,
-          borderColor: colors.primary,
-        },
+        selectedStyle,
       ]}
     >
       {leading ??

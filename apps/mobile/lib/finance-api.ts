@@ -284,7 +284,9 @@ export async function getTransactions(filters?: {
   start_date?: string;
   end_date?: string;
   category_id?: string;
+  category_ids?: string;
   account_id?: string;
+  credit_card_id?: string;
   /** 'card' = só compras de cartão; 'account' = só lançamentos em conta */
   source?: 'account' | 'card';
   type?: string;
@@ -342,6 +344,14 @@ export async function payTransaction(
   });
 }
 
+// Desfaz o pagamento (PAGO -> PENDENTE/VENCIDO); o backend estorna o saldo da conta.
+export async function unpayTransaction(id: string): Promise<FinanceTransaction> {
+  return authFetch(`/finance/transactions/${id}/unpay`, {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+}
+
 export type BulkDeleteSkipReason =
   | 'not_found'
   | 'transfer'
@@ -352,6 +362,14 @@ export interface BulkDeleteTransactionsResult {
   success: boolean;
   deleted: string[];
   skipped: { id: string; reason: BulkDeleteSkipReason }[];
+}
+
+// Exclui (cancela) uma transacao. Se ja estava paga, o backend estorna o saldo
+// da conta e devolve o limite do cartao automaticamente.
+export async function deleteTransaction(id: string): Promise<{ success: boolean }> {
+  return authFetch(`/finance/transactions/${id}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function bulkDeleteTransactions(

@@ -76,7 +76,19 @@ export async function getTransactionsByUser(
   if (filters.end_date) {
     query = query.lte('due_date', filters.end_date);
   }
-  if (filters.category_id) {
+  if (filters.category_ids) {
+    const categoryIds = [
+      ...new Set(
+        filters.category_ids
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      ),
+    ].slice(0, 100);
+
+    if (categoryIds.length === 0) return [];
+    query = query.in('category_id', categoryIds);
+  } else if (filters.category_id) {
     query = query.eq('category_id', filters.category_id);
   }
   if (filters.account_id) {
@@ -93,7 +105,26 @@ export async function getTransactionsByUser(
   if (filters.type) {
     query = query.eq('type', filters.type);
   }
-  if (filters.status) {
+  // Status derivado por data: o sistema nao reescreve PENDENTE->VENCIDO, entao
+  // "vencidas"/"a vencer" saem do vencimento, nao do status gravado. Compras de
+  // cartao nunca "vencem" avulsas (liquidam pela fatura) — ficam em "a vencer".
+  // - PAGO: match exato
+  // - VENCIDO (atrasada): em aberto, sem cartao, due_date < hoje
+  // - PENDENTE (a vencer): em aberto e (de cartao OU due_date >= hoje)
+  if (filters.status === 'PAGO') {
+    query = query.eq('status', 'PAGO');
+  } else if (filters.status === 'VENCIDO') {
+    const today = new Date().toISOString().split('T')[0];
+    query = query
+      .in('status', ['PENDENTE', 'VENCIDO'])
+      .is('credit_card_id', null)
+      .lt('due_date', today);
+  } else if (filters.status === 'PENDENTE') {
+    const today = new Date().toISOString().split('T')[0];
+    query = query
+      .in('status', ['PENDENTE', 'VENCIDO'])
+      .or(`credit_card_id.not.is.null,due_date.gte.${today}`);
+  } else if (filters.status) {
     query = query.eq('status', filters.status);
   }
 
@@ -451,6 +482,18 @@ export async function updateTransaction(
   // Extrair tag_ids antes de enviar para o banco
   const { tag_ids, ...dbUpdates } = updates;
 
+  // Estado anterior: base para reconciliar saldo/limite ao mudar valor/origem
+  const existing = await getTransactionById(transactionId, userId, accessToken);
+  if (!existing) {
+    throw new Error('Transacao nao encontrada');
+  }
+
+  // Uma alteracao de valor numa transacao paga tambem move o paid_amount, para
+  // que o valor efetivado (e um futuro estorno) acompanhe o novo valor.
+  if (existing.status === 'PAGO' && dbUpdates.amount !== undefined) {
+    (dbUpdates as Record<string, unknown>).paid_amount = dbUpdates.amount;
+  }
+
   const { data, error } = await client
     .from(TABLE)
     .update(dbUpdates)
@@ -465,6 +508,77 @@ export async function updateTransaction(
 
   if (!data) {
     throw new Error('Transacao nao encontrada');
+  }
+
+  // Reconciliar efeitos financeiros so quando um campo de dinheiro muda
+  const moneyChanged =
+    dbUpdates.amount !== undefined ||
+    dbUpdates.account_id !== undefined ||
+    dbUpdates.credit_card_id !== undefined;
+
+  if (moneyChanged) {
+    const type = existing.type;
+    const newAmount =
+      dbUpdates.amount !== undefined ? dbUpdates.amount : existing.amount;
+    const newAccountId =
+      dbUpdates.account_id !== undefined ? dbUpdates.account_id : existing.account_id;
+    const newCardId =
+      dbUpdates.credit_card_id !== undefined
+        ? dbUpdates.credit_card_id
+        : existing.credit_card_id;
+
+    // Ajusta o saldo de uma conta por um delta (le e grava o novo saldo)
+    const adjustAccount = async (accountId: string, delta: number) => {
+      if (delta === 0) return;
+      const account = await getAccountById(accountId, userId, accessToken);
+      if (account) {
+        await updateAccountBalance(
+          accountId,
+          userId,
+          account.current_balance + delta,
+          accessToken
+        );
+      }
+    };
+
+    // Saldo da conta: so transacoes PAGAS aplicam efeito no current_balance
+    if (existing.status === 'PAGO') {
+      const oldPaid = existing.paid_amount ?? existing.amount;
+      const effect = (amount: number) => (type === 'RECEITA' ? amount : -amount);
+      if (existing.account_id && existing.account_id === newAccountId) {
+        // Mesma conta: aplica so a diferenca entre o novo e o antigo efeito
+        await adjustAccount(existing.account_id, effect(newAmount) - effect(oldPaid));
+      } else {
+        // Trocou de conta (ou saiu para cartao): reverte na origem, aplica no destino
+        if (existing.account_id) await adjustAccount(existing.account_id, -effect(oldPaid));
+        if (newAccountId) await adjustAccount(newAccountId, effect(newAmount));
+      }
+    }
+
+    // Limite do cartao: a criacao reduz o limite disponivel por amount, pago ou nao
+    if (type === 'DESPESA' && (existing.credit_card_id || newCardId)) {
+      if (existing.credit_card_id && existing.credit_card_id === newCardId) {
+        // Mesmo cartao: devolve o antigo e consome o novo (delta liquido)
+        await updateCreditCardAvailableLimit(
+          newCardId,
+          userId,
+          existing.amount - newAmount,
+          accessToken
+        );
+      } else {
+        if (existing.credit_card_id) {
+          await updateCreditCardAvailableLimit(
+            existing.credit_card_id,
+            userId,
+            existing.amount,
+            accessToken
+          );
+        }
+        if (newCardId) {
+          await updateCreditCardAvailableLimit(newCardId, userId, -newAmount, accessToken);
+        }
+      }
+    }
   }
 
   // Atualizar tags se fornecidas
@@ -550,12 +664,79 @@ export async function payTransaction(
   return data;
 }
 
+// Desfaz o pagamento de uma transacao (PAGO -> PENDENTE/VENCIDO) e estorna o
+// efeito no saldo da conta: o valor volta ao estado de antes do pagamento.
+// Simetrica a payTransaction. Cartao nao se aplica (liquida pela fatura).
+export async function unpayTransaction(
+  transactionId: string,
+  userId: string,
+  accessToken: string
+): Promise<FinanceTransaction> {
+  const client = createUserClient(accessToken);
+
+  const existing = await getTransactionById(transactionId, userId, accessToken);
+  if (!existing) {
+    throw new Error('Transacao nao encontrada');
+  }
+  if (existing.credit_card_id) {
+    throw new Error('Transacoes de cartao sao liquidadas pela fatura');
+  }
+  if (existing.status !== 'PAGO') {
+    throw new Error('A transacao nao esta paga');
+  }
+
+  const paidAmount = existing.paid_amount ?? existing.amount;
+
+  // Sem pagamento, volta a PENDENTE — ou VENCIDO se o vencimento ja passou
+  const today = new Date().toISOString().split('T')[0];
+  const dueDate = existing.due_date.split('T')[0];
+  const newStatus = dueDate < today ? 'VENCIDO' : 'PENDENTE';
+
+  const { data, error } = await client
+    .from(TABLE)
+    .update({ status: newStatus, payment_date: null, paid_amount: null })
+    .eq('id', transactionId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Erro ao desfazer pagamento: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error('Transacao nao encontrada');
+  }
+
+  // Estorna o saldo: RECEITA tinha somado (subtrai); DESPESA tinha subtraido (devolve)
+  if (existing.account_id) {
+    const account = await getAccountById(existing.account_id, userId, accessToken);
+    if (account) {
+      const newBalance =
+        existing.type === 'RECEITA'
+          ? account.current_balance - paidAmount
+          : account.current_balance + paidAmount;
+      await updateAccountBalance(existing.account_id, userId, newBalance, accessToken);
+    }
+  }
+
+  return data;
+}
+
+// Cancela uma transacao e desfaz seus efeitos financeiros:
+// - PAGO em conta: estorna o saldo (o valor volta para a conta).
+// - Despesa de cartao: devolve o limite disponivel consumido na criacao.
+// Mantem a consistencia do saldo/limite ao excluir uma transacao ja efetuada.
 export async function cancelTransaction(
   transactionId: string,
   userId: string,
   accessToken: string
 ): Promise<void> {
   const client = createUserClient(accessToken);
+
+  const existing = await getTransactionById(transactionId, userId, accessToken);
+  if (!existing) {
+    throw new Error('Transacao nao encontrada');
+  }
 
   const { error } = await client
     .from(TABLE)
@@ -565,6 +746,32 @@ export async function cancelTransaction(
 
   if (error) {
     throw new Error(`Erro ao cancelar transacao: ${error.message}`);
+  }
+
+  // Estornar saldo da conta se a transacao estava paga (o efeito ja fora aplicado)
+  if (existing.status === 'PAGO' && existing.account_id) {
+    const paid = existing.paid_amount ?? existing.amount;
+    // RECEITA somou ao saldo -> subtrai; DESPESA subtraiu -> devolve
+    const delta = existing.type === 'RECEITA' ? -paid : paid;
+    const account = await getAccountById(existing.account_id, userId, accessToken);
+    if (account) {
+      await updateAccountBalance(
+        existing.account_id,
+        userId,
+        account.current_balance + delta,
+        accessToken
+      );
+    }
+  }
+
+  // Devolver o limite consumido no cartao (a criacao reduziu o limite disponivel)
+  if (existing.type === 'DESPESA' && existing.credit_card_id) {
+    await updateCreditCardAvailableLimit(
+      existing.credit_card_id,
+      userId,
+      existing.amount,
+      accessToken
+    );
   }
 }
 

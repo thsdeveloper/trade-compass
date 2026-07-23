@@ -11,7 +11,10 @@ export type FeedTypeFilter = 'ALL' | 'RECEITA' | 'DESPESA';
 /** Filtros avançados aplicados pela folha de filtros da tela de transações. */
 export interface FeedAdvancedFilters {
   category_id?: string;
+  /** Lista de categorias separadas por vírgula; o backend aplica OR entre elas. */
+  category_ids?: string;
   account_id?: string;
+  credit_card_id?: string;
   /** 'card' = só compras de cartão; 'account' = só lançamentos em conta */
   source?: 'account' | 'card';
   status?: string;

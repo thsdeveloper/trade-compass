@@ -420,6 +420,8 @@ export interface TransactionFilters {
   start_date?: string;
   end_date?: string;
   category_id?: string;
+  /** UUIDs separados por vírgula; corresponde a qualquer categoria informada. */
+  category_ids?: string;
   account_id?: string;
   credit_card_id?: string;
   /** Origem do lançamento: 'card' = qualquer cartão; 'account' = conta (sem cartão). */

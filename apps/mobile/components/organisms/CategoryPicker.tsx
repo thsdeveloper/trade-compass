@@ -10,29 +10,38 @@ import type { FinanceCategory } from '@/types/finance';
 
 interface CategoryPickerProps {
   categories: FinanceCategory[];
-  selectedId: string | null;
-  onSelect: (category: FinanceCategory) => void;
+  selectedId?: string | null;
+  selectedIds?: string[];
+  multiple?: boolean;
+  onSelect?: (category: FinanceCategory) => void;
+  onSelectMany?: (categories: FinanceCategory[]) => void;
   placeholder?: string;
   /** Trigger customizado (ex.: chip); se ausente, usa a linha padrão */
   renderTrigger?: (args: {
     open: () => void;
     selected: FinanceCategory | undefined;
+    selectedCategories: FinanceCategory[];
   }) => ReactNode;
 }
 
 export function CategoryPicker({
   categories,
-  selectedId,
+  selectedId = null,
+  selectedIds = [],
+  multiple = false,
   onSelect,
+  onSelectMany,
   placeholder = 'Selecione uma categoria',
   renderTrigger,
 }: CategoryPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState<string[]>([]);
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
 
   const selectedCategory = categories.find((c) => c.id === selectedId);
+  const selectedCategories = categories.filter((c) => selectedIds.includes(c.id));
 
   // Monta a hierarquia pai → filhos a partir da lista plana
   const options = useMemo<PickerOption[]>(() => {
@@ -61,18 +70,38 @@ export function CategoryPicker({
   }, [categories]);
 
   const handleSelect = (id: string) => {
+    if (multiple) {
+      setDraftIds((current) =>
+        current.includes(id)
+          ? current.filter((categoryId) => categoryId !== id)
+          : [...current, id]
+      );
+      return;
+    }
+
     const category = categories.find((c) => c.id === id);
-    if (category) onSelect(category);
+    if (category) onSelect?.(category);
+  };
+
+  const open = () => {
+    if (multiple) setDraftIds(selectedIds);
+    setIsOpen(true);
+  };
+
+  const confirmSelection = () => {
+    const selected = new Set(draftIds);
+    onSelectMany?.(categories.filter((category) => selected.has(category.id)));
+    setIsOpen(false);
   };
 
   return (
     <>
       {renderTrigger ? (
-        renderTrigger({ open: () => setIsOpen(true), selected: selectedCategory })
+        renderTrigger({ open, selected: selectedCategory, selectedCategories })
       ) : (
         <TouchableOpacity
           style={[styles.trigger, { backgroundColor: isDark ? '#1f2937' : '#f3f4f6' }]}
-          onPress={() => setIsOpen(true)}
+          onPress={open}
           activeOpacity={0.7}
         >
           {selectedCategory ? (
@@ -98,11 +127,15 @@ export function CategoryPicker({
       <PickerModal
         visible={isOpen}
         onClose={() => setIsOpen(false)}
-        title="Selecione uma categoria"
+        title={multiple ? 'Selecionar categorias' : 'Selecione uma categoria'}
         searchPlaceholder="Buscar categoria..."
         options={options}
         selectedId={selectedId}
+        selectedIds={draftIds}
+        multiple={multiple}
         onSelect={handleSelect}
+        onConfirm={confirmSelection}
+        autoFocusSearch={!multiple}
       />
     </>
   );

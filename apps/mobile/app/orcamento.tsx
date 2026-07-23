@@ -24,6 +24,11 @@ import { Skeleton, SkeletonProvider } from '@/components/atoms/Skeleton';
 import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { BudgetInfoSheet } from '@/components/organisms/BudgetInfoSheet';
 import { IncomeSheet } from '@/components/organisms/IncomeSheet';
+import { SpendingChartInfoSheet } from '@/components/organisms/SpendingChartInfoSheet';
+import {
+  BudgetChartsInfoSheet,
+  type BudgetChartInfoKind,
+} from '@/components/organisms/BudgetChartsInfoSheet';
 import { Button } from '@/components/atoms/Button';
 import { MonthSlider } from '@/components/molecules/MonthSlider';
 import { getBudgetAllocation } from '@/lib/finance-api';
@@ -53,6 +58,8 @@ const CATEGORY_COLORS_DARK: Record<BudgetCategory, string> = {
 
 const SPEND_LINE_DARK = '#A3E635';
 const SPEND_LINE_LIGHT = '#65a30d';
+const UNCATEGORIZED_COLOR_DARK = '#9CA3AF';
+const UNCATEGORIZED_COLOR_LIGHT = '#6B7280';
 
 // Clareia um hex misturando-o com branco (0 = cor original, 1 = branco).
 // Usado para o topo do gradiente das barras "atual" — dá profundidade sem
@@ -81,11 +88,20 @@ export default function OrcamentoScreen() {
   // contexto, que alimenta a home sempre com o mês corrente. A tela abre
   // sempre no mês atual.
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
-  const { points, total, isLoading: seriesLoading } = useMonthlySpendingSeries(selectedMonth);
+  const {
+    points,
+    total,
+    uncategorizedTotal,
+    isLoading: seriesLoading,
+  } = useMonthlySpendingSeries(selectedMonth);
 
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(true);
   const [infoVisible, setInfoVisible] = useState(false);
+  const [chartInfoVisible, setChartInfoVisible] = useState(false);
+  const [budgetChartInfo, setBudgetChartInfo] = useState<BudgetChartInfoKind | null>(
+    null
+  );
   const [incomeVisible, setIncomeVisible] = useState(false);
 
   const monthKey = `${selectedMonth.getFullYear()}-${String(
@@ -119,6 +135,9 @@ export default function OrcamentoScreen() {
   }, [monthKey, dataVersion, profile?.monthly_income]);
 
   const categoryColors = isDark ? CATEGORY_COLORS_DARK : CATEGORY_COLORS_LIGHT;
+  const uncategorizedColor = isDark
+    ? UNCATEGORIZED_COLOR_DARK
+    : UNCATEGORIZED_COLOR_LIGHT;
   const lineColor = isDark ? SPEND_LINE_DARK : SPEND_LINE_LIGHT;
   const cardBorder = {
     borderWidth: StyleSheet.hairlineWidth,
@@ -133,6 +152,7 @@ export default function OrcamentoScreen() {
     (budgetSummary?.total_income ?? 0) > 0
       ? budgetSummary!.total_income
       : profile?.monthly_income ?? 0;
+  const spendingLimit = totalIncome;
   const usedShare = totalIncome > 0 ? Math.round((total / totalIncome) * 100) : null;
 
   const allocations = useMemo(
@@ -140,12 +160,13 @@ export default function OrcamentoScreen() {
     [budgetSummary]
   );
 
-  // Total efetivamente gasto no mês (soma dos buckets) — centro do donut e
-  // base do % de cada categoria na distribuição
-  const spentTotal = useMemo(
+  // O centro e os percentuais incluem tanto os buckets 50-30-20 quanto as
+  // despesas reais que ainda não receberam uma categoria de orçamento.
+  const categorizedSpentTotal = useMemo(
     () => allocations.reduce((sum, a) => sum + a.actual_amount, 0),
     [allocations]
   );
+  const spentTotal = categorizedSpentTotal + uncategorizedTotal;
 
   // Cores de status (No limite / Acima / Abaixo) para os badges das linhas
   const statusColorsFor = (status: BudgetAllocation['status']) => {
@@ -160,17 +181,28 @@ export default function OrcamentoScreen() {
     }
   };
 
-  // Donut: distribuição do gasto real entre as 3 categorias do orçamento
-  const donutData = useMemo(
-    () =>
-      allocations
+  // Donut: distribuição do gasto real entre os 3 buckets e, quando necessário,
+  // uma quarta fatia cinza para o que ainda não foi categorizado.
+  const donutData = useMemo(() => {
+    const categorizedData = allocations
         .filter((allocation) => allocation.actual_amount > 0)
         .map((allocation) => ({
           value: allocation.actual_amount,
           color: categoryColors[allocation.category],
-        })),
-    [allocations, categoryColors]
-  );
+        }));
+
+    return uncategorizedTotal > 0
+      ? [
+          ...categorizedData,
+          { value: uncategorizedTotal, color: uncategorizedColor },
+        ]
+      : categorizedData;
+  }, [
+    allocations,
+    categoryColors,
+    uncategorizedColor,
+    uncategorizedTotal,
+  ]);
 
   // Barras agrupadas: ideal (cinza, contexto) vs atual (cor da categoria, com
   // gradiente e rótulo de % no topo) — ênfase na barra "atual"
@@ -240,12 +272,34 @@ export default function OrcamentoScreen() {
       points.map((point, index) => ({
         value: point.value,
         day: point.day,
+        label:
+          point.day === 1 ||
+          point.day % 5 === 0 ||
+          index === points.length - 1
+            ? String(point.day)
+            : '',
         hideDataPoint: index !== points.length - 1,
         dataPointColor: lineColor,
         dataPointRadius: 5,
       })),
     [points, lineColor]
   );
+
+  const spendingLimitData = useMemo(
+    () =>
+      spendingLimit > 0
+        ? points.map(() => ({
+            value: spendingLimit,
+            hideDataPoint: true,
+          }))
+        : undefined,
+    [points, spendingLimit]
+  );
+
+  const chartMaxValue = useMemo(() => {
+    const highestValue = Math.max(total, spendingLimit);
+    return highestValue > 0 ? highestValue * 1.12 : undefined;
+  }, [spendingLimit, total]);
 
   const contentWidth = screenWidth - Spacing.xl * 2;
 
@@ -264,9 +318,23 @@ export default function OrcamentoScreen() {
       >
         {/* Curva de gastos acumulados com tooltip por dia */}
         <GlassSurface variant="material" style={[styles.card, cardBorder]}>
-          <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-            Gastos do mês
-          </Text>
+          <View style={styles.cardHeaderRow}>
+            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
+              Gastos do mês
+            </Text>
+            <TouchableOpacity
+              onPress={() => setChartInfoVisible(true)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Como ler o gráfico de gastos do mês"
+            >
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
           {seriesLoading ? (
             <View style={styles.heroSkeleton}>
               <Skeleton width={160} height={30} radius={8} />
@@ -294,23 +362,58 @@ export default function OrcamentoScreen() {
           )}
           {chartData.length > 1 && (
             <View style={styles.chartArea}>
+              <View style={styles.chartLegendRow}>
+                <View style={styles.chartLegendItem}>
+                  <View style={[styles.chartLegendLine, { backgroundColor: lineColor }]} />
+                  <Text style={[styles.chartLegendText, { color: colors.textSecondary }]}>
+                    Gastos
+                  </Text>
+                </View>
+                {spendingLimit > 0 && (
+                  <View style={styles.chartLegendItem}>
+                    <View
+                      style={[
+                        styles.chartLimitLegendLine,
+                        { borderColor: colors.warning },
+                      ]}
+                    />
+                    <Text style={[styles.chartLegendText, { color: colors.textSecondary }]}>
+                      Limite {formatCurrency(spendingLimit)}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <LineChart
                 data={chartData}
+                data2={spendingLimitData}
                 areaChart
+                areaChart2={false}
                 curved
                 thickness={2.5}
+                thickness2={1.5}
                 color={lineColor}
+                color2={colors.warning}
+                strokeDashArray2={[6, 5]}
+                hideDataPoints2
                 startFillColor={lineColor}
                 startOpacity={isDark ? 0.35 : 0.25}
                 endFillColor={lineColor}
                 endOpacity={0.02}
-                hideAxesAndRules
+                hideRules
                 hideYAxisText
                 yAxisThickness={0}
-                xAxisThickness={0}
-                initialSpacing={0}
+                yAxisLabelWidth={0}
+                xAxisThickness={StyleSheet.hairlineWidth}
+                xAxisColor={colors.border}
+                xAxisLabelTextStyle={{
+                  color: colors.textSecondary,
+                  fontSize: FontSize.xs,
+                }}
+                xAxisLabelsHeight={18}
+                initialSpacing={8}
                 endSpacing={8}
                 adjustToWidth
+                maxValue={chartMaxValue}
                 width={contentWidth - Spacing.lg * 2}
                 height={140}
                 disableScroll
@@ -348,9 +451,23 @@ export default function OrcamentoScreen() {
         {/* Donut: para onde o dinheiro foi (fatias tocáveis, centro = total) */}
         {donutData.length > 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
-            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-              Para onde o dinheiro foi
-            </Text>
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
+                Para onde o dinheiro foi
+              </Text>
+              <TouchableOpacity
+                onPress={() => setBudgetChartInfo('distribution')}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Como ler a distribuição dos gastos"
+              >
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
             <View style={styles.donutRow}>
               <PieChart
                 data={donutData}
@@ -413,6 +530,39 @@ export default function OrcamentoScreen() {
                       </View>
                     );
                   })}
+                {uncategorizedTotal > 0 && (
+                  <View style={styles.legendRow}>
+                    <View
+                      style={[
+                        styles.legendSwatch,
+                        { backgroundColor: uncategorizedColor + '22' },
+                      ]}
+                    >
+                      <Ionicons
+                        name="help-circle-outline"
+                        size={14}
+                        color={uncategorizedColor}
+                      />
+                    </View>
+                    <View style={styles.legendText}>
+                      <Text
+                        style={[styles.legendLabel, { color: colors.text }]}
+                        numberOfLines={1}
+                      >
+                        Não categorizado
+                      </Text>
+                      <Text
+                        style={[styles.legendValue, { color: colors.textSecondary }]}
+                      >
+                        {formatCurrency(uncategorizedTotal)} ·{' '}
+                        {spentTotal > 0
+                          ? Math.round((uncategorizedTotal / spentTotal) * 100)
+                          : 0}
+                        %
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
             </View>
           </GlassSurface>
@@ -421,9 +571,23 @@ export default function OrcamentoScreen() {
         {/* Ideal vs. atual por categoria */}
         {allocations.length > 0 && totalIncome > 0 && (
           <GlassSurface variant="material" style={[styles.card, cardBorder]}>
-            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-              Ideal vs. atual
-            </Text>
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
+                Ideal vs. atual
+              </Text>
+              <TouchableOpacity
+                onPress={() => setBudgetChartInfo('comparison')}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Como comparar os gastos ideais e atuais"
+              >
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
             <View style={styles.barLegendRow}>
               <View style={styles.legendRow}>
                 <View
@@ -596,6 +760,21 @@ export default function OrcamentoScreen() {
       {/* Explicação das categorias 50-30-20 (bottom sheet estilo Revolut) */}
       <BudgetInfoSheet visible={infoVisible} onClose={() => setInfoVisible(false)} />
 
+      {/* Explicação das linhas, dias e interação do gráfico de gastos */}
+      <SpendingChartInfoSheet
+        visible={chartInfoVisible}
+        onClose={() => setChartInfoVisible(false)}
+        spendingColor={lineColor}
+        limitColor={colors.warning}
+      />
+
+      {/* Explicação dos gráficos de distribuição e comparação */}
+      <BudgetChartsInfoSheet
+        visible={budgetChartInfo !== null}
+        kind={budgetChartInfo ?? 'distribution'}
+        onClose={() => setBudgetChartInfo(null)}
+      />
+
       {/* Edição da renda mensal declarada (base do orçamento) */}
       <IncomeSheet visible={incomeVisible} onClose={() => setIncomeVisible(false)} />
     </FullScreenOverlay>
@@ -648,6 +827,31 @@ const styles = StyleSheet.create({
   },
   chartArea: {
     marginTop: Spacing.md,
+  },
+  chartLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  chartLegendLine: {
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+  },
+  chartLimitLegendLine: {
+    width: 18,
+    borderTopWidth: 2,
+    borderStyle: 'dashed',
+  },
+  chartLegendText: {
+    fontSize: FontSize.xs,
+    fontVariant: ['tabular-nums'],
   },
   tooltip: {
     paddingHorizontal: Spacing.md,

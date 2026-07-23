@@ -26,11 +26,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import { extractReceipt, MAX_MESSAGE_LENGTH } from '@/lib/agent-api';
 import {
-  createTransaction,
   detectStatement,
   getCreditCards,
   parseStatement,
-  payTransaction,
 } from '@/lib/finance-api';
 import { pickStatementFile } from '@/lib/statement-file';
 import { IconSymbol } from '@/components/atoms/icon-symbol';
@@ -43,10 +41,7 @@ import { ConfirmDialog } from '@/components/organisms/ConfirmDialog';
 import { QrScannerModal } from '@/components/organisms/QrScannerModal';
 import { ReceiptScanningLoader } from '@/components/organisms/ReceiptScanningLoader';
 import { StatementReviewModal } from '@/components/organisms/StatementReviewModal';
-import {
-  ReceiptDraftCard,
-  type DraftConfirmation,
-} from '@/components/organisms/ReceiptDraftCard';
+import { ReceiptDraftCard } from '@/components/organisms/ReceiptDraftCard';
 import type { ReceiptChatMessage, TransactionDraft } from '@/types/agent';
 import type {
   ConfirmImportResult,
@@ -57,7 +52,6 @@ import type {
   PickedStatementFile,
 } from '@/types/import';
 import type { FinanceAccount, FinanceCreditCard } from '@/types/finance';
-import { formatCurrency } from '@/types/finance';
 
 const NOTA_GRADIENT = ['#0D9488', '#14B8A6', '#2DD4BF'] as const;
 const NOTA_ACCENT = '#14B8A6';
@@ -542,51 +536,18 @@ export default function NotaChatScreen() {
     setConfirmClearVisible(false);
   }, [resetImport]);
 
-  const handleConfirmDraft = useCallback(
-    async (messageId: string, draft: TransactionDraft, data: DraftConfirmation) => {
-      const dueDate = draft.due_date ?? new Date().toISOString().split('T')[0];
-
-      const transaction = await createTransaction({
-        type: draft.type,
-        category_id: data.categoryId,
-        account_id: data.accountId,
-        credit_card_id: data.creditCardId,
-        description: draft.description,
-        amount: data.amount,
-        due_date: dueDate,
-        notes: draft.notes ?? undefined,
+  // Abre a tela de Nova Transação já preenchida com o que a Nota leu. O usuário
+  // revisa, ajusta o que quiser (valor, conta, categoria) e confirma lá — o
+  // lançamento não acontece mais direto no chat.
+  const handleReviewDraft = useCallback(
+    (draft: TransactionDraft) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push({
+        pathname: '/new-transaction',
+        params: { draft: JSON.stringify(draft) },
       });
-
-      // Nota fiscal = compra já realizada: em conta, marca como paga na data
-      // da nota. No cartão fica pendente e entra na fatura.
-      if (data.accountId) {
-        try {
-          await payTransaction(transaction.id, { payment_date: dueDate });
-        } catch {
-          // Transação criada; falha ao marcar como paga não deve travar o fluxo
-        }
-      }
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-      const sourceName = data.creditCardId
-        ? creditCards.find((c) => c.id === data.creditCardId)?.name
-        : accounts.find((a) => a.id === data.accountId)?.name;
-
-      setMessages((prev) => [
-        ...prev.map((m) =>
-          m.id === messageId ? { ...m, savedTransactionId: transaction.id } : m
-        ),
-        {
-          id: generateId(),
-          role: 'assistant',
-          content: `Prontinho! Lancei ${formatCurrency(data.amount)} em "${draft.description}"${sourceName ? ` (${sourceName})` : ''}. Pode escanear a próxima nota quando quiser.`,
-        },
-      ]);
-
-      loadTransactions();
     },
-    [accounts, creditCards, loadTransactions]
+    [router]
   );
 
   const openReview = useCallback(() => setReviewVisible(true), []);
@@ -640,10 +601,7 @@ export default function NotaChatScreen() {
               <ReceiptDraftCard
                 draft={item.draft}
                 categories={categories}
-                accounts={accounts}
-                creditCards={creditCards}
-                saved={!!item.savedTransactionId}
-                onConfirm={(data) => handleConfirmDraft(item.id, item.draft!, data)}
+                onReview={() => handleReviewDraft(item.draft!)}
               />
             )}
             {item.statementImport && (
@@ -684,11 +642,9 @@ export default function NotaChatScreen() {
       );
     },
     [
-      accounts,
       categories,
       colors,
-      creditCards,
-      handleConfirmDraft,
+      handleReviewDraft,
       importPhase,
       openReview,
       streamingLabel,

@@ -511,6 +511,35 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
+/**
+ * Uma conta em aberto (PENDENTE/VENCIDO) cujo vencimento já passou. Compras de
+ * cartão não contam: liquidam pela fatura, não vencem individualmente.
+ */
+export function isTransactionOverdue(
+  status: TransactionStatus,
+  dueDate: string,
+  isCard = false
+): boolean {
+  if (isCard) return false;
+  if (status !== 'PENDENTE' && status !== 'VENCIDO') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate.split('T')[0] + 'T00:00:00');
+  return due < today;
+}
+
+/**
+ * Status para exibição: o sistema não reescreve PENDENTE→VENCIDO por data, então
+ * uma pendente com vencimento passado é mostrada como "Vencido" (label/cor).
+ */
+export function effectiveTransactionStatus(
+  status: TransactionStatus,
+  dueDate: string,
+  isCard = false
+): TransactionStatus {
+  return isTransactionOverdue(status, dueDate, isCard) ? 'VENCIDO' : status;
+}
+
 // Hex colors for React Native (not Tailwind classes)
 export function getStatusColor(status: TransactionStatus): string {
   switch (status) {
@@ -572,18 +601,40 @@ export function formatFullDate(dateString: string): string {
   });
 }
 
+/** Primeiro dia do mês da fatura que recebe uma compra feita em `purchaseDate`. */
+function invoiceMonthStart(card: FinanceCreditCard, purchaseDate: Date): Date {
+  // Primeiro dia do mês evita overflow (31 de jan + 1 mês viraria 3 de mar)
+  return new Date(
+    purchaseDate.getFullYear(),
+    purchaseDate.getMonth() + (purchaseDate.getDate() > card.closing_day ? 1 : 0),
+    1
+  );
+}
+
 /** Mês da fatura que recebe uma compra feita em `purchaseDate` no cartão. */
 export function invoiceMonthLabel(
   card: FinanceCreditCard,
   purchaseDate: Date
 ): string {
-  // Primeiro dia do mês evita overflow (31 de jan + 1 mês viraria 3 de mar)
-  const invoice = new Date(
-    purchaseDate.getFullYear(),
-    purchaseDate.getMonth() + (purchaseDate.getDate() > card.closing_day ? 1 : 0),
-    1
-  );
-  return invoice.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  return invoiceMonthStart(card, purchaseDate).toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/** Chave estável (YYYY-MM) do mês de fatura — para agrupar compras por fatura. */
+export function invoiceMonthKey(card: FinanceCreditCard, purchaseDate: Date): string {
+  const invoice = invoiceMonthStart(card, purchaseDate);
+  return `${invoice.getFullYear()}-${String(invoice.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Rótulo "julho de 2026" a partir de uma chave YYYY-MM de fatura. */
+export function invoiceMonthKeyLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, 1).toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 // Group transactions by date

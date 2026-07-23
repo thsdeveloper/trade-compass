@@ -62,6 +62,16 @@ const EXTRACTION_SCHEMA = {
     type: 'object',
     additionalProperties: false,
     properties: {
+      invoice_month: {
+        type: ['string', 'null'],
+        description:
+          'SOMENTE fatura de cartao: mes de referencia da fatura no formato YYYY-MM (do cabecalho/vencimento). null para extrato de conta',
+      },
+      invoice_previous_balance: {
+        type: ['number', 'null'],
+        description:
+          'SOMENTE fatura de cartao: valor liquido da secao "saldo fatura anterior e pagamentos" (total da fatura anterior menos pagamentos feitos pelo cliente). NEGATIVO quando e credito que abate esta fatura; POSITIVO quando e saldo devedor carregado. null se a secao nao existir ou for zero',
+      },
       transactions: {
         type: 'array',
         items: {
@@ -124,7 +134,7 @@ const EXTRACTION_SCHEMA = {
         },
       },
     },
-    required: ['transactions'],
+    required: ['invoice_month', 'invoice_previous_balance', 'transactions'],
   },
 } as const;
 
@@ -148,11 +158,19 @@ function buildSystemPrompt(context: ParseStatementContext, target: StatementTarg
   const targetRules =
     target === 'credit_card'
       ? `O arquivo e uma FATURA DE CARTAO DE CREDITO:
-- Extraia apenas as compras/despesas (type sempre DESPESA, line_kind sempre NORMAL)
+- Extraia TODOS os lancamentos que compoem a fatura (type sempre DESPESA, line_kind sempre NORMAL):
+  * compras nacionais e internacionais, uma transacao por linha de compra
+  * juros e encargos cobrados na fatura (mora, encargos por atraso, IOF, multa) — cada linha vira uma transacao separada
+  * mensalidade/anuidade, tarifas, seguros e "outros lancamentos" cobrados do cliente
+- Compra internacional: use o valor JA CONVERTIDO em reais (linha "Conversao para Real"), nunca o valor em moeda estrangeira nem a cotacao
+- NUNCA junte linhas: cada linha do documento vira no maximo uma transacao, com o valor exato daquela linha. Confira que nenhum valor extraido seja a juncao de dois valores vizinhos
 - IGNORE linhas de pagamento de fatura ("pagamento recebido", "pgto debito automatico", etc.)
-- IGNORE estornos/creditos na fatura
-- Compras parceladas: extraia apenas a parcela presente na fatura e anote em notes (ex: "Parcela 3/10")`
-      : `O arquivo e um EXTRATO DE CONTA BANCARIA:
+- IGNORE estornos/creditos e o saldo da fatura anterior
+- IGNORE linhas de resumo e totais (ex: "Total de compras e despesas", "Total do cartao", "Total a pagar", "Pagamento minimo", limites do cartao)
+- Compras parceladas: extraia apenas a parcela presente na fatura e anote em notes (ex: "Parcela 3/10")
+- Preencha invoice_month com o mes de referencia da fatura (YYYY-MM), lido do cabecalho ou do vencimento
+- Preencha invoice_previous_balance com o valor liquido da secao "saldo fatura anterior e pagamentos" (total da fatura anterior MENOS pagamentos feitos pelo cliente). Ex: fatura anterior 399,70 e pagamentos de 526,70 => -127,00 (credito). Use null se a fatura nao tiver essa secao ou o valor for zero. Esse valor NAO vira transacao — apenas o campo`
+      : `O arquivo e um EXTRATO DE CONTA BANCARIA (invoice_month e invoice_previous_balance devem ser null):
 - Creditos/entradas = RECEITA, debitos/saidas = DESPESA
 - IGNORE linhas de saldo (saldo anterior, saldo do dia, saldo disponivel)
 - IGNORE aplicacoes/resgates automaticos de rendimento da propria conta (ex: "aplicacao RDB automatica")
@@ -257,7 +275,7 @@ function isValidDate(value: string): boolean {
   return !Number.isNaN(date.getTime());
 }
 
-function mapOpenAIError(err: unknown): Error {
+export function mapOpenAIError(err: unknown): Error {
   const apiError = err as { status?: number; code?: string; message?: string };
   if (apiError.status === 429 || apiError.code === 'insufficient_quota') {
     return new Error(
@@ -272,10 +290,18 @@ function mapOpenAIError(err: unknown): Error {
   );
 }
 
+export interface ParseStatementResult {
+  transactions: ParsedStatementTransaction[];
+  /** Mes de referencia da fatura (YYYY-MM) — so para fatura de cartao */
+  invoice_month: string | null;
+  /** Saldo liquido "fatura anterior e pagamentos" (negativo = credito) — so fatura */
+  invoice_previous_balance: number | null;
+}
+
 export async function parseStatement(
   input: ParseStatementInput,
   context: ParseStatementContext
-): Promise<ParsedStatementTransaction[]> {
+): Promise<ParseStatementResult> {
   const { categories, accounts, creditCards } = context;
 
   if (input.kind === 'text' && input.content.length > MAX_TEXT_CHARS) {
@@ -289,7 +315,11 @@ export async function parseStatement(
   if (input.kind === 'text' && isOfxContent(input.content)) {
     const ofx = parseOfx(input.content);
     if (ofx && ofx.transactions.length > 0) {
-      return enrichOfxTransactions(ofx.transactions, input, context);
+      return {
+        transactions: await enrichOfxTransactions(ofx.transactions, input, context),
+        invoice_month: null,
+        invoice_previous_balance: null,
+      };
     }
   }
 
@@ -327,7 +357,11 @@ export async function parseStatement(
     );
   }
 
-  let parsed: { transactions?: unknown };
+  let parsed: {
+    transactions?: unknown;
+    invoice_month?: unknown;
+    invoice_previous_balance?: unknown;
+  };
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -418,7 +452,26 @@ export async function parseStatement(
     });
   }
 
-  return result;
+  // Campos exclusivos de fatura de cartao, validados antes de repassar
+  const invoiceMonth =
+    input.target === 'credit_card' &&
+    typeof parsed.invoice_month === 'string' &&
+    /^\d{4}-\d{2}$/.test(parsed.invoice_month)
+      ? parsed.invoice_month
+      : null;
+  const invoicePreviousBalance =
+    input.target === 'credit_card' &&
+    typeof parsed.invoice_previous_balance === 'number' &&
+    Number.isFinite(parsed.invoice_previous_balance) &&
+    parsed.invoice_previous_balance !== 0
+      ? Math.round(parsed.invoice_previous_balance * 100) / 100
+      : null;
+
+  return {
+    transactions: result,
+    invoice_month: invoiceMonth,
+    invoice_previous_balance: invoicePreviousBalance,
+  };
 }
 
 // ============================================================================

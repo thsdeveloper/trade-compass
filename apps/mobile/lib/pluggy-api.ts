@@ -4,7 +4,10 @@ import { API_URL } from './api-config';
 // Cliente das rotas /finance/pluggy/*. Mesmo padrao de autenticacao do
 // finance-api.ts (Bearer com o access_token do Supabase). O mobile NUNCA vê o
 // clientId/secret nem a API key da Pluggy — só o connectToken curto.
-async function authHeaders(): Promise<Record<string, string>> {
+// Content-Type só entra quando há corpo: o Fastify rejeita requests com
+// `application/json` e corpo vazio (FST_ERR_CTP_EMPTY_JSON_BODY) — era o que
+// quebrava o DELETE de desconexão.
+async function authHeaders(withJsonBody = false): Promise<Record<string, string>> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -14,7 +17,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   }
   return {
     Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
+    ...(withJsonBody ? { 'Content-Type': 'application/json' } : {}),
     'bypass-tunnel-reminder': 'true',
   };
 }
@@ -23,7 +26,7 @@ async function authHeaders(): Promise<Record<string, string>> {
 export async function createPluggyConnectToken(itemId?: string): Promise<string> {
   const res = await fetch(`${API_URL}/finance/pluggy/connect-token`, {
     method: 'POST',
-    headers: await authHeaders(),
+    headers: await authHeaders(true),
     body: JSON.stringify(itemId ? { item_id: itemId } : {}),
   });
   if (!res.ok) {
@@ -43,7 +46,7 @@ export interface PluggyRegisterResult {
 export async function registerPluggyItem(itemId: string): Promise<PluggyRegisterResult> {
   const res = await fetch(`${API_URL}/finance/pluggy/items`, {
     method: 'POST',
-    headers: await authHeaders(),
+    headers: await authHeaders(true),
     body: JSON.stringify({ item_id: itemId }),
   });
   if (!res.ok) {
@@ -80,6 +83,15 @@ export async function disconnectPluggyItem(id: string): Promise<void> {
     headers: await authHeaders(),
   });
   if (!res.ok) {
-    throw new Error('Nao foi possivel desconectar o banco');
+    // Propaga a mensagem real da API (ex.: falha ao revogar na Pluggy) em vez
+    // de um erro genérico — sem ela é impossível diagnosticar no device.
+    let message = `Nao foi possivel desconectar o banco (HTTP ${res.status})`;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body.message) message = body.message;
+    } catch {
+      // corpo não-JSON (ex.: tunnel caído devolvendo HTML): mantém o genérico
+    }
+    throw new Error(message);
   }
 }

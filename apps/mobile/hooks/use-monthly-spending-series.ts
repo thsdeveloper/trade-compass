@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getTransactions } from '@/lib/finance-api';
+import { useFinance } from '@/contexts/FinanceContext';
 
 export interface SpendingPoint {
   /** Gasto acumulado até o dia (R$) */
@@ -24,14 +25,24 @@ function toIsoDate(date: Date): string {
  * Meses passados cobrem o mês inteiro; o mês corrente vai até hoje.
  */
 export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
+  const { dataVersion, accounts } = useFinance();
   const [points, setPoints] = useState<SpendingPoint[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const monthKey = `${month.getFullYear()}-${month.getMonth()}`;
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
+  // Mesmo critério do resumo/orçamento do backend: contas de INVESTIMENTO e
+  // BENEFICIO ficam fora do "gasto do mês". Chave estável (ids ordenados) para
+  // não refazer a busca quando só os saldos das contas mudam.
+  const excludedAccountsKey = accounts
+    .filter((a) => a.type === 'INVESTIMENTO' || a.type === 'BENEFICIO')
+    .map((a) => a.id)
+    .sort()
+    .join(',');
+
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setIsLoading(true);
     try {
       const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
       const lastDayOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0);
@@ -48,8 +59,20 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
         limit: 500,
       });
 
+      const excludedAccountIds = new Set(
+        excludedAccountsKey ? excludedAccountsKey.split(',') : []
+      );
+
       const byDay = new Map<number, number>();
       for (const transaction of transactions) {
+        // Perna de transferência entre contas próprias não é gasto: tem type
+        // DESPESA no banco, mas o dinheiro só mudou de conta (o backend já a
+        // exclui de todos os cálculos do dashboard — aqui é o mesmo critério)
+        if (transaction.transfer_id) continue;
+        // Movimentação em conta de investimento/benefício também fica fora
+        if (transaction.account_id && excludedAccountIds.has(transaction.account_id)) {
+          continue;
+        }
         const day = parseInt(transaction.due_date.slice(8, 10), 10);
         byDay.set(day, (byDay.get(day) ?? 0) + transaction.amount);
       }
@@ -70,11 +93,20 @@ export function useMonthlySpendingSeries(month: Date): MonthlySpendingSeries {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthKey]);
+  }, [monthKey, excludedAccountsKey]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Mutações de transação em qualquer tela (dataVersion no FinanceContext)
+  // refazem a série em silêncio — a curva/gauge atualiza sem flash de skeleton.
+  const lastVersionRef = useRef(0);
+  useEffect(() => {
+    if (dataVersion === lastVersionRef.current) return;
+    lastVersionRef.current = dataVersion;
+    load({ silent: true });
+  }, [dataVersion, load]);
 
   return { points, total, isLoading };
 }

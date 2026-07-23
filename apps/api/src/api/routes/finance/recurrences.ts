@@ -15,6 +15,7 @@ import {
   updateRecurrence,
   deleteRecurrence,
   generateNextOccurrences,
+  generateDueOccurrences,
   getPendingRecurrences,
 } from '../../../data/finance/recurrence-repository.js';
 
@@ -96,7 +97,6 @@ export async function recurrenceRoutes(app: FastifyInstance) {
     const body = request.body;
 
     if (
-      !body.category_id ||
       !body.description ||
       !body.amount ||
       !body.type ||
@@ -105,7 +105,17 @@ export async function recurrenceRoutes(app: FastifyInstance) {
     ) {
       return reply.status(400).send({
         error: 'Bad Request',
-        message: 'Categoria, descricao, valor, tipo, frequencia e data de inicio sao obrigatorios',
+        message: 'Descricao, valor, tipo, frequencia e data de inicio sao obrigatorios',
+        statusCode: 400,
+      });
+    }
+
+    // Categoria: obrigatoria exceto em transferencia (a API resolve
+    // "Transferências entre contas" automaticamente).
+    if (!body.category_id && body.type !== 'TRANSFERENCIA') {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Categoria e obrigatoria',
         statusCode: 400,
       });
     }
@@ -118,11 +128,55 @@ export async function recurrenceRoutes(app: FastifyInstance) {
       });
     }
 
+    if (body.type === 'TRANSFERENCIA') {
+      if (!body.account_id || !body.destination_account_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transferencia recorrente exige conta de origem e de destino',
+          statusCode: 400,
+        });
+      }
+      if (body.account_id === body.destination_account_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Conta de origem e destino devem ser diferentes',
+          statusCode: 400,
+        });
+      }
+      if (body.credit_card_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Transferencia recorrente nao pode usar cartao de credito',
+          statusCode: 400,
+        });
+      }
+    }
+
     try {
       const recurrence = await createRecurrence(user.id, body, accessToken);
       return reply.status(201).send(recurrence);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao criar recorrencia';
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message,
+        statusCode: 500,
+      });
+    }
+  });
+
+  // POST /finance/recurrences/generate-due - Materialize all due occurrences
+  // for the user's active recurrences (next_occurrence <= today)
+  app.post<{
+    Reply: { generated: number } | ApiError;
+  }>('/finance/recurrences/generate-due', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+
+    try {
+      const result = await generateDueOccurrences(user.id, accessToken);
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao gerar recorrencias vencidas';
       return reply.status(500).send({
         error: 'Internal Server Error',
         message,
@@ -172,6 +226,18 @@ export async function recurrenceRoutes(app: FastifyInstance) {
     const { user, accessToken } = request as AuthenticatedRequest;
     const { id } = request.params;
     const updates = request.body;
+
+    if (
+      updates.destination_account_id &&
+      updates.account_id &&
+      updates.destination_account_id === updates.account_id
+    ) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Conta de origem e destino devem ser diferentes',
+        statusCode: 400,
+      });
+    }
 
     try {
       const recurrence = await updateRecurrence(id, user.id, updates, accessToken);

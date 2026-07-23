@@ -27,6 +27,7 @@ import type {
   ConfirmImportResult,
   ImportPreviewTransaction,
   ImportTarget,
+  InvoiceAdjustment,
   ReviewRow,
 } from '@/types/import';
 
@@ -57,6 +58,8 @@ interface StatementReviewModalProps {
   transactions: ImportPreviewTransaction[];
   /** Transações do arquivo que ficaram de fora por já terem sido importadas */
   alreadyImportedCount?: number;
+  /** Saldo "fatura anterior e pagamentos" da fatura (negativo = crédito) */
+  invoiceAdjustment?: InvoiceAdjustment | null;
   categories: FinanceCategory[];
   accounts: FinanceAccount[];
   /** Fecha sem confirmar (a revisão fica pendente no chat) */
@@ -246,6 +249,7 @@ export function StatementReviewModal({
   targetLabel,
   transactions,
   alreadyImportedCount = 0,
+  invoiceAdjustment = null,
   categories,
   accounts,
   onClose,
@@ -410,7 +414,11 @@ export function StatementReviewModal({
         fitid: row.fitid ?? undefined,
       }));
 
-      const result = await confirmImport(target, items);
+      const result = await confirmImport(
+        target,
+        items,
+        isCardTarget && invoiceAdjustment ? invoiceAdjustment : undefined
+      );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCommitted(result, items.length);
     } catch (err) {
@@ -420,7 +428,7 @@ export function StatementReviewModal({
     } finally {
       setImporting(false);
     }
-  }, [importing, selectedRows, isCardTarget, target, onCommitted]);
+  }, [importing, selectedRows, isCardTarget, target, invoiceAdjustment, onCommitted]);
 
   const renderItem = useCallback(
     ({ item }: { item: ReviewRow }) => (
@@ -495,6 +503,13 @@ export function StatementReviewModal({
             <Text style={[styles.summaryHint, { color: colors.textSecondary }]}>
               Pagamentos de fatura ficam de fora para não contar o gasto do cartão
               duas vezes. Use &quot;Tratar como normal&quot; se quiser importá-los.
+            </Text>
+          )}
+          {isCardTarget && invoiceAdjustment && (
+            <Text style={[styles.summaryHint, { color: colors.textSecondary }]}>
+              {invoiceAdjustment.amount < 0
+                ? `Crédito de ${formatCurrency(Math.abs(invoiceAdjustment.amount))} da fatura anterior será abatido automaticamente do valor da fatura.`
+                : `Saldo devedor de ${formatCurrency(invoiceAdjustment.amount)} da fatura anterior será somado automaticamente ao valor da fatura.`}
             </Text>
           )}
           {bulkHint && (

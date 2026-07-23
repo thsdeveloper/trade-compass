@@ -17,7 +17,7 @@ const RECEIPT_H = 156;
 const BEAM_H = 40;
 
 // Mensagens que trocam como se a IA estivesse "pensando".
-const MESSAGES = [
+const DEFAULT_MESSAGES = [
   'Lendo sua nota…',
   'Identificando os itens…',
   'Organizando os dados…',
@@ -29,6 +29,8 @@ const FAKE_LINES = [0.85, 0.62, 0.72, 0.5, 0.68, 0.44];
 
 type ReceiptScanningLoaderProps = {
   visible: boolean;
+  /** Mensagens rotativas; o padrão é o texto de leitura de nota fiscal. */
+  messages?: string[];
 };
 
 /**
@@ -36,7 +38,10 @@ type ReceiptScanningLoaderProps = {
  * varrida por um feixe de luz (gradiente cyan→violeta), sparkles pulsando e
  * mensagens que trocam como um raciocínio de IA. Overlay auto-contido.
  */
-export function ReceiptScanningLoader({ visible }: ReceiptScanningLoaderProps) {
+export function ReceiptScanningLoader({
+  visible,
+  messages = DEFAULT_MESSAGES,
+}: ReceiptScanningLoaderProps) {
   const beam = useRef(new Animated.Value(0)).current;
   const sparkleA = useRef(new Animated.Value(0)).current;
   const sparkleB = useRef(new Animated.Value(0)).current;
@@ -130,10 +135,10 @@ export function ReceiptScanningLoader({ visible }: ReceiptScanningLoaderProps) {
           useNativeDriver: true,
         }),
       ]).start();
-      setMsgIndex((i) => (i + 1) % MESSAGES.length);
+      setMsgIndex((i) => (i + 1) % messages.length);
     }, 1600);
     return () => clearInterval(id);
-  }, [visible, textOpacity]);
+  }, [visible, textOpacity, messages.length]);
 
   if (!visible) return null;
 
@@ -225,7 +230,7 @@ export function ReceiptScanningLoader({ visible }: ReceiptScanningLoaderProps) {
         <Text style={styles.badgeText}>Norte IA</Text>
       </View>
       <Animated.Text style={[styles.message, { opacity: textOpacity }]}>
-        {MESSAGES[msgIndex]}
+        {messages[msgIndex % messages.length]}
       </Animated.Text>
     </View>
   );

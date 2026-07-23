@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -14,6 +14,8 @@ import { FullScreenOverlay } from '@/components/organisms/FullScreenOverlay';
 import { CategoryExpenseItem } from '@/components/molecules/CategoryExpenseItem';
 import { MoneyText } from '@/components/atoms/MoneyText';
 import { MonthSlider } from '@/components/molecules/MonthSlider';
+import { getExpensesByCategory } from '@/lib/finance-api';
+import type { ExpensesByCategory } from '@/types/finance';
 
 // Fatias além das 6 maiores viram "Outras" (donut legível > donut completo).
 // Cinza neutro: "Outras" não é uma categoria, não ganha cor de identidade.
@@ -26,8 +28,41 @@ export default function DespesasCategoriaScreen() {
   const isDark = colorScheme === 'dark';
   const router = useRouter();
 
-  const { expensesByCategory, selectedMonth, setSelectedMonth, isDashboardLoading } =
-    useFinance();
+  const { dataVersion } = useFinance();
+
+  // Mês local à tela: navegar entre meses aqui NÃO toca o dashboard do
+  // contexto, que alimenta a home sempre com o mês corrente. A tela abre
+  // sempre no mês atual e busca as despesas do mês exibido direto na API.
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date());
+  const [expensesByCategory, setExpensesByCategory] = useState<ExpensesByCategory[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const monthKey = `${selectedMonth.getFullYear()}-${String(
+    selectedMonth.getMonth() + 1
+  ).padStart(2, '0')}`;
+
+  // dataVersion nas deps: mutações de transação refazem a busca — em silêncio
+  // (sem skeleton) quando o mês não mudou.
+  const lastLoadedMonthRef = useRef('');
+  useEffect(() => {
+    let cancelled = false;
+    const isMonthChange = lastLoadedMonthRef.current !== monthKey;
+    lastLoadedMonthRef.current = monthKey;
+    if (isMonthChange) setIsLoading(true);
+    getExpensesByCategory(monthKey)
+      .then((data) => {
+        if (!cancelled) setExpensesByCategory(data);
+      })
+      .catch(() => {
+        if (!cancelled) setExpensesByCategory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey, dataVersion]);
 
   const total = useMemo(
     () => expensesByCategory.reduce((sum, item) => sum + item.total, 0),
@@ -63,6 +98,8 @@ export default function DespesasCategoriaScreen() {
         name: category.category_name,
         color: category.category_color,
         icon: category.category_icon,
+        // A tela de destino não tem slider: recebe o mês exibido aqui
+        month: monthKey,
       },
     });
   };
@@ -75,7 +112,7 @@ export default function DespesasCategoriaScreen() {
       >
         <MonthSlider selectedDate={selectedMonth} onMonthChange={setSelectedMonth} />
 
-        {isDashboardLoading ? (
+        {isLoading ? (
           <SkeletonProvider>
             <View style={styles.skeletonArea}>
               <Skeleton width={160} height={160} radius={80} />

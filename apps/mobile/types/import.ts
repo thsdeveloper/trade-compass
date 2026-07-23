@@ -54,6 +54,22 @@ export interface ConfirmImportItem {
   fitid?: string | null;
 }
 
+/** Ajuste "saldo fatura anterior e pagamentos" de uma fatura importada */
+export interface InvoiceAdjustment {
+  /** Mês de referência da fatura (YYYY-MM) */
+  invoice_month: string;
+  /** Negativo = crédito que abate a fatura; positivo = saldo devedor carregado */
+  amount: number;
+}
+
+export interface ParseStatementResponse {
+  transactions: ImportPreviewTransaction[];
+  /** Mês de referência da fatura (YYYY-MM) — só fatura de cartão */
+  invoice_month: string | null;
+  /** Saldo líquido "fatura anterior e pagamentos" (negativo = crédito) — só fatura */
+  invoice_previous_balance: number | null;
+}
+
 /** Destino da importação: conta OU cartão, nunca ambos (regra do backend) */
 export type ImportTarget =
   | { account_id: string; credit_card_id?: undefined }

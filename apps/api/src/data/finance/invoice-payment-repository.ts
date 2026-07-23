@@ -87,6 +87,70 @@ export async function getInvoicePaymentById(
   return data;
 }
 
+/**
+ * Registra o "saldo fatura anterior e pagamentos" de uma fatura importada
+ * como ajuste. `adjustment` é o valor líquido da linha na fatura: negativo
+ * quando é crédito (abate o valor a pagar), positivo quando é saldo devedor
+ * carregado. Armazenado como pagamento AJUSTE com amount = -adjustment, o
+ * restante da fatura fica: total das transações - pagamentos - ajuste.
+ * Idempotente por (cartão, mês): reimportar a mesma fatura atualiza o ajuste
+ * em vez de duplicá-lo.
+ */
+export async function registerInvoiceAdjustment(
+  userId: string,
+  creditCardId: string,
+  invoiceMonth: string,
+  adjustment: number,
+  accessToken: string
+): Promise<FinanceInvoicePayment> {
+  const client = createUserClient(accessToken);
+  const amount = Math.round(-adjustment * 100) / 100;
+  const notes = 'Saldo da fatura anterior e pagamentos (importado da fatura)';
+  const paymentDate = new Date().toISOString().split('T')[0];
+
+  const existing = (
+    await getInvoicePaymentsByMonth(creditCardId, invoiceMonth, userId, accessToken)
+  ).find((p) => p.payment_type === 'AJUSTE');
+
+  const previousAmount = existing ? Number(existing.amount) : 0;
+
+  const { data, error } = existing
+    ? await client
+        .from(TABLE)
+        .update({ amount, payment_date: paymentDate, notes })
+        .eq('id', existing.id)
+        .eq('user_id', userId)
+        .select()
+        .single()
+    : await client
+        .from(TABLE)
+        .insert({
+          user_id: userId,
+          credit_card_id: creditCardId,
+          account_id: null,
+          invoice_month: invoiceMonth,
+          amount,
+          payment_date: paymentDate,
+          payment_type: 'AJUSTE',
+          notes,
+        })
+        .select()
+        .single();
+
+  if (error) {
+    throw new Error(`Erro ao registrar ajuste de fatura: ${error.message}`);
+  }
+
+  // Crédito devolve limite; saldo devedor consome (delta só da diferença
+  // quando o ajuste é atualizado). Clamp em [0, total_limit] no repositório.
+  const limitDelta = amount - previousAmount;
+  if (limitDelta !== 0) {
+    await updateCreditCardAvailableLimit(creditCardId, userId, limitDelta, accessToken);
+  }
+
+  return data;
+}
+
 export async function payInvoice(
   userId: string,
   creditCardId: string,

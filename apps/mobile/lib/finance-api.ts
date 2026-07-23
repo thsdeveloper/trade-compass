@@ -17,14 +17,22 @@ import type {
   BudgetTransactionsPage,
   GlobalCategoryWithChildren,
   FinanceCreditCard,
+  CreditCardFormData,
+  CreditCardInvoiceSummary,
+  CreditCardExtractionResult,
+  FinanceTag,
+  FinanceRecurrence,
+  CreateRecurrenceInput,
+  CreateTransferInput,
 } from '@/types/finance';
 
 import type {
   ConfirmImportItem,
   ConfirmImportResult,
   DetectStatementResponse,
-  ImportPreviewTransaction,
+  InvoiceAdjustment,
   ImportTarget,
+  ParseStatementResponse,
   PickedStatementFile,
 } from '@/types/import';
 
@@ -159,12 +167,126 @@ export async function getCreditCards(): Promise<FinanceCreditCard[]> {
   return authFetch('/finance/credit-cards');
 }
 
+export async function createCreditCard(
+  data: CreditCardFormData
+): Promise<FinanceCreditCard> {
+  return authFetch('/finance/credit-cards', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCreditCard(
+  id: string,
+  data: Partial<CreditCardFormData>
+): Promise<FinanceCreditCard> {
+  return authFetch(`/finance/credit-cards/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// Soft delete: o cartão sai da lista, mas o histórico já lançado permanece
+export async function deleteCreditCard(id: string): Promise<void> {
+  return authFetch(`/finance/credit-cards/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Extrai os dados do cartão de uma fatura (PDF/imagem) com IA. Não cria o
+ * cartão: quem decide entre cadastro direto e formulário é a tela.
+ */
+export async function extractCreditCardFromInvoice(
+  file: PickedStatementFile
+): Promise<CreditCardExtractionResult> {
+  return authFetch('/finance/credit-cards/extract-invoice', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: file.kind,
+      filename: file.name,
+      content: file.content,
+      mime_type: file.mimeType,
+    }),
+  });
+}
+
+/** Resumo da fatura do mês (YYYY-MM) de um cartão. */
+export async function getCreditCardInvoice(
+  id: string,
+  month: string
+): Promise<CreditCardInvoiceSummary> {
+  return authFetch(`/finance/credit-cards/${id}/invoice?month=${month}`);
+}
+
+// Tags (sempre do usuário; unicidade de nome tratada pelo backend)
+export async function getTags(): Promise<FinanceTag[]> {
+  return authFetch('/finance/tags');
+}
+
+export async function createTag(name: string): Promise<FinanceTag> {
+  return authFetch('/finance/tags', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function updateTag(id: string, name: string): Promise<FinanceTag> {
+  return authFetch(`/finance/tags/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+// Soft delete: a tag some da lista, mas os vínculos antigos permanecem
+export async function deleteTag(id: string): Promise<void> {
+  return authFetch(`/finance/tags/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Transferência entre contas: cria as duas pernas PAGAS e move os saldos
+export async function createTransfer(
+  data: CreateTransferInput
+): Promise<{ transfer_id: string }> {
+  return authFetch('/finance/transactions/transfer', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// Recorrências
+export async function getRecurrences(): Promise<FinanceRecurrence[]> {
+  return authFetch('/finance/recurrences');
+}
+
+export async function createRecurrence(
+  data: CreateRecurrenceInput
+): Promise<FinanceRecurrence> {
+  return authFetch('/finance/recurrences', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Materializa todas as ocorrências vencidas das recorrências ativas do usuário
+ * (não há cron no backend — o app dispara no bootstrap da sessão).
+ */
+export async function generateDueRecurrences(): Promise<{ generated: number }> {
+  return authFetch('/finance/recurrences/generate-due', {
+    method: 'POST',
+  });
+}
+
 // Transactions
 export async function getTransactions(filters?: {
   start_date?: string;
   end_date?: string;
   category_id?: string;
   account_id?: string;
+  /** 'card' = só compras de cartão; 'account' = só lançamentos em conta */
+  source?: 'account' | 'card';
   type?: string;
   status?: string;
   search?: string;
@@ -217,6 +339,27 @@ export async function payTransaction(
   return authFetch(`/finance/transactions/${id}/pay`, {
     method: 'PATCH',
     body: JSON.stringify(payment ?? {}),
+  });
+}
+
+export type BulkDeleteSkipReason =
+  | 'not_found'
+  | 'transfer'
+  | 'already_cancelled'
+  | 'credit_card_paid';
+
+export interface BulkDeleteTransactionsResult {
+  success: boolean;
+  deleted: string[];
+  skipped: { id: string; reason: BulkDeleteSkipReason }[];
+}
+
+export async function bulkDeleteTransactions(
+  ids: string[]
+): Promise<BulkDeleteTransactionsResult> {
+  return authFetch('/finance/transactions/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
   });
 }
 
@@ -313,7 +456,7 @@ export async function detectStatement(
 export async function parseStatement(
   file: PickedStatementFile,
   target: ImportTarget
-): Promise<{ transactions: ImportPreviewTransaction[] }> {
+): Promise<ParseStatementResponse> {
   return authFetch('/finance/import/parse', {
     method: 'POST',
     body: JSON.stringify({
@@ -328,11 +471,16 @@ export async function parseStatement(
 
 export async function confirmImport(
   target: ImportTarget,
-  items: ConfirmImportItem[]
+  items: ConfirmImportItem[],
+  invoiceAdjustment?: InvoiceAdjustment
 ): Promise<ConfirmImportResult> {
   return authFetch('/finance/import/confirm', {
     method: 'POST',
-    body: JSON.stringify({ ...target, items }),
+    body: JSON.stringify({
+      ...target,
+      items,
+      invoice_adjustment: invoiceAdjustment,
+    }),
   });
 }
 

@@ -44,16 +44,19 @@ export function UpcomingPaymentItem({ payment }: UpcomingPaymentItemProps) {
   };
 
   const urgency = getUrgency();
-  const iconBg = payment.category.color + (isDark ? '30' : '15');
+  // Fatura de cartão agregada não tem categoria: usa a cor do cartão
+  const accentColor =
+    payment.category?.color ?? payment.credit_card?.color ?? colors.textSecondary;
+  const iconBg = accentColor + (isDark ? '30' : '15');
 
   return (
     <View style={styles.container}>
       <View style={styles.leftContent}>
         <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
           <IconSymbol
-            name={getCategoryIcon(payment.category.icon)}
+            name={payment.category ? getCategoryIcon(payment.category.icon) : 'creditcard'}
             size={18}
-            color={payment.category.color}
+            color={accentColor}
           />
         </View>
         <View style={styles.textContent}>

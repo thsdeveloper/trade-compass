@@ -4,6 +4,7 @@ export * from './external-link';
 export * from './AIRing';
 export * from './MoneyText';
 export * from './BankLogo';
+export * from './CardBrandLogo';
 export * from './Button';
 export * from './GlassSurface';
 export * from './hello-wave';

@@ -17,6 +17,14 @@ export type TransactionStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
 export type BudgetCategory = 'ESSENCIAL' | 'ESTILO_VIDA' | 'INVESTIMENTO';
 
+export type CreditCardBrand =
+  | 'VISA'
+  | 'MASTERCARD'
+  | 'ELO'
+  | 'AMEX'
+  | 'HIPERCARD'
+  | 'OUTROS';
+
 // ==================== ENTITIES ====================
 
 /** Banco do catálogo público (public.banks) — fonte da verdade do bank_id. */
@@ -93,6 +101,60 @@ export interface FinanceTransaction {
 export interface TransactionWithDetails extends FinanceTransaction {
   category: FinanceCategory;
   account?: FinanceAccount;
+  /** Cartão da compra (o GET /finance/transactions já retorna embutido) */
+  credit_card?: FinanceCreditCard | null;
+  /** Tags da transação (o GET /finance/transactions já retorna enriquecido) */
+  tags?: FinanceTag[];
+}
+
+/** Tag de transação — sempre do usuário (finance_tags tem user_id) */
+export interface FinanceTag {
+  id: string;
+  user_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type RecurrenceFrequency =
+  | 'DIARIA'
+  | 'SEMANAL'
+  | 'QUINZENAL'
+  | 'MENSAL'
+  | 'BIMESTRAL'
+  | 'TRIMESTRAL'
+  | 'SEMESTRAL'
+  | 'ANUAL';
+
+export const RECURRENCE_FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {
+  DIARIA: 'Diária',
+  SEMANAL: 'Semanal',
+  QUINZENAL: 'Quinzenal',
+  MENSAL: 'Mensal',
+  BIMESTRAL: 'Bimestral',
+  TRIMESTRAL: 'Trimestral',
+  SEMESTRAL: 'Semestral',
+  ANUAL: 'Anual',
+};
+
+export interface FinanceRecurrence {
+  id: string;
+  user_id: string;
+  category_id: string;
+  account_id: string | null;
+  /** Conta de destino — apenas em recorrências de TRANSFERENCIA */
+  destination_account_id: string | null;
+  credit_card_id: string | null;
+  description: string;
+  amount: number;
+  type: TransactionType;
+  frequency: RecurrenceFrequency;
+  start_date: string;
+  end_date: string | null;
+  next_occurrence: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // ==================== FORM DATA ====================
@@ -106,6 +168,45 @@ export interface TransactionFormData {
   amount: number;
   due_date: string;
   notes?: string;
+  tag_ids?: string[];
+  /**
+   * 'PAGO' cria a transação já efetuada (saldo da conta ajustado na hora).
+   * Default do backend: 'PENDENTE'. Ignorado em despesa de cartão (fatura).
+   */
+  status?: 'PENDENTE' | 'PAGO';
+}
+
+/**
+ * Transferência entre contas: o backend cria as duas pernas (DESPESA na origem,
+ * RECEITA no destino) já PAGAS, move os saldos e usa a categoria de sistema
+ * "Transferências entre contas" — por isso não há category_id aqui.
+ */
+export interface CreateTransferInput {
+  source_account_id: string;
+  destination_account_id: string;
+  description: string;
+  amount: number;
+  transfer_date: string;
+  notes?: string;
+}
+
+/**
+ * Recorrência: para RECEITA/DESPESA a categoria é obrigatória; para
+ * TRANSFERENCIA o backend resolve a categoria e exige origem + destino.
+ * O POST já cria a primeira ocorrência (PENDENTE, ou a transferência PAGA
+ * quando a data de início é hoje/passada).
+ */
+export interface CreateRecurrenceInput {
+  category_id?: string;
+  account_id?: string;
+  destination_account_id?: string;
+  credit_card_id?: string;
+  description: string;
+  amount: number;
+  type: TransactionType;
+  frequency: RecurrenceFrequency;
+  start_date: string;
+  end_date?: string;
 }
 
 export interface AccountFormData {
@@ -135,7 +236,7 @@ export interface FinanceCreditCard {
   id: string;
   user_id: string;
   name: string;
-  brand: string;
+  brand: CreditCardBrand;
   total_limit: number;
   available_limit: number;
   closing_day: number;
@@ -144,6 +245,48 @@ export interface FinanceCreditCard {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreditCardFormData {
+  name: string;
+  brand: CreditCardBrand;
+  /** Limite total em REAIS (não em centavos) */
+  total_limit: number;
+  closing_day: number;
+  due_day: number;
+  color?: string;
+}
+
+/** Dados do cartão extraídos de uma fatura por IA (extract-invoice). */
+export interface ExtractedCreditCard {
+  name: string;
+  brand: CreditCardBrand;
+  /** Limite total em reais; null quando a fatura não informa */
+  total_limit: number | null;
+  closing_day: number | null;
+  due_day: number | null;
+  /** Emissor (banco) identificado, para a identidade visual no app */
+  bank_name: string | null;
+}
+
+export interface CreditCardExtractionResult {
+  found: boolean;
+  /** Resposta curta em PT-BR: o que foi identificado ou o que faltou */
+  message: string;
+  card: ExtractedCreditCard | null;
+}
+
+/**
+ * Fatura de um mês (GET /finance/credit-cards/:id/invoice). A resposta traz
+ * também as transações do período; aqui só tipamos o resumo que o app usa.
+ */
+export interface CreditCardInvoiceSummary {
+  month: string;
+  total: number;
+  paid_amount: number;
+  remaining_amount: number;
+  closing_date: string;
+  due_date: string;
 }
 
 // ==================== LABELS ====================
@@ -159,6 +302,15 @@ export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
   PAGO: 'Pago',
   VENCIDO: 'Vencido',
   CANCELADO: 'Cancelado',
+};
+
+export const CREDIT_CARD_BRAND_LABELS: Record<CreditCardBrand, string> = {
+  VISA: 'Visa',
+  MASTERCARD: 'Mastercard',
+  ELO: 'Elo',
+  AMEX: 'American Express',
+  HIPERCARD: 'Hipercard',
+  OUTROS: 'Outros',
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
@@ -215,7 +367,8 @@ export interface UpcomingPayment {
   amount: number;
   due_date: string;
   days_until_due: number;
-  category: FinanceCategory;
+  /** null nas faturas de cartão agregadas (não têm categoria única) */
+  category: FinanceCategory | null;
   credit_card?: {
     id: string;
     name: string;
@@ -417,6 +570,20 @@ export function formatFullDate(dateString: string): string {
     day: '2-digit',
     month: 'long',
   });
+}
+
+/** Mês da fatura que recebe uma compra feita em `purchaseDate` no cartão. */
+export function invoiceMonthLabel(
+  card: FinanceCreditCard,
+  purchaseDate: Date
+): string {
+  // Primeiro dia do mês evita overflow (31 de jan + 1 mês viraria 3 de mar)
+  const invoice = new Date(
+    purchaseDate.getFullYear(),
+    purchaseDate.getMonth() + (purchaseDate.getDate() > card.closing_day ? 1 : 0),
+    1
+  );
+  return invoice.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
 // Group transactions by date

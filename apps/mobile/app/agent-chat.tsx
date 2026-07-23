@@ -29,6 +29,10 @@ import { ConfirmDialog } from '@/components/organisms/ConfirmDialog';
 import type { ChatMessage } from '@/types/agent';
 
 const AI_GRADIENT = ['#7C3AED', '#A855F7', '#D946EF'] as const;
+// Balão do usuário na identidade roxa do Norte (base do AI_GRADIENT), não no
+// azul primário do app — cada chat mantém a própria tonalidade. Violeta-600
+// mantém contraste AA (~5:1) com o texto branco.
+const NORTE_ACCENT = '#7C3AED';
 // Espessura do anel "IA" (mesma assinatura visual da AskNorteBar)
 const RING_WIDTH = 2;
 // Altura da linha do header (avatar + títulos + ações)
@@ -69,7 +73,7 @@ const MessageBubble = memo(function MessageBubble({
   if (isUser) {
     return (
       <View style={styles.userRow}>
-        <View style={[styles.bubble, styles.userBubble, { backgroundColor: colors.primary }]}>
+        <View style={[styles.bubble, styles.userBubble, { backgroundColor: NORTE_ACCENT }]}>
           <Text style={[styles.bubbleText, { color: colors.textOnPrimary }]}>
             {message.content}
           </Text>

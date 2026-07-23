@@ -44,6 +44,7 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="contas" options={{ headerShown: false }} />
+        <Stack.Screen name="cartoes" options={{ headerShown: false }} />
         {/* O grupo profile tem Stack próprio; sem isto o raiz põe header padrão */}
         <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen
@@ -59,6 +60,22 @@ function RootLayoutNav() {
           options={{
             presentation: 'transparentModal',
             title: 'Editar conta',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="novo-cartao"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Novo cartão',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="editar-cartao"
+          options={{
+            presentation: 'transparentModal',
+            title: 'Editar cartão',
             headerShown: false,
           }}
         />

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # graphify (knowledge graph artifacts)
 graphify-out/
+
+# pnpm store
+.pnpm-store/

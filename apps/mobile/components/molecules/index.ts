@@ -1,10 +1,14 @@
 // Barrel da camada 'molecules' (Atomic Design). Reexporta os componentes desta camada.
+export * from './AIActionButton';
+export * from './AmountInput';
 export * from './BalanceSection';
 export * from './BudgetGauge';
 export * from './BudgetProgressCard';
 export * from './CategoryExpenseItem';
 export * from './CodeInput';
 export * from './ContentSection';
+export * from './CreditCardVisual';
+export * from './DateRangePicker';
 export * from './EditableAvatar';
 export * from './haptic-tab';
 export * from './MonthNavigator';

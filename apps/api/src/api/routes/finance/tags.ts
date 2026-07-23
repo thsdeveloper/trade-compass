@@ -3,12 +3,14 @@ import type { ApiError } from '../../../domain/types.js';
 import type {
   FinanceTag,
   CreateTagDTO,
+  UpdateTagDTO,
 } from '../../../domain/finance-types.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   getTagsByUser,
   getTagById,
   createTag,
+  updateTag,
   deleteTag,
 } from '../../../data/finance/tag-repository.js';
 
@@ -86,6 +88,43 @@ export async function tagRoutes(app: FastifyInstance) {
       const status = message.includes('ja existe') ? 400 : 500;
       return reply.status(status).send({
         error: status === 400 ? 'Bad Request' : 'Internal Server Error',
+        message,
+        statusCode: status,
+      });
+    }
+  });
+
+  // PATCH /finance/tags/:id - Update tag (rename)
+  app.patch<{
+    Params: { id: string };
+    Body: UpdateTagDTO;
+    Reply: FinanceTag | ApiError;
+  }>('/finance/tags/:id', async (request, reply) => {
+    const { user, accessToken } = request as AuthenticatedRequest;
+    const { id } = request.params;
+    const body = request.body;
+
+    if (body.name !== undefined && !body.name.trim()) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Nome da tag e obrigatorio',
+        statusCode: 400,
+      });
+    }
+
+    try {
+      const tag = await updateTag(
+        id,
+        user.id,
+        body.name !== undefined ? { ...body, name: body.name.trim() } : body,
+        accessToken
+      );
+      return tag;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao atualizar tag';
+      const status = message.includes('nao encontrada') ? 404 : 500;
+      return reply.status(status).send({
+        error: status === 404 ? 'Not Found' : 'Internal Server Error',
         message,
         statusCode: status,
       });

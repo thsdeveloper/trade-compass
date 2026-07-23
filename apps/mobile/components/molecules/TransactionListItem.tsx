@@ -10,8 +10,11 @@ import type { TransactionWithDetails } from '@/types/finance';
 interface TransactionListItemProps {
   transaction: TransactionWithDetails;
   onPress?: () => void;
+  onLongPress?: () => void;
   showDivider?: boolean;
   hideAmount?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
 }
 
 // Map Lucide icon names to SF Symbols (matching frontend CategoryIcon)
@@ -182,8 +185,11 @@ function formatItemDate(dateString: string): string {
 export const TransactionListItem = memo(function TransactionListItem({
   transaction,
   onPress,
+  onLongPress,
   showDivider = true,
   hideAmount = false,
+  selectionMode = false,
+  selected = false,
 }: TransactionListItemProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -195,21 +201,41 @@ export const TransactionListItem = memo(function TransactionListItem({
 
   const account = transaction.account;
   const accountInitial = account?.name?.trim().charAt(0).toUpperCase();
+  const creditCard = transaction.credit_card;
+  const isCardTransaction = !!transaction.credit_card_id;
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[styles.container, selected && { backgroundColor: `${colors.primary}14` }]}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={onPress ? 0.6 : 1}
-      disabled={!onPress}
+      disabled={!onPress && !onLongPress}
+      accessibilityState={selectionMode ? { selected } : undefined}
     >
       <View style={styles.row}>
+        {selectionMode && (
+          <View style={styles.selectionIndicator}>
+            {selected ? (
+              <IconSymbol
+                name="checkmark.circle.fill"
+                size={24}
+                color={colors.primary}
+              />
+            ) : (
+              <View
+                style={[styles.selectionCircle, { borderColor: colors.border }]}
+              />
+            )}
+          </View>
+        )}
         {/* Icon + badge da conta */}
         <View>
           <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}>
             <IconSymbol name={categoryIconName} size={22} color={categoryColor} />
           </View>
-          {account && (
+          {account ? (
             <View
               style={[
                 styles.accountBadge,
@@ -231,7 +257,20 @@ export const TransactionListItem = memo(function TransactionListItem({
                 }
               />
             </View>
-          )}
+          ) : isCardTransaction ? (
+            // Compra de cartão: badge com um cartãozinho na cor do cartão
+            <View
+              style={[
+                styles.accountBadge,
+                {
+                  backgroundColor: creditCard?.color || colors.warning,
+                  borderColor: colors.background,
+                },
+              ]}
+            >
+              <IconSymbol name="creditcard.fill" size={11} color="#FFFFFF" />
+            </View>
+          ) : null}
         </View>
 
         {/* Content */}
@@ -248,14 +287,28 @@ export const TransactionListItem = memo(function TransactionListItem({
           >
             {formatItemDate(transaction.due_date)} • {transaction.category.name}
           </Text>
-          {account?.name && (
+          {account?.name ? (
             <Text
               style={[styles.accountName, { color: colors.textSecondary }]}
               numberOfLines={1}
             >
               {account.name}
             </Text>
-          )}
+          ) : isCardTransaction ? (
+            <View style={styles.cardRow}>
+              <IconSymbol
+                name="creditcard.fill"
+                size={11}
+                color={colors.textSecondary}
+              />
+              <Text
+                style={[styles.accountName, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {creditCard?.name ?? 'Cartão de crédito'}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Amount */}
@@ -277,6 +330,18 @@ export const TransactionListItem = memo(function TransactionListItem({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.lg,
+  },
+  selectionIndicator: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectionCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
   },
   row: {
     flexDirection: 'row',
@@ -320,6 +385,11 @@ const styles = StyleSheet.create({
   },
   accountName: {
     fontSize: FontSize.sm,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   amount: {
     fontSize: FontSize.md,
